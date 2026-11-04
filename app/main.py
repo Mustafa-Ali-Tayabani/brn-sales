@@ -181,6 +181,7 @@ def get_settings():
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings")}
     s["sequence"] = json.loads(s["sequence"])
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
+    s["email_via"] = channels.email_provider()
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
                       "voice": bool(os.environ.get("VAPI_API_KEY")), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
@@ -238,15 +239,17 @@ def voice_webhook(payload: dict = Body(...)):
 @app.post("/api/email/test")
 def test_email():
     """Sends one test email to your own sender address, to check the mailbox connection."""
-    if channels.email_provider() != "smtp":
-        raise HTTPException(400, "Mailbox not connected. Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD in Railway.")
-    me = db.setting("sender_email") or os.environ["SMTP_USER"]
+    provider = channels.email_provider()
+    if not provider:
+        raise HTTPException(400, "Email not connected. Set RESEND_API_KEY, or SMTP_HOST, SMTP_USER and SMTP_PASSWORD.")
+    me = channels._sender()
     try:
-        channels._send_smtp({"email": me}, "brn pipeline: test email", "Your mailbox is connected. The agent can send from this address.")
+        channels.deliver({"email": me}, "brn pipeline: test email", f"Email sending works (via {provider}). The agent can send as {me}.")
     except Exception as e:
-        raise HTTPException(502, f"Could not send: {e}")
-    db.log(None, "system", f"Test email sent to {me}", channel="email")
-    return {"sent_to": me}
+        db.log(None, "system", f"Test email failed: {e}", channel="email", status="error")
+        raise HTTPException(502, f"Test email failed: {e}")
+    db.log(None, "system", f"Test email sent to {me} via {provider}", channel="email")
+    return {"sent_to": me, "via": provider}
 
 
 @app.post("/api/inbox/check")
