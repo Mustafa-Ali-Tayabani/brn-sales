@@ -13,7 +13,7 @@ from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from . import agent, compliance, db
-from .providers import llm, sources
+from .providers import channels, inbox, llm, sources
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -181,7 +181,7 @@ def get_settings():
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings")}
     s["sequence"] = json.loads(s["sequence"])
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
-    s["providers"] = {"claude": llm.enabled(), "email": bool(os.environ.get("RESEND_API_KEY")),
+    s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
                       "voice": bool(os.environ.get("VAPI_API_KEY")), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
 
@@ -235,12 +235,37 @@ def voice_webhook(payload: dict = Body(...)):
     return {"ok": True}
 
 
+@app.post("/api/email/test")
+def test_email():
+    """Sends one test email to your own sender address, to check the mailbox connection."""
+    if channels.email_provider() != "smtp":
+        raise HTTPException(400, "Mailbox not connected. Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD in Railway.")
+    me = db.setting("sender_email") or os.environ["SMTP_USER"]
+    try:
+        channels._send_smtp({"email": me}, "brn pipeline: test email", "Your mailbox is connected. The agent can send from this address.")
+    except Exception as e:
+        raise HTTPException(502, f"Could not send: {e}")
+    db.log(None, "system", f"Test email sent to {me}", channel="email")
+    return {"sent_to": me}
+
+
+@app.post("/api/inbox/check")
+def check_inbox():
+    if not inbox.enabled():
+        raise HTTPException(400, "Mailbox not connected. Set IMAP_HOST, SMTP_USER and SMTP_PASSWORD.")
+    return {"replies": inbox.poll(agent.handle_reply)}
+
+
 def _loop():
+    n = 0
     while True:
         try:
             agent.tick()
+            if n % 5 == 0 and inbox.enabled():  # read replies every 5 minutes
+                inbox.poll(agent.handle_reply)
         except Exception as e:
             db.log(None, "system", f"Scheduler error: {e}", channel="system", status="error")
+        n += 1
         time.sleep(60)
 
 

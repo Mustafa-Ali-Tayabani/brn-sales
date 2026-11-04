@@ -119,7 +119,8 @@ textarea{width:100%;min-height:90px}
       <div style="margin-top:12px"><button class="pri" onclick="saveSettings()">Save</button></div>
     </div>
     <div>
-      <div class="card"><h3>Providers</h3><table id="prov"></table></div>
+      <div class="card"><h3>Providers</h3><table id="prov"></table>
+        <div class="row" style="margin-top:10px"><button onclick="testEmail()">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
       <div class="card"><h3>Guardrails</h3><ul class="muted" style="padding-left:18px;margin:0">
         <li>Every send checks the opt-out list, lawful basis, local business hours (Sun–Thu in KSA/Kuwait; calls 10:00–17:00) and daily caps.</li>
         <li>Every email carries a "reply stop" opt-out; a stop reply or "remove me" on a call adds the lead to the suppression list for good.</li>
@@ -197,11 +198,13 @@ async function decide(id,ok,ch){const body={approve:ok};if(ok&&ch=='email')body.
 const SKEYS=['mode','offer','icp','sender_name','sender_email','booking_link','daily_email_cap','daily_call_cap','min_score'];
 async function loadSettings(){const s=await api('/api/settings');SKEYS.forEach(k=>$('#s-'+k).value=s[k]);$('#s-sequence').value=JSON.stringify(s.sequence,null,1);
   $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;
-  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending (Resend)','email','RESEND_API_KEY'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
+  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending (your mailbox or Resend)','email','SMTP_HOST · SMTP_USER · SMTP_PASSWORD'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
   const sup=await api('/api/suppression');$('#sup').innerHTML=sup.map(x=>`<tr><td>${esc(x.value)}</td><td class="muted">${esc(x.reason)}</td></tr>`).join('')||'<tr><td class="muted">Empty</td></tr>'}
 async function saveSettings(){const b={};SKEYS.forEach(k=>b[k]=$('#s-'+k).value);try{b.sequence=JSON.parse($('#s-sequence').value)}catch{return alertBanner('Sequence is not valid JSON')}
   await api('/api/settings',{method:'POST',body:b});alertBanner('Saved');refresh()}
+async function testEmail(){const r=await api('/api/email/test',{method:'POST'});alertBanner('Test email sent to '+r.sent_to+'. Check that inbox.')}
+async function checkInbox(){const r=await api('/api/inbox/check',{method:'POST'});alertBanner(r.replies+' lead replies processed');refresh()}
 async function addSup(){await api('/api/suppression',{method:'POST',body:{value:$('#supv').value,reason:'manual'}});$('#supv').value='';loadSettings()}
 async function importCsv(){const r=await api('/api/leads/import',{method:'POST',body:{csv:$('#csv').value}});alertBanner(`Imported ${r.imported.length} leads`);loadLeads()}
 async function importPlaces(){const r=await api('/api/leads/places',{method:'POST',body:{query:$('#pq').value,country:$('#pc').value}});alertBanner(`Imported ${r.imported.length} businesses`);loadLeads()}
