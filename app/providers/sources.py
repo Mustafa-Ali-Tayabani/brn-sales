@@ -116,25 +116,67 @@ def _site_key(url):
     return u[4:] if u.startswith("www.") else u
 
 
-def google_places(query, country="SA", limit=20):
-    """e.g. google_places('gyms in Riyadh'). Business listings only: these are company lines, not personal numbers."""
+def google_places(query, country="SA", limit=20, only_without_website=False):
+    """e.g. google_places('gyms in Riyadh'). Business listings only: these are company lines, not personal numbers.
+    With only_without_website, keeps businesses that have no website listed (pages through up to 60 results)."""
     key = os.environ.get("GOOGLE_PLACES_API_KEY")
     if not key:
         raise RuntimeError("GOOGLE_PLACES_API_KEY is not set")
-    r = httpx.post(
-        "https://places.googleapis.com/v1/places:searchText",
-        headers={"X-Goog-Api-Key": key,
-                 "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.internationalPhoneNumber,places.websiteUri,places.primaryType"},
-        json={"textQuery": query, "regionCode": country, "pageSize": min(limit, 20)},
-        timeout=20,
-    )
-    r.raise_for_status()
+    out, token = [], None
+    for _ in range(3):
+        body = {"textQuery": query, "regionCode": country, "pageSize": 20}
+        if token:
+            body["pageToken"] = token
+        r = httpx.post(
+            "https://places.googleapis.com/v1/places:searchText",
+            headers={"X-Goog-Api-Key": key,
+                     "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.internationalPhoneNumber,"
+                                         "places.websiteUri,places.primaryType,places.rating,places.userRatingCount,places.googleMapsUri,nextPageToken"},
+            json=body, timeout=20,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"Google Places error {r.status_code}: {r.text[:200]}")
+        data = r.json()
+        for p in data.get("places", []):
+            if only_without_website and p.get("websiteUri"):
+                continue
+            addr = p.get("formattedAddress") or ""
+            out.append({
+                "company": p.get("displayName", {}).get("text"), "phone": p.get("internationalPhoneNumber"),
+                "website": p.get("websiteUri"), "city": addr.split(",")[-2].strip() if addr.count(",") >= 1 else None,
+                "country": country, "industry": p.get("primaryType") or None, "source": "google_places",
+                "consent_basis": "legitimate_interest_b2b",
+                "extra": {k: v for k, v in {"address": addr, "rating": p.get("rating"), "reviews": p.get("userRatingCount"),
+                                            "google_maps": p.get("googleMapsUri"), "place_id": p.get("id"),
+                                            "has_website": bool(p.get("websiteUri")), "found_by": query}.items() if v not in (None, "")},
+            })
+        token = data.get("nextPageToken")
+        if len(out) >= limit or not token:
+            break
+    return out[:limit]
+
+
+def reddit_search(phrase, limit=15, days="week"):
+    """Public posts where people ask for a service ("need a website for my business"). Read-only:
+    the agent drafts a reply, a person posts it. Nothing is sent to Reddit automatically."""
+    r = httpx.get("https://www.reddit.com/search.json", params={"q": phrase, "sort": "new", "t": days, "limit": min(limit, 50)},
+                  headers={"User-Agent": "brn-pipeline/1.0 (lead research; read-only)"}, timeout=20, follow_redirects=True)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Reddit search error {r.status_code}")
     out = []
-    for p in r.json().get("places", []):
+    for c in r.json().get("data", {}).get("children", []):
+        d = c.get("data", {})
+        if d.get("over_18") or d.get("stickied"):
+            continue
+        text = (d.get("title") or "") + " " + (d.get("selftext") or "")
+        asks = any(w in text.lower() for w in ("need", "looking for", "hire", "recommend", "help", "anyone", "how do i", "who can", "?"))
+        if not asks:
+            continue
         out.append({
-            "company": p.get("displayName", {}).get("text"), "phone": p.get("internationalPhoneNumber"),
-            "website": p.get("websiteUri"), "city": (p.get("formattedAddress") or "").split(",")[-2:-1][0].strip() if "," in (p.get("formattedAddress") or "") else None,
-            "country": country, "industry": p.get("primaryType") or "gym", "source": "google_places",
-            "consent_basis": "legitimate_interest_b2b",
+            "company": (d.get("title") or "Reddit post")[:120], "contact_name": f"u/{d.get('author')}",
+            "website": "https://www.reddit.com" + (d.get("permalink") or ""), "country": "--", "industry": f"r/{d.get('subreddit')}",
+            "source": "reddit", "notes": (d.get("selftext") or "")[:800], "consent_basis": "public_post",
+            "extra": {"post_title": d.get("title"), "subreddit": d.get("subreddit"), "author": d.get("author"),
+                      "posted_at": d.get("created_utc"), "comments": d.get("num_comments"), "found_by": phrase},
         })
     return out

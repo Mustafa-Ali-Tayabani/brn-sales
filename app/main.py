@@ -1,5 +1,6 @@
 """brn dynamics agentic sales pipeline: API, scheduler and dashboard."""
 import base64
+import html
 import csv
 import io
 import json
@@ -119,7 +120,7 @@ def stats(request: Request):
     for r in by_product:
         r["name"] = prods.get(r["product"], {}).get("name", "No product")
     return {
-        "mode": db.setting("mode"), "llm": llm.enabled(), "agent_enabled": db.setting("agent_enabled") == "1",
+        "mode": db.setting("mode"), "llm": llm.enabled(), "llm_status": llm.status(), "agent_enabled": db.setting("agent_enabled") == "1",
         "stages": stages, "daily": daily, "by_product": by_product,
         "kpis": {
             "leads": total, "qualified": qualified, "contacted": agg["contacted"] or 0, "emails": agg["emails"] or 0, "calls": calls,
@@ -179,6 +180,15 @@ def _insert(row, source="manual", defaults=None):
     email = (row.get("email") or "").strip().lower() or None
     if email and db.one("SELECT 1 x FROM leads WHERE lower(email)=?", (email,)):
         return None  # duplicate
+    if not email:  # discovered leads often have no email: dedupe by website, phone or place
+        site = (row.get("website") or "").strip().lower().rstrip("/")
+        if site and db.one("SELECT 1 x FROM leads WHERE lower(rtrim(website,'/'))=?", (site,)):
+            return None
+        if row.get("phone") and db.one("SELECT 1 x FROM leads WHERE phone=?", (row["phone"],)):
+            return None
+        pid = (row.get("extra") or {}).get("place_id")
+        if pid and db.one("SELECT 1 x FROM leads WHERE extra LIKE ?", (f'%"place_id": "{pid}"%',)):
+            return None
     t = db.now()
     stage = STATUS_MAP.get(str(row.get("status") or "new").strip().lower(), "new")
     if row.get("date_contacted") and stage == "new":
@@ -278,7 +288,7 @@ def bulk(payload: dict = Body(...)):
         elif action == "resume":
             db.update_lead(i, stage="in_sequence", next_action_at=db.now())
         elif action == "restart":
-            db.update_lead(i, stage="new", step=0, next_action=None, next_action_at=None)
+            db.update_lead(i, stage="new", step=0, next_action=None, next_action_at=None, emails_sent=0, last_contacted_at=None)
         elif action == "delete":
             db.ex("DELETE FROM approvals WHERE lead_id=?", (i,)); db.ex("DELETE FROM activities WHERE lead_id=?", (i,))
             db.ex("DELETE FROM leads WHERE id=?", (i,))
@@ -340,9 +350,20 @@ def export_activities(request: Request):
 @app.get("/api/email/preview")
 def email_preview(product: str = None, lead_id: int = None, activity_id: int = None):
     """Renders the branded template: for a sent email (activity_id), a lead's next email, or a sample."""
+    try:
+        return _email_preview(product, lead_id, activity_id)
+    except Exception as e:
+        db.log(None, "system", f"Email preview failed: {e}", channel="system", status="error")
+        return Response(f"<div style='font:15px sans-serif;padding:40px;color:#333'><b>Preview could not be built.</b><br><br>"
+                        f"{html.escape(str(e))[:400]}</div>", media_type="text/html")
+
+
+def _email_preview(product=None, lead_id=None, activity_id=None):
     from .email_template import render
     if activity_id:
         a = db.one("SELECT a.payload, l.* FROM activities a JOIN leads l ON l.id=a.lead_id WHERE a.id=?", (activity_id,))
+        if not a:
+            raise ValueError("That email is no longer in the log.")
         p = json.loads(a["payload"] or "{}")
         body = p.get("body", "").split("\n\n--\n")[0]
         cta_line = body.rsplit("\n\n", 1)[-1] if ": http" in body.rsplit("\n\n", 1)[-1] else None
@@ -469,22 +490,85 @@ def check_inbox():
     return {"replies": inbox.poll(agent.handle_reply)}
 
 
+def discover_pipeline(key, sources_only=None):
+    """Finds new leads for one pipeline from its sources (Google Places, Reddit) and imports them into it."""
+    p = db.products().get(key)
+    if not p:
+        raise HTTPException(404, "unknown pipeline")
+    src = p.get("sources") or {}
+    out = {"pipeline": key, "imported": 0, "skipped": 0, "errors": [], "notes": []}
+    places = src.get("places") or []
+    if places and (sources_only in (None, "places")):
+        if not os.environ.get("GOOGLE_PLACES_API_KEY"):
+            out["notes"].append("Google Places key not set, so business search was skipped.")
+        else:
+            for qd in places:
+                try:
+                    rows = sources.google_places(qd["query"], qd.get("country", "SA"), int(qd.get("limit", 20)),
+                                                 bool(src.get("only_without_website")))
+                    res = _import(rows, f"google_places: {qd['query']}", {"product": key, "segment": qd.get("segment") or p.get("name")})
+                    out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
+                except Exception as e:
+                    out["errors"].append(f"{qd.get('query')}: {e}")
+    for phrase in (src.get("reddit") or []) if sources_only in (None, "reddit") else []:
+        try:
+            rows = sources.reddit_search(phrase)
+            res = _import(rows, f"reddit: {phrase}", {"product": key, "segment": "Asking online"})
+            out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
+        except Exception as e:
+            out["errors"].append(f"Reddit '{phrase}': {e}")
+    if not places and not src.get("reddit"):
+        out["notes"].append("This pipeline has no sources yet. Add Places searches or Reddit phrases in Settings > Pipelines.")
+    ps = db.setting("pipeline_runs", json.loads) or {}
+    ps[key] = {"at": db.now(), "imported": out["imported"], "errors": len(out["errors"])}
+    db.set_setting("pipeline_runs", json.dumps(ps))
+    db.log(None, "system", f"Lead discovery for {p['name']}: {out['imported']} new leads"
+           + (f", {len(out['errors'])} errors ({out['errors'][0][:120]})" if out["errors"] else ""),
+           channel="system", status="error" if out["errors"] and not out["imported"] else "ok")
+    return out
+
+
+@app.post("/api/pipelines/{key}/discover")
+def discover_now(key: str):
+    return discover_pipeline(key)
+
+
+@app.get("/api/pipelines")
+def pipelines():
+    runs = db.setting("pipeline_runs", json.loads) or {}
+    counts = {}
+    for r in db.q("SELECT COALESCE(product,'') product, stage, COUNT(*) n FROM leads GROUP BY product, stage"):
+        counts.setdefault(r["product"], {})[r["stage"]] = r["n"]
+    out = []
+    for k, p in db.products().items():
+        src = p.get("sources") or {}
+        out.append({**p, "stages": counts.get(k, {}), "total": sum(counts.get(k, {}).values()), "last_run": runs.get(k),
+                    "source_count": len(src.get("places") or []) + len(src.get("reddit") or [])})
+    return {"pipelines": out, "auto": db.setting("auto_discovery") == "1",
+            "places_key": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
+
+
 def _auto_discover():
-    """Runs the saved Google Places searches once a day and imports new businesses."""
-    queries = db.setting("discovery_queries", json.loads) or []
-    last = db.setting("last_discovery") if "last_discovery" in db.DEFAULT_SETTINGS else None
-    if not queries or not os.environ.get("GOOGLE_PLACES_API_KEY"):
-        return
+    """Once a day: the saved global Places searches, then each pipeline's own sources (when auto discovery is on)."""
+    last = db.setting("last_discovery")
     if last and datetime.fromisoformat(last) > datetime.now(timezone.utc) - timedelta(hours=23):
         return
     db.set_setting("last_discovery", db.now())
-    for qd in queries:
-        try:
-            rows = sources.google_places(qd["query"], qd.get("country", "SA"), int(qd.get("limit", 20)))
-            res = _import(rows, "google_places", qd)
-            db.log(None, "system", f"Auto-discovery '{qd['query']}': {len(res['imported'])} new leads", channel="system")
-        except Exception as e:
-            db.log(None, "system", f"Auto-discovery '{qd.get('query')}' failed: {e}", channel="system", status="error")
+    queries = db.setting("discovery_queries", json.loads) or []
+    if queries and os.environ.get("GOOGLE_PLACES_API_KEY"):
+        for qd in queries:
+            try:
+                rows = sources.google_places(qd["query"], qd.get("country", "SA"), int(qd.get("limit", 20)))
+                res = _import(rows, "google_places", qd)
+                db.log(None, "system", f"Auto-discovery '{qd['query']}': {len(res['imported'])} new leads", channel="system")
+            except Exception as e:
+                db.log(None, "system", f"Auto-discovery '{qd.get('query')}' failed: {e}", channel="system", status="error")
+    if db.setting("auto_discovery") == "1":
+        for key in db.products():
+            try:
+                discover_pipeline(key)
+            except Exception as e:
+                db.log(None, "system", f"Discovery for {key} failed: {e}", channel="system", status="error")
 
 
 def _loop():

@@ -30,6 +30,13 @@ def _iso(dt):
 
 
 def research_lead(lead):
+    if lead.get("source") == "reddit":
+        s = _settings(lead)
+        draft = llm.intent_reply(lead, s)
+        db.update_lead(lead["id"], stage="reply_manually", score=draft.get("score", 70),
+                       research=json.dumps(draft, ensure_ascii=False), next_action="reply on the post", next_action_at=None)
+        db.log(lead["id"], "research", f"Someone asked for this online. Drafted a reply for you to post: {draft.get('summary', '')}", payload=draft)
+        return
     if not (lead.get("email") or lead.get("phone")):
         db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
         db.log(lead["id"], "stage_change", "Needs contact details: no email or phone yet. Add one and move it back to 'new'.")
@@ -81,7 +88,8 @@ def deliver(lead, step, content, at):
             return
         res.pop("html", None)
         db.log(lead["id"], "email_sent", f"{step['action']}: {content['subject']}", channel="email", status=res["status"], payload=res)
-        db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
+        if res["status"] == "ok":  # dry runs don't count as contact
+            db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
     else:
         try:
             res = channels.place_call(lead, content)
@@ -89,11 +97,13 @@ def deliver(lead, step, content, at):
             db.log(lead["id"], "call_completed", f"Call failed, retrying in 2 hours: {e}", channel="phone", status="error")
             db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=2)))
             return
-        db.ex("UPDATE leads SET last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
+        if res["status"] == "ok":
+            db.ex("UPDATE leads SET last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
         db.log(lead["id"], "call_completed", f"Call outcome: {res.get('outcome')}", channel="phone", status=res["status"], payload={**res, "script": content})
         if apply_outcome(lead["id"], res.get("outcome")):
             return
-    _advance(db.one("SELECT * FROM leads WHERE id=?", (lead["id"],)), json.loads(db.setting("sequence")), at)
+    fresh = db.one("SELECT * FROM leads WHERE id=?", (lead["id"],))
+    _advance(fresh, db.sequence_for(fresh), at)
 
 
 def apply_outcome(lead_id, outcome):
@@ -114,7 +124,7 @@ def apply_outcome(lead_id, outcome):
 
 
 def run_step(lead, at):
-    seq = json.loads(db.setting("sequence"))
+    seq = db.sequence_for(lead)
     step = seq[lead["step"]]
     ok, reason = compliance.check(lead, step["channel"], at)
     if not ok:
@@ -161,10 +171,10 @@ def decide(approval_id, approve, edited=None):
     now = datetime.now(timezone.utc)
     lead["stage"] = "in_sequence"
     if approve:
-        step = json.loads(db.setting("sequence"))[lead["step"]]
+        step = db.sequence_for(lead)[lead["step"]]
         deliver(lead, step, content, now)
     else:
-        _advance(lead, json.loads(db.setting("sequence")), now)
+        _advance(lead, db.sequence_for(lead), now)
     return True
 
 

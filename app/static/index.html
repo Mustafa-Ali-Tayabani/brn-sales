@@ -72,6 +72,36 @@ textarea{width:100%;min-height:90px}
 .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:10px}
 .sev-critical,.sev-high{color:var(--bad);font-weight:600}.sev-medium{color:var(--warn)}.sev-low{color:var(--mut)}
 .tablewrap{overflow-x:auto}
+/* interaction polish */
+button,.btn,.chip,.nav,.kpi,.card,.pcard,.kcard,tr.click{transition:background .15s,border-color .15s,color .15s,box-shadow .15s,transform .15s}
+button:not(:disabled):hover,.btn:hover{border-color:var(--blue);color:var(--blue);box-shadow:0 2px 8px #010ecf1f;transform:translateY(-1px)}
+button:not(:disabled):active{transform:translateY(0);box-shadow:none}
+button.pri:not(:disabled):hover{background:#000bb0;color:#fff}button.dark:not(:disabled):hover{background:#22242c;color:#fff}
+button.danger:not(:disabled):hover{border-color:var(--bad);color:var(--bad);background:#fff6f5}
+.bulk button:not(:disabled):hover{color:var(--ink)}
+.chip:hover{border-color:var(--blue);color:var(--blue)}.chip.on:hover{color:#fff;background:#22242c}
+.kpi:hover,.card.hov:hover{border-color:#c9ccf5;box-shadow:0 4px 18px #0b0c1010}
+.side .nav:hover{color:#fff;background:#1b1d25;border:0;box-shadow:none;transform:none}.side .nav.on,.side .nav.on:hover{background:var(--blue);color:#fff}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #010ecf1a}
+.kpi b{letter-spacing:-.02em}.card h3{letter-spacing:-.01em}
+.spin{display:inline-block}.spinning .spin{animation:sp 0.8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+.updated{font-size:12px;color:var(--mut)}
+/* pipelines */
+.psec{font:600 12px "DM Sans";text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:18px 0 10px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;cursor:pointer}
+.pcard:hover{border-color:var(--blue);box-shadow:0 6px 22px #010ecf18;transform:translateY(-2px)}
+.pcard h3{font-size:16px}.pcard .n{font:700 26px "Space Grotesk"}
+.sbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:#eeeee8}.sbar i{display:block;height:100%}
+.board{display:flex;gap:10px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
+.kcol{flex:0 0 250px;background:#ebebe5;border-radius:12px;padding:10px;min-height:200px}
+.kcol h4{margin:2px 4px 10px;font:600 13px "DM Sans";display:flex;justify-content:space-between}
+.kcol.over{background:#dfe2ff;outline:2px dashed var(--blue)}
+.kcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;cursor:grab;font-size:13px}
+.kcard:hover{border-color:var(--blue);box-shadow:0 3px 12px #0b0c1014}
+.kcard.drag{opacity:.4}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;z-index:30;font-size:13px;box-shadow:0 8px 30px #0004}
+.empty{text-align:center;padding:36px 20px}.empty h3{margin-bottom:8px}
 @media(max-width:900px){.side{position:static;width:auto;flex-direction:row;flex-wrap:wrap}.mode{display:none}main{margin:0;padding:16px}.grid2{grid-template-columns:1fr}}
 </style>
 </head>
@@ -79,6 +109,7 @@ textarea{width:100%;min-height:90px}
 <aside class="side">
   <div class="logo">brn<b>.</b> pipeline</div>
   <button class="nav on" data-v="overview">Overview</button>
+  <button class="nav" data-v="pipelines">Pipelines</button>
   <button class="nav" data-v="leads">Leads <span class="pill" id="nleads">0</span></button>
   <button class="nav" data-v="approvals">Approvals <span class="pill" id="napp">0</span></button>
   <button class="nav" data-v="log">Activity log</button>
@@ -87,10 +118,12 @@ textarea{width:100%;min-height:90px}
 </aside>
 <main>
   <div class="top"><h1 id="title">Overview</h1>
+    <span class="updated" id="updated"></span>
+    <button id="refreshBtn" onclick="manualRefresh()" title="Reload everything"><span class="spin">↻</span> Refresh</button>
     <button onclick="openImport()">Import leads</button>
-    <button onclick="runTick()">Run agent now</button>
+    <button class="dark" onclick="runTick()">Run agent now</button>
   </div>
-  <div id="banner"></div>
+  <div id="sysBanner"></div><div id="banner"></div>
 
   <!-- OVERVIEW -->
   <section id="v-overview">
@@ -102,7 +135,7 @@ textarea{width:100%;min-height:90px}
       <div class="card"><h3>Funnel</h3><div class="funnel" id="funnel"></div></div>
     </div>
     <div class="grid2">
-      <div class="card"><h3>By product</h3><table id="byProduct"></table></div>
+      <div class="card"><h3>By pipeline</h3><table id="byProduct"></table></div>
       <div class="card"><h3>By stage</h3><div class="chips" id="byStage"></div></div>
     </div>
     <div class="card"><h3>Latest agent activity</h3><div class="tablewrap"><table id="recent"></table></div></div>
@@ -145,6 +178,17 @@ textarea{width:100%;min-height:90px}
     <div class="card" style="padding:0"><div class="tablewrap"><table id="leads"></table></div><div class="pager" id="pager"></div></div>
   </section>
 
+  <!-- PIPELINES -->
+  <section id="v-pipelines" class="hide">
+    <div id="plist"></div>
+    <div id="pboard" class="hide">
+      <div class="row" style="margin-bottom:12px"><button onclick="closeBoard()">← All pipelines</button><h2 id="pbTitle" style="flex:1;font-size:20px"></h2>
+        <button onclick="findLeads(pbKey,this)">Find leads now</button><button onclick="lProduct=pbKey;show('leads');loadFacets()">Open as list</button></div>
+      <p class="muted" id="pbPitch" style="margin-top:-4px"></p>
+      <div class="board" id="board"></div>
+    </div>
+  </section>
+
   <section id="v-approvals" class="hide"><div id="apps"></div></section>
 
   <!-- LOG -->
@@ -171,7 +215,8 @@ textarea{width:100%;min-height:90px}
         <p class="muted" id="liveNote" style="font-size:12px"></p>
         <div class="row"><div><label>Emails / day</label><input id="s-daily_email_cap" type="number"></div><div><label>Calls / day</label><input id="s-daily_call_cap" type="number"></div><div><label>Min fit score</label><input id="s-min_score" type="number"></div></div>
         <label>Product for leads without one</label><select id="s-default_product"></select>
-        <label>Auto-discovery: Google Places searches run daily (one per line: query | country | limit)</label>
+        <label>Automatic lead discovery for every pipeline</label><select id="s-auto_discovery"><option value="1">On: once a day, each pipeline searches its own sources</option><option value="0">Off: only when I click "Find leads now"</option></select>
+        <label>Extra Google Places searches, daily (one per line: query | country | limit)</label>
         <textarea id="s-discovery" placeholder="gyms in Riyadh | SA | 20"></textarea>
         <label>Sequence (JSON)</label><textarea id="s-sequence" style="min-height:130px;font-family:ui-monospace,monospace;font-size:12px"></textarea>
       </div>
@@ -181,7 +226,8 @@ textarea{width:100%;min-height:90px}
         <label>Postal address in email footer (required by US anti-spam law)</label><input id="s-company_address" style="width:100%">
         <div class="row" style="margin-top:12px"><select id="pvProd"></select><button onclick="previewEmail()">Preview branded email</button></div>
       </div>
-      <div class="card"><h3>Products</h3><p class="muted" style="margin-top:-6px">The agent pitches each lead's product. Edit the pitch and ideal customer here (JSON).</p>
+      <div class="card"><h3>Pipelines (products &amp; services)</h3><p class="muted" style="margin-top:-6px">Each pipeline has its own pitch, ideal customer, optional sequence and lead sources:
+        <code>"sources": {"places": [{"query": "salons in Riyadh", "country": "SA", "limit": 20}], "only_without_website": true, "reddit": ["need a website"]}</code></p>
         <textarea id="s-products" style="min-height:220px;font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
       <button class="pri" onclick="saveSettings()">Save settings</button>
     </div>
@@ -207,8 +253,8 @@ textarea{width:100%;min-height:90px}
 <script>
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const api=async(p,o={})=>{const r=await fetch(p,{headers:{'Content-Type':'application/json'},...o,body:o.body?JSON.stringify(o.body):undefined});if(!r.ok){const t=await r.text();alertBanner(t,true);throw t}return r.json()};
-const STAGES=['new','needs_contact','in_sequence','awaiting_approval','paused','replied','meeting_booked','nurture','completed','won','lost','disqualified','opted_out'];
-const SL={new:'New',needs_contact:'Needs contact',in_sequence:'In sequence',awaiting_approval:'Awaiting approval',paused:'Paused',replied:'Replied',meeting_booked:'Meeting booked',nurture:'Nurture',completed:'Sequence done',won:'Won',lost:'Lost',disqualified:'Disqualified',opted_out:'Opted out'};
+const STAGES=['new','needs_contact','reply_manually','in_sequence','awaiting_approval','paused','replied','meeting_booked','nurture','completed','won','lost','disqualified','opted_out'];
+const SL={new:'New',needs_contact:'Needs contact',reply_manually:'Reply manually',in_sequence:'In sequence',awaiting_approval:'Awaiting approval',paused:'Paused',replied:'Replied',meeting_booked:'Meeting booked',nurture:'Nurture',completed:'Sequence done',won:'Won',lost:'Lost',disqualified:'Disqualified',opted_out:'Opted out'};
 const fmt=t=>t?new Date(t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
 const fdate=t=>t?new Date(t).toLocaleDateString([], {month:'short',day:'numeric',year:'2-digit'}):'–';
 let view='overview',PRODUCTS={},ovProduct='',lProduct='',page=0,PAGE=100,sel=new Set(),lastTotal=0,_db;
@@ -222,8 +268,11 @@ function closeModal(){$('#modal').classList.remove('open');$('#mBody').innerHTML
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.v));
 function show(v){view=v;document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==v));
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hide',s.id!='v-'+v));
-  $('#title').textContent={overview:'Overview',leads:'Leads',approvals:'Approvals',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
-function refresh(){loadStats();({overview:loadRecent,leads:()=>loadLeads(page),approvals:loadApps,log:loadLog,settings:loadSettings})[view]()}
+  if(v=='pipelines'&&!window._keepBoard)closeBoard(true);window._keepBoard=false;
+  $('#title').textContent={overview:'Overview',pipelines:'Pipelines',leads:'Leads',approvals:'Approvals',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
+async function manualRefresh(){const b=$('#refreshBtn');b.classList.add('spinning');b.disabled=true;try{await loadFacets();await refresh();toast('Up to date')}finally{b.classList.remove('spinning');b.disabled=false}}
+function refresh(){$('#updated').textContent='Updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});return Promise.all([loadStats(),({overview:loadRecent,pipelines:loadPipelines,leads:()=>loadLeads(page),approvals:loadApps,log:loadLog,settings:loadSettings})[view]()])}
 
 async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f.products.forEach(p=>PRODUCTS[p.key]=p);
   const opt=(arr,all)=>`<option value="">${all}</option>`+arr.map(x=>`<option value="${esc(x.value)}">${esc(SL[x.value]||PRODUCTS[x.value]?.name||x.value)} (${x.n})</option>`).join('');
@@ -238,7 +287,9 @@ async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f
 function setLProd(p){lProduct=p;loadFacets();loadLeads(0)}function setOvProd(p){ovProduct=p;loadFacets();loadStats()}
 
 async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='+ovProduct:''));
-  $('#mode').textContent=s.mode.replace('_',' ');$('#eng').textContent=s.llm?'Claude connected':'Template engine (no API key)';$('#napp').textContent=s.kpis.pending_approvals;
+  window.MODE=s.mode;$('#mode').textContent=s.mode.replace('_',' ');const L=s.llm_status||{};
+  $('#eng').textContent=!s.llm?'Template engine (no API key)':L.error?'Claude: problem, using templates':'Claude connected';
+  $('#sysBanner').innerHTML=s.llm&&L.error?`<div class="banner"><b>Claude isn't answering right now</b>, so the agent is using built-in templates (research and emails still work, just less personal). ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}) It retries automatically every 10 minutes.</span></div>`:'';$('#napp').textContent=s.kpis.pending_approvals;
   $('#agentState').innerHTML=`<div style="margin-bottom:6px"><span class="dot ${s.agent_enabled?'':'off'}"></span>Agent ${s.agent_enabled?'running':'paused'}</div>`;
   if(!ovProduct)$('#nleads').textContent=s.kpis.leads;
   if(view!='overview')return;
@@ -250,7 +301,7 @@ async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='
   const m=Math.max(1,...days.map(d=>d.emails+d.calls+d.replies));
   $('#chart').innerHTML=days.map(d=>`<div style="flex:1"><div class="col" style="height:150px" title="${d.d}: ${d.emails} emails, ${d.calls} calls, ${d.replies} replies">
     <div class="seg" style="height:${d.emails/m*100}%;background:var(--blue)"></div><div class="seg" style="height:${d.calls/m*100}%;background:var(--blue2)"></div><div class="seg" style="height:${d.replies/m*100}%;background:var(--ink)"></div></div><div class="lbl">${d.d.slice(8)}</div></div>`).join('');
-  $('#byProduct').innerHTML='<tr><th>Product</th><th>Leads</th><th>Active</th><th>Emailed</th><th>Replied</th><th>Meetings</th></tr>'+s.by_product.map(r=>`<tr class="click" onclick="lProduct='${r.product}';show('leads');loadFacets()"><td>${esc(r.name)}</td><td>${r.leads}</td><td>${r.active||0}</td><td>${r.emailed||0}</td><td>${r.replied||0}</td><td>${r.meetings||0}</td></tr>`).join('');
+  $('#byProduct').innerHTML='<tr><th>Pipeline</th><th>Leads</th><th>Active</th><th>Emailed</th><th>Replied</th><th>Meetings</th></tr>'+s.by_product.map(r=>`<tr class="click" onclick="lProduct='${r.product}';show('leads');loadFacets()"><td>${esc(r.name)}</td><td>${r.leads}</td><td>${r.active||0}</td><td>${r.emailed||0}</td><td>${r.replied||0}</td><td>${r.meetings||0}</td></tr>`).join('');
   $('#byStage').innerHTML=STAGES.filter(x=>s.stages[x]).map(x=>`<span class="chip" onclick="show('leads');$('#f-stage').value='${x}';loadLeads(0)">${SL[x]}<small>${s.stages[x]}</small></span>`).join('')||'<span class="muted">No leads yet. Click "Import leads".</span>'}
 
 const logRow=a=>`<tr class="click" onclick="openLead(${a.lead_id||0})"><td class="muted" style="white-space:nowrap">${fmt(a.created_at)}</td><td>${esc(a.company||'System')}</td><td>${a.product?prodTag(a.product):''}</td><td><span class="tag g">${a.kind}</span></td><td><span class="tag ${a.status}">${a.status}</span></td><td>${esc(a.summary)}</td></tr>`;
@@ -292,10 +343,14 @@ async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=
    ${[['contact_name','Contact'],['title','Title'],['email','Email'],['phone','Phone'],['website','Website'],['city','City'],['country','Country'],['segment','Category']].map(([k,n])=>`<div><label>${n}</label><input id="e-${k}" value="${esc(l[k]||'')}"></div>`).join('')}
    <div><label>Product</label><select id="e-product">${Object.values(PRODUCTS).map(p=>`<option value="${p.key}" ${p.key==l.product?'selected':''}>${esc(p.name)}</option>`).join('')}<option value="" ${!l.product?'selected':''}>None</option></select></div>
    <div><label>Status</label><select id="e-stage">${STAGES.map(s=>`<option value="${s}" ${s==l.stage?'selected':''}>${SL[s]}</option>`).join('')}</select></div>
-   <div><label>Lawful basis</label><select id="e-consent_basis">${['legitimate_interest_b2b','opt_in','existing_customer','none'].map(s=>`<option ${s==l.consent_basis?'selected':''}>${s}</option>`).join('')}</select></div></div>
+   <div><label>Lawful basis</label><select id="e-consent_basis">${['legitimate_interest_b2b','opt_in','existing_customer','public_post','none'].map(s=>`<option ${s==l.consent_basis?'selected':''}>${s}</option>`).join('')}</select></div></div>
    <label>Notes</label><textarea id="e-notes" style="min-height:60px">${esc(l.notes||'')}</textarea>
    <div class="row" style="margin-top:8px"><button class="pri" onclick="saveLead(${l.id})">Save</button><button onclick="previewLead(${l.id})">Preview next email</button><span class="muted">source: ${esc(l.source)} · added ${fdate(l.created_at)}</span></div></div>
-  ${r.summary?`<div class="card"><h3>Agent research</h3><p>${esc(r.summary)}</p><p class="muted"><b>Pain points:</b> ${esc((r.pain_points||[]).join('; '))}<br><b>Hooks:</b> ${esc((r.hooks||[]).join('; '))}<br><b>Why this score:</b> ${esc(r.score_reason)}</p></div>`:''}
+  ${r.reply_draft?`<div class="card" style="border-color:var(--blue)"><h3>Someone asked for this online: reply by hand</h3><p class="muted" style="margin-top:-6px">${esc(r.summary||'')}</p>
+   ${l.notes?`<pre>${esc(l.notes)}</pre>`:''}<label>Suggested reply (edit, copy, post it yourself)</label><textarea id="rdraft" style="min-height:130px">${esc(r.reply_draft)}</textarea>
+   <div class="row" style="margin-top:8px">${l.website?`<a class="btn" href="${esc(l.website)}" target="_blank" rel="noopener">Open the post ↗</a>`:''}<button onclick="navigator.clipboard.writeText($('#rdraft').value);toast('Reply copied')">Copy reply</button>
+   <button class="pri" onclick="markReplied(${l.id})">I replied</button></div></div>`:''}
+  ${r.summary&&!r.reply_draft?`<div class="card"><h3>Agent research</h3><p>${esc(r.summary)}</p><p class="muted"><b>Pain points:</b> ${esc((r.pain_points||[]).join('; '))}<br><b>Hooks:</b> ${esc((r.hooks||[]).join('; '))}<br><b>Why this score:</b> ${esc(r.score_reason)}</p></div>`:''}
   ${xr.length||issues.length?`<div class="card"><h3>Imported data</h3><div class="kv">${xr.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))}</span><div>${esc(typeof v=='object'?JSON.stringify(v):v)}</div>`).join('')}</div>
     ${issues.length?`<table style="margin-top:10px"><tr><th>Severity</th><th>Problem</th><th>Fix</th></tr>${issues.map(i=>`<tr><td class="sev-${esc(i.severity)}">${esc(i.severity||'')}</td><td>${esc(i.problem||'')}</td><td class="muted">${esc(i.suggested_fix||'')}</td></tr>`).join('')}</table>`:''}</div>`:''}
   <div class="card"><h3>Log a reply from this lead</h3><textarea id="rtext" placeholder="Paste their reply, e.g. 'Sounds good, can we talk Tuesday?'"></textarea><button class="pri" style="margin-top:8px" onclick="sendReply(${l.id})">Classify and update</button></div>
@@ -303,6 +358,7 @@ async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=
    const body=a.kind=='email_sent'&&p.subject?`<pre>Subject: ${esc(p.subject)}\n\n${esc((p.body||'').split('\n\n--\n')[0])}</pre><button class="sm" style="margin-top:6px" onclick="previewAct(${a.id})">View branded email</button>`:p.transcript?`<pre>${esc(p.transcript)}</pre>`:p.text?`<pre>${esc(p.text)}</pre>`:'';
    return `<div class="ev"><small>${fmt(a.created_at)} · ${a.channel} · <span class="tag ${a.status}">${a.status}</span></small><div>${esc(a.summary)}</div>${body}</div>`}).join('')}</div>`;
   $('#drawer').classList.add('open')}
+async function markReplied(id){await api('/api/leads/'+id,{method:'PATCH',body:{stage:'replied'}});toast('Marked as replied');openLead(id);refresh()}
 async function saveLead(id){const b={};['contact_name','title','email','phone','website','city','country','segment','product','stage','consent_basis','notes'].forEach(k=>b[k]=$('#e-'+k).value||null);
   await api('/api/leads/'+id,{method:'PATCH',body:b});alertBanner('Saved');openLead(id);loadFacets();refresh()}
 async function sendReply(id){const r=await api(`/api/leads/${id}/reply`,{method:'POST',body:{text:$('#rtext').value}});alertBanner('Reply classified as: '+r.intent);openLead(id);refresh()}
@@ -334,10 +390,13 @@ async function loadApps(){const r=await api('/api/approvals');
   ${a.channel=='email'?`<label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(a.content.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(a.content.body)}</textarea><label>Button label</label><input id="ac${a.id}" value="${esc(a.content.cta||'Book a 15-min call')}">`
    :`<label>Call brief</label><pre>${esc(JSON.stringify(a.content,null,2))}</pre>`}
   <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}')">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="previewLead(${a.lead_id})">Preview</button></div></div>`).join('')
-  :'<div class="card muted">Nothing waiting. Drafts appear here when send mode is "Approval".</div>'}
+  :`<div class="card empty"><h3>Nothing waiting for approval</h3><p class="muted">${MODE=='approval'?'The agent is in Approval mode. New drafts show up here as leads reach their next step (only during local business hours).':
+   `Send mode is <b>${(MODE||'dry run').replace('_',' ')}</b>, so the agent drafts and logs every email without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.`}</p>
+   ${MODE!='approval'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`}
+async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}});toast('Send mode: '+m);refresh()}
 async function decide(id,ok,ch){const body={approve:ok};if(ok&&ch=='email')body.content={subject:$('#as'+id).value,body:$('#ab'+id).value,cta:$('#ac'+id).value};await api('/api/approvals/'+id,{method:'POST',body});refresh()}
 
-const SKEYS=['mode','agent_enabled','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];
+const SKEYS=['mode','agent_enabled','auto_discovery','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];
 async function loadSettings(){const s=await api('/api/settings');
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
   SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');$('#s-sequence').value=JSON.stringify(s.sequence,null,1);$('#s-products').value=JSON.stringify(s.products,null,1);
@@ -356,6 +415,37 @@ async function testEmail(b){b.disabled=true;b.textContent='Sending…';try{const
 async function checkInbox(){const r=await api('/api/inbox/check',{method:'POST'});alertBanner(r.replies+' lead replies processed');refresh()}
 async function addSup(){await api('/api/suppression',{method:'POST',body:{value:$('#supv').value,reason:'manual'}});$('#supv').value='';loadSettings()}
 async function runTick(){const r=await api('/api/agent/tick',{method:'POST'});alertBanner(`Agent processed ${r.processed} actions`);refresh()}
+const KCOLS=['new','needs_contact','reply_manually','in_sequence','awaiting_approval','replied','meeting_booked','won','completed','nurture','paused','lost','disqualified','opted_out'];
+const SCOL={new:'#9aa0b4',needs_contact:'#e3a33b',reply_manually:'#6E7BFF',in_sequence:'#010ECF',awaiting_approval:'#f0b400',replied:'#0b5cad',meeting_booked:'#127a4a',won:'#0a5a36',completed:'#c4c5cc',nurture:'#7fb3e6',paused:'#d9b77a',lost:'#e5a29b',disqualified:'#e8c3be',opted_out:'#b42318'};
+let pbKey=null,PIPES=[];
+async function loadPipelines(){const r=await api('/api/pipelines');PIPES=r.pipelines;if(pbKey)return loadBoard();
+  const card=p=>{const st=p.stages||{},tot=p.total||0,src=p.sources||{};
+   const srcTxt=[(src.places||[]).length?`${src.places.length} map search${src.places.length>1?'es':''}${src.only_without_website?' (no-website only)':''}`:'',(src.reddit||[]).length?`${src.reddit.length} intent phrase${src.reddit.length>1?'s':''}`:''].filter(Boolean).join(' · ')||'no sources yet';
+   return `<div class="pcard" onclick="openBoard('${p.key}')"><div class="row"><h3 style="flex:1">${esc(p.name)}</h3><span class="tag ${p.type=='service'?'g':'p'}">${p.type}</span></div>
+    <div class="row"><span class="n">${tot}</span><span class="muted">leads · ${st.in_sequence||0} active · ${(st.replied||0)+(st.meeting_booked||0)} replied/meeting${st.reply_manually?` · <b style="color:var(--blue)">${st.reply_manually} to reply</b>`:''}</span></div>
+    <div class="sbar">${tot?KCOLS.filter(k=>st[k]).map(k=>`<i title="${SL[k]}: ${st[k]}" style="width:${st[k]/tot*100}%;background:${SCOL[k]}"></i>`).join(''):''}</div>
+    <div class="muted" style="font-size:12px">Sources: ${srcTxt}<br>${p.last_run?`Last search ${fmt(p.last_run.at)}: ${p.last_run.imported} new`:'Not searched yet'}</div>
+    <div class="row" onclick="event.stopPropagation()"><button class="sm" onclick="findLeads('${p.key}',this)">Find leads now</button><button class="sm" onclick="openBoard('${p.key}')">Open board →</button></div></div>`};
+  const note=!r.places_key?'<div class="banner">Map searches (businesses near you, businesses without a website) need a Google Places API key: add <b>GOOGLE_PLACES_API_KEY</b> in Railway Variables. Reddit intent search works without a key.</div>':'';
+  $('#plist').innerHTML=note+`<p class="muted" style="margin:0">Every product and service runs as its own pipeline with its own pitch, sources and follow-up sequence. Automatic discovery is <b>${r.auto?'on (daily)':'off'}</b>.</p>`
+   +`<div class="psec">Products</div><div class="pgrid">${PIPES.filter(p=>p.type!='service').map(card).join('')}</div><div class="psec">Services</div><div class="pgrid">${PIPES.filter(p=>p.type=='service').map(card).join('')}</div>`}
+async function findLeads(key,b){const t=b.textContent;b.disabled=true;b.textContent='Searching…';
+  try{const r=await api(`/api/pipelines/${key}/discover`,{method:'POST'});alertBanner(`Found ${r.imported} new leads (${r.skipped} already known).`+(r.notes.length?' '+r.notes.join(' '):'')+(r.errors.length?' Problems: '+r.errors.join('; '):''),r.errors.length&&!r.imported);loadFacets();refresh()}
+  finally{b.disabled=false;b.textContent=t}}
+function openBoard(k){pbKey=k;window._keepBoard=true;show('pipelines')}
+function closeBoard(silent){pbKey=null;$('#pboard').classList.add('hide');$('#plist').classList.remove('hide');if(silent!==true)loadPipelines()}
+async function loadBoard(){const p=PIPES.find(x=>x.key==pbKey);if(!p)return closeBoard();$('#plist').classList.add('hide');$('#pboard').classList.remove('hide');
+  $('#pbTitle').textContent=p.name;$('#pbPitch').textContent=p.pitch;
+  const r=await api('/api/leads?'+qs({product:pbKey,limit:1000,sort:'updated'}));const by={};r.rows.forEach(l=>(by[l.stage]=by[l.stage]||[]).push(l));
+  const cols=KCOLS.filter(k=>['new','needs_contact','in_sequence','replied','meeting_booked','won'].includes(k)||by[k]);
+  $('#board').innerHTML=cols.map(k=>`<div class="kcol" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
+   <h4><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${SCOL[k]};margin-right:6px"></i>${SL[k]}</span><span class="muted">${(by[k]||[]).length}</span></h4>
+   ${(by[k]||[]).slice(0,80).map(l=>`<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('id',${l.id});this.classList.add('drag')" ondragend="this.classList.remove('drag')" onclick="openLead(${l.id})">
+    <b>${esc(l.company)}</b><div class="muted">${esc(l.city||'')} ${esc(l.email||l.phone||'no contact')}</div>
+    <div class="row" style="margin-top:4px">${l.score!=null?`<span class="tag g">score ${l.score}</span>`:''}${l.emails_sent?`<span class="tag ok">${l.emails_sent} sent</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}</div></div>`).join('')}
+   ${(by[k]||[]).length>80?`<div class="muted" style="font-size:12px">+${by[k].length-80} more, open as list</div>`:''}</div>`).join('')}
+async function dropLead(e,stage){e.preventDefault();document.querySelectorAll('.kcol').forEach(c=>c.classList.remove('over'));const id=e.dataTransfer.getData('id');if(!id)return;
+  await api('/api/leads/'+id,{method:'PATCH',body:{stage}});toast('Moved to '+SL[stage]);loadBoard();loadStats()}
 $('#modal').onclick=e=>{if(e.target.id=='modal')closeModal()};
 loadFacets().then(refresh);setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings')refresh()},20000);
 </script>

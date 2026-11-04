@@ -4,7 +4,15 @@ import json
 import os
 import re
 
-MODEL = os.environ.get("BRN_MODEL", "claude-sonnet-5-5")
+import time
+
+from .. import db
+
+# Default to Claude Opus 5.5. Set BRN_MODEL=claude-haiku-5-5 (much cheaper) or claude-sonnet-5-5 to trade quality for cost.
+MODEL = os.environ.get("BRN_MODEL", "claude-opus-5-5")
+EFFORT = os.environ.get("BRN_EFFORT", "low")  # short sales copy and JSON: low effort keeps cost and latency down
+_cooldown_until = 0.0
+_use_fallbacks = True
 
 try:
     import anthropic
@@ -17,14 +25,56 @@ def enabled():
     return _client is not None
 
 
-def _ask_json(system, prompt, max_tokens=1200):
-    msg = _client.messages.create(
-        model=MODEL, max_tokens=max_tokens, system=system,
-        messages=[{"role": "user", "content": prompt}],
-    )
+def _usable():
+    return _client is not None and time.time() >= _cooldown_until
+
+
+def status():
+    """For the dashboard: is Claude working, and if not, why."""
+    return {"configured": enabled(), "model": MODEL, "error": db.setting("llm_error") or None,
+            "error_at": db.setting("llm_error_at") or None, "cooling_down": enabled() and not _usable()}
+
+
+def _note_error(e):
+    """Remember the failure, pause Claude for a while on account problems, and let the caller fall back to templates."""
+    global _cooldown_until
+    msg = str(e)
+    account = any(k in msg.lower() for k in ("credit balance", "billing", "authentication", "invalid x-api-key", "permission", "401", "403"))
+    _cooldown_until = time.time() + (600 if account else 30)
+    low = msg.lower()
+    if "credit balance" in low:
+        short = "Your Anthropic credit balance is too low. Add credits at console.anthropic.com > Billing."
+    elif "invalid x-api-key" in low or "authentication" in low:
+        short = "The Anthropic API key is not valid. Check ANTHROPIC_API_KEY in Railway Variables."
+    else:
+        short = msg[:300]
+    db.set_setting("llm_error", short)
+    db.set_setting("llm_error_at", db.now())
+
+
+def _ask_json(system, prompt, max_tokens=4000):
+    global _use_fallbacks
+    kwargs = dict(model=MODEL, max_tokens=max_tokens, system=system,
+                  messages=[{"role": "user", "content": prompt}], output_config={"effort": EFFORT})
+    if _use_fallbacks:  # server-side fallback if a safety classifier declines (tolerated if unsupported)
+        kwargs["extra_headers"] = {"anthropic-beta": "server-side-fallback-2026-07-01"}
+        kwargs["extra_body"] = {"fallbacks": "default"}
+    try:
+        msg = _client.messages.create(**kwargs)
+    except Exception as e:
+        if _use_fallbacks and "fallback" in str(e).lower():
+            _use_fallbacks = False
+            return _ask_json(system, prompt, max_tokens)
+        raise
+    if getattr(msg, "stop_reason", None) == "refusal":
+        raise RuntimeError("Claude declined this request")
     text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     m = re.search(r"\{.*\}", text, re.S)
-    return json.loads(m.group(0)) if m else {}
+    if not m:
+        raise RuntimeError("Claude returned no JSON")
+    if db.setting("llm_error"):
+        db.set_setting("llm_error", "")
+    return json.loads(m.group(0))
 
 
 SYSTEM = (
@@ -54,12 +104,15 @@ def _extra(lead):
 
 
 def research(lead, offer, icp, product_key=None):
-    if enabled():
-        return _ask_json(SYSTEM, f"""Offer: {offer}
+    if _usable():
+        try:
+            return _ask_json(SYSTEM, f"""Offer: {offer}
 Ideal customer: {icp}
 Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 If the lead data includes website scan results (health score, issues), use the most concrete issue as the main hook.
 Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "language": "ar"|"en"}}""")
+        except Exception as e:
+            _note_error(e)
     ind = f"{lead.get('industry') or ''} {lead.get('segment') or ''}".lower()
     ex = _extra(lead)
     if product_key == "gym_club" or (not product_key and "gym" in ind):
@@ -92,8 +145,9 @@ STEP_GOAL = {
 
 
 def write_email(lead, research_, action, settings):
-    if enabled():
-        return _ask_json(SYSTEM, f"""Write a cold B2B email.
+    if _usable():
+        try:
+            return _ask_json(SYSTEM, f"""Write a cold B2B email.
 Goal of this step: {STEP_GOAL.get(action, action)}
 Product: {settings.get('product_name', '')}. Offer: {settings['offer']}
 Sender: {settings['sender_name']}.
@@ -103,6 +157,8 @@ Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated
 Start with a greeting ("Hi <first name>," or "Hi there," if no name). Do NOT add a sign-off, signature, links or the booking URL:
 the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.
 Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 words"}}""", 800)
+        except Exception as e:
+            _note_error(e)
     name = (lead.get("contact_name") or "there").split(" ")[0]
     company = lead["company"]
     key = settings.get("product_key")
@@ -144,17 +200,21 @@ Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 word
 
 
 def call_script(lead, research_, settings):
-    if enabled():
-        return _ask_json(SYSTEM, f"""Write a short voice-agent brief for an outbound B2B call.
+    if _usable():
+        try:
+            return _ask_json(SYSTEM, f"""Write a short voice-agent brief for an outbound B2B call.
 Offer: {settings['offer']}
 Lead: {json.dumps(lead, ensure_ascii=False, default=str)}
 Research: {json.dumps(research_, ensure_ascii=False)}
 The agent must say it is an AI assistant calling for brn dynamics, ask permission to continue, offer to remove them from the list,
 and aim to book a 15 minute demo. Return JSON: {{"opening": str, "talking_points": [str], "objections": {{str: str}}, "goal": str, "language": "ar"|"en"}}""")
+        except Exception as e:
+            _note_error(e)
     return {
-        "opening": f"Hi, this is an AI assistant calling on behalf of brn dynamics. Is now an okay moment for 30 seconds about {lead['company']}'s member management?",
-        "talking_points": research_.get("hooks", []),
-        "objections": {"we have a system": "Totally fair. Most gyms we help switched from one; happy to compare in 15 minutes.",
+        "opening": f"Hi, this is an AI assistant calling on behalf of brn dynamics. Is now an okay moment for 30 seconds about {lead['company']}? "
+                   + (f"It's about {settings.get('product_name')}." if settings.get("product_name") else ""),
+        "talking_points": research_.get("hooks", []) or [settings.get("offer", "")],
+        "objections": {"we have a system": "Totally fair. Happy to compare what you have with what we'd build in 15 minutes.",
                        "not interested": "Understood, I will remove you from our list. Thanks for your time."},
         "goal": "book a 15 minute demo",
         "language": research_.get("language", "en"),
@@ -164,9 +224,12 @@ and aim to book a 15 minute demo. Return JSON: {{"opening": str, "talking_points
 
 def classify_reply(text):
     """Classify an inbound email reply or call outcome."""
-    if enabled():
-        return _ask_json(SYSTEM, f"""Classify this prospect reply: {text!r}
+    if _usable():
+        try:
+            return _ask_json(SYSTEM, f"""Classify this prospect reply: {text!r}
 Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsubscribe"|"wrong_person"|"question", "summary": str}}""", 300)
+        except Exception as e:
+            _note_error(e)
     t = text.lower()
     if any(w in t for w in ("unsubscribe", "remove me", "stop", "don't contact", "do not contact")):
         return {"intent": "unsubscribe", "summary": "asked to stop"}
@@ -179,3 +242,27 @@ Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsu
     if "?" in t:
         return {"intent": "question", "summary": "has a question"}
     return {"intent": "interested", "summary": "positive reply"}
+
+
+def intent_reply(lead, settings):
+    """A public post where someone asks for a service (e.g. "need a website for my salon").
+    Drafts a helpful, non-salesy reply that a person posts by hand. Nothing is sent automatically."""
+    post = {k: lead.get(k) for k in ("company", "notes", "website", "city", "country")}
+    post["data"] = _extra(lead)
+    if _usable():
+        try:
+            return _ask_json(SYSTEM, f"""Someone posted publicly asking for help. Our relevant offer: {settings['offer']}
+Post: {json.dumps(post, ensure_ascii=False, default=str)}
+Decide if this is a genuine request we can help with, and draft a short, genuinely helpful public reply
+(useful advice first, mention brn dynamics once at the end, no hard sell, no links unless natural).
+Return JSON: {{"summary": str, "reply_draft": str, "score": int 0-100, "score_reason": str}}""", 1500)
+        except Exception as e:
+            _note_error(e)
+    title = lead.get("notes") or lead.get("company") or "your post"
+    return {
+        "summary": f"Public request: {title[:160]}",
+        "reply_draft": ("A few things that usually help: be clear on the goal (bookings, enquiries or sales), keep the first version small, "
+                        "and pick something you can update yourself. If it helps, we build these at brn dynamics and are happy to "
+                        "give a free quick opinion, no strings attached."),
+        "score": 55, "score_reason": "asks publicly for a service we offer", "_engine": "template",
+    }

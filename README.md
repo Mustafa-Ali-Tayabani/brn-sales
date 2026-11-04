@@ -29,7 +29,8 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/agent.py`: orchestrator and state machine (runs every minute)
 * `app/compliance.py`: opt-out list, lawful basis, local business hours (Sun–Thu KSA/Kuwait, calls 10–17), daily caps
 * `app/providers/llm.py`: Claude for research, scoring, emails, call briefs, reply triage (templates if no key)
-* `app/providers/channels.py`: Resend email, Vapi voice calls
+* `app/providers/channels.py`: email from your own mailbox (SMTP) or Resend, Vapi voice calls
+* `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes and lets the agent act on them
 * `app/providers/sources.py`: CSV import, Google Places search
 * `app/static/index.html`: dashboard (overview, leads, approvals, activity log, settings)
 
