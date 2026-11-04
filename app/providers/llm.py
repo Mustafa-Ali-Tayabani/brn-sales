@@ -8,8 +8,11 @@ import time
 
 from .. import db
 
-# Default to Claude Opus 5.5. Set BRN_MODEL=claude-haiku-5-5 (much cheaper) or claude-sonnet-5-5 to trade quality for cost.
-MODEL = os.environ.get("BRN_MODEL", "claude-opus-5-5")
+# Model is picked in Settings (default Claude Haiku 5.5, the cheapest). BRN_MODEL on the server overrides it.
+MODEL_ENV = os.environ.get("BRN_MODEL")
+# USD per million tokens (input, output). Check anthropic.com/pricing if these change.
+PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.0, 10.0), "claude-opus-5-5": (4.0, 20.0)}
+ECONOMY_TASKS = {"email", "reply", "intent"}
 EFFORT = os.environ.get("BRN_EFFORT", "low")  # short sales copy and JSON: low effort keeps cost and latency down
 _cooldown_until = 0.0
 _use_fallbacks = True
@@ -25,14 +28,71 @@ def enabled():
     return _client is not None
 
 
-def _usable():
-    return _client is not None and time.time() >= _cooldown_until
+def model():
+    return MODEL_ENV or db.setting("ai_model") or "claude-haiku-5-5"
+
+
+def spent(since_day=None):
+    day = since_day or db.now()[:10]
+    op = ">=" if since_day else "="
+    return db.one(f"SELECT COALESCE(SUM(cost),0) c, COALESCE(SUM(calls),0) n FROM ai_usage WHERE day{op}?", (day,))
+
+
+def _usable(task="research"):
+    if _client is None or time.time() < _cooldown_until:
+        return False
+    mode = db.setting("ai_mode") or "economy"
+    if mode == "off":
+        return False
+    if mode == "economy":
+        if task not in ECONOMY_TASKS:
+            return False
+        if task == "email" and db.setting("mode") == "dry_run":
+            return False  # dry runs never leave the system, so free templates are enough
+    budget = float(db.setting("ai_daily_budget") or 0)
+    if budget > 0 and spent()["c"] >= budget:
+        return False
+    return True
+
+
+def _record(task, usage):
+    m = model()
+    pin, pout = PRICES.get(m, PRICES["claude-opus-5-5"])
+    i, o = getattr(usage, "input_tokens", 0) or 0, getattr(usage, "output_tokens", 0) or 0
+    i += (getattr(usage, "cache_read_input_tokens", 0) or 0) + (getattr(usage, "cache_creation_input_tokens", 0) or 0)
+    cost = (i * pin + o * pout) / 1_000_000
+    db.ex("""INSERT INTO ai_usage(day, model, task, calls, input_tokens, output_tokens, cost) VALUES (?,?,?,1,?,?,?)
+             ON CONFLICT(day, model, task) DO UPDATE SET calls=calls+1, input_tokens=input_tokens+excluded.input_tokens,
+             output_tokens=output_tokens+excluded.output_tokens, cost=cost+excluded.cost""", (db.now()[:10], m, task, i, o, cost))
+
+
+def usage_report():
+    """Spend per day (last 30 days), today, this month, and the estimated balance left."""
+    today = db.now()[:10]
+    days = db.q("""SELECT day, SUM(calls) calls, SUM(input_tokens) input_tokens, SUM(output_tokens) output_tokens, SUM(cost) cost
+                   FROM ai_usage WHERE day>=date(?, '-30 day') GROUP BY day ORDER BY day DESC""", (today,))
+    tasks = db.q("SELECT task, SUM(calls) calls, SUM(cost) cost FROM ai_usage WHERE day>=date(?, '-30 day') GROUP BY task ORDER BY cost DESC", (today,))
+    bal, bal_at = db.setting("ai_balance"), db.setting("ai_balance_at")
+    left = None
+    if bal and bal_at:
+        try:
+            used = db.one("SELECT COALESCE(SUM(cost),0) c FROM ai_usage WHERE day>=?", (bal_at[:10],))["c"]
+            left = round(float(bal) - used, 2)
+        except ValueError:
+            left = None
+    return {"model": model(), "mode": db.setting("ai_mode"), "budget": float(db.setting("ai_daily_budget") or 0),
+            "today": round(spent()["c"], 4), "today_calls": spent()["n"], "month": round(spent(today[:8] + "01")["c"], 4),
+            "balance_entered": bal or None, "balance_at": bal_at or None, "balance_left": left,
+            "days": days, "tasks": tasks, "prices": PRICES.get(model())}
 
 
 def status():
     """For the dashboard: is Claude working, and if not, why."""
-    return {"configured": enabled(), "model": MODEL, "error": db.setting("llm_error") or None,
-            "error_at": db.setting("llm_error_at") or None, "cooling_down": enabled() and not _usable()}
+    r = usage_report()
+    return {"configured": enabled(), "model": model(), "error": db.setting("llm_error") or None,
+            "error_at": db.setting("llm_error_at") or None, "cooling_down": enabled() and time.time() < _cooldown_until,
+            "ai_mode": r["mode"], "today": r["today"], "budget": r["budget"], "balance_left": r["balance_left"],
+            "over_budget": r["budget"] > 0 and r["today"] >= r["budget"]}
 
 
 def _note_error(e):
@@ -52,11 +112,14 @@ def _note_error(e):
     db.set_setting("llm_error_at", db.now())
 
 
-def _ask_json(system, prompt, max_tokens=4000):
+def _ask_json(system, prompt, max_tokens=1200, task="research"):
     global _use_fallbacks
-    kwargs = dict(model=MODEL, max_tokens=max_tokens, system=system,
+    m = model()
+    kwargs = dict(model=m, max_tokens=max_tokens, system=system,
                   messages=[{"role": "user", "content": prompt}], output_config={"effort": EFFORT})
-    if _use_fallbacks:  # server-side fallback if a safety classifier declines (tolerated if unsupported)
+    if m.startswith("claude-haiku"):
+        kwargs["thinking"] = {"type": "disabled"}  # no thinking tokens for short copy: cheapest and fastest
+    if _use_fallbacks and not m.startswith("claude-haiku"):  # Haiku has no server-side fallback  # server-side fallback if a safety classifier declines (tolerated if unsupported)
         kwargs["extra_headers"] = {"anthropic-beta": "server-side-fallback-2026-07-01"}
         kwargs["extra_body"] = {"fallbacks": "default"}
     try:
@@ -64,8 +127,10 @@ def _ask_json(system, prompt, max_tokens=4000):
     except Exception as e:
         if _use_fallbacks and "fallback" in str(e).lower():
             _use_fallbacks = False
-            return _ask_json(system, prompt, max_tokens)
+            return _ask_json(system, prompt, max_tokens, task)
         raise
+    if getattr(msg, "usage", None) is not None:
+        _record(task, msg.usage)
     if getattr(msg, "stop_reason", None) == "refusal":
         raise RuntimeError("Claude declined this request")
     text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
@@ -92,6 +157,8 @@ def _lead_view(lead):
     except Exception:
         extra = {}
     if extra:
+        if isinstance(extra.get("issues"), list):
+            extra = {**extra, "issues": extra["issues"][:4]}  # keep prompts short: the top issues are enough
         v["data"] = extra
     return v
 
@@ -104,13 +171,13 @@ def _extra(lead):
 
 
 def research(lead, offer, icp, product_key=None):
-    if _usable():
+    if _usable("research"):
         try:
             return _ask_json(SYSTEM, f"""Offer: {offer}
 Ideal customer: {icp}
 Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 If the lead data includes website scan results (health score, issues), use the most concrete issue as the main hook.
-Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "language": "ar"|"en"}}""")
+Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "language": "ar"|"en"}}""", 800, "research")
         except Exception as e:
             _note_error(e)
     ind = f"{lead.get('industry') or ''} {lead.get('segment') or ''}".lower()
@@ -145,7 +212,7 @@ STEP_GOAL = {
 
 
 def write_email(lead, research_, action, settings):
-    if _usable():
+    if _usable("email"):
         try:
             return _ask_json(SYSTEM, f"""Write a cold B2B email.
 Goal of this step: {STEP_GOAL.get(action, action)}
@@ -156,7 +223,7 @@ Research: {json.dumps(research_, ensure_ascii=False)}
 Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated by blank lines.
 Start with a greeting ("Hi <first name>," or "Hi there," if no name). Do NOT add a sign-off, signature, links or the booking URL:
 the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.
-Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 words"}}""", 800)
+Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 words"}}""", 800, "email")
         except Exception as e:
             _note_error(e)
     name = (lead.get("contact_name") or "there").split(" ")[0]
@@ -200,14 +267,14 @@ Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 word
 
 
 def call_script(lead, research_, settings):
-    if _usable():
+    if _usable("call"):
         try:
             return _ask_json(SYSTEM, f"""Write a short voice-agent brief for an outbound B2B call.
 Offer: {settings['offer']}
 Lead: {json.dumps(lead, ensure_ascii=False, default=str)}
 Research: {json.dumps(research_, ensure_ascii=False)}
 The agent must say it is an AI assistant calling for brn dynamics, ask permission to continue, offer to remove them from the list,
-and aim to book a 15 minute demo. Return JSON: {{"opening": str, "talking_points": [str], "objections": {{str: str}}, "goal": str, "language": "ar"|"en"}}""")
+and aim to book a 15 minute demo. Return JSON: {{"opening": str, "talking_points": [str], "objections": {{str: str}}, "goal": str, "language": "ar"|"en"}}""", 900, "call")
         except Exception as e:
             _note_error(e)
     return {
@@ -224,10 +291,10 @@ and aim to book a 15 minute demo. Return JSON: {{"opening": str, "talking_points
 
 def classify_reply(text):
     """Classify an inbound email reply or call outcome."""
-    if _usable():
+    if _usable("reply"):
         try:
             return _ask_json(SYSTEM, f"""Classify this prospect reply: {text!r}
-Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsubscribe"|"wrong_person"|"question", "summary": str}}""", 300)
+Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsubscribe"|"wrong_person"|"question", "summary": str}}""", 300, "reply")
         except Exception as e:
             _note_error(e)
     t = text.lower()
@@ -249,13 +316,13 @@ def intent_reply(lead, settings):
     Drafts a helpful, non-salesy reply that a person posts by hand. Nothing is sent automatically."""
     post = {k: lead.get(k) for k in ("company", "notes", "website", "city", "country")}
     post["data"] = _extra(lead)
-    if _usable():
+    if _usable("intent"):
         try:
             return _ask_json(SYSTEM, f"""Someone posted publicly asking for help. Our relevant offer: {settings['offer']}
 Post: {json.dumps(post, ensure_ascii=False, default=str)}
 Decide if this is a genuine request we can help with, and draft a short, genuinely helpful public reply
 (useful advice first, mention brn dynamics once at the end, no hard sell, no links unless natural).
-Return JSON: {{"summary": str, "reply_draft": str, "score": int 0-100, "score_reason": str}}""", 1500)
+Return JSON: {{"summary": str, "reply_draft": str, "score": int 0-100, "score_reason": str}}""", 700, "intent")
         except Exception as e:
             _note_error(e)
     title = lead.get("notes") or lead.get("company") or "your post"

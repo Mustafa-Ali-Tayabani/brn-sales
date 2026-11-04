@@ -422,8 +422,10 @@ def get_settings():
 def save_settings(payload: dict = Body(...)):
     if payload.get("mode") == "live" and os.environ.get("BRN_ALLOW_LIVE") != "1":
         raise HTTPException(403, "Live sending is locked. Set BRN_ALLOW_LIVE=1 on the server once outreach is approved.")
+    if "ai_balance" in payload and str(payload["ai_balance"]) != str(db.setting("ai_balance") or ""):
+        db.set_setting("ai_balance_at", db.now())  # spend is counted from the moment the balance was entered
     for k, v in payload.items():
-        if k in db.DEFAULT_SETTINGS:
+        if k in db.DEFAULT_SETTINGS and k != "ai_balance_at":
             db.set_setting(k, json.dumps(v) if k in ("sequence", "products", "discovery_queries") else v)
     db.log(None, "system", f"Settings changed: {', '.join(payload)}", channel="system")
     return {"ok": True}
@@ -441,6 +443,20 @@ def add_suppression(payload: dict = Body(...)):
 
 
 # ---------- agent controls ----------
+@app.post("/api/agent/state")
+def agent_state(payload: dict = Body(...)):
+    on = bool(payload.get("on"))
+    db.set_setting("agent_enabled", "1" if on else "0")
+    db.log(None, "system", "Agent started" if on else "Agent stopped: no research, emails, calls, inbox reading or lead searches until started again",
+           channel="system")
+    return {"agent_enabled": on}
+
+
+@app.get("/api/ai/usage")
+def ai_usage():
+    return llm.usage_report()
+
+
 @app.post("/api/agent/tick")
 def tick():
     return {"processed": agent.tick()}
@@ -575,6 +591,10 @@ def _loop():
     n = 0
     while True:
         try:
+            if db.setting("agent_enabled") != "1":  # stopped: nothing runs at all
+                n += 1
+                time.sleep(60)
+                continue
             agent.tick()
             if n % 5 == 0 and inbox.enabled():  # read replies every 5 minutes
                 inbox.poll(agent.handle_reply)

@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS suppression (
   reason TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_usage (
+    day TEXT NOT NULL, model TEXT NOT NULL, task TEXT NOT NULL DEFAULT '', calls INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, model, task)
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -149,6 +154,13 @@ DEFAULT_SETTINGS = {
     "discovery_queries": json.dumps([]),
     "last_discovery": "",
     "auto_discovery": "1",
+    # Claude usage. economy: Claude only writes emails that really go out (approval/live), reads replies and drafts
+    # replies to people asking online; research, dry runs and call briefs use free templates. full: Claude for everything.
+    "ai_mode": "economy",
+    "ai_model": "claude-haiku-5-5",
+    "ai_daily_budget": "0.50",
+    "ai_balance": "",
+    "ai_balance_at": "",
     "pipeline_runs": "{}",
     "sequence": json.dumps([
         {"day": 0, "channel": "email", "action": "intro"},

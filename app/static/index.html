@@ -22,7 +22,8 @@ main{margin-left:220px;padding:28px 32px;max-width:1440px}
 .top{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}.top h1{font-size:26px;flex:1}
 button,.btn{font:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;cursor:pointer;color:var(--ink);text-decoration:none;display:inline-block}
 button.pri{background:var(--blue);border-color:var(--blue);color:#fff}button.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
-button.danger{color:var(--bad)}button:disabled{opacity:.5;cursor:default}button.sm{padding:4px 9px;font-size:12px}
+button.danger{color:var(--bad)}button.stop{background:#fdecea;border-color:#f3c2bc;color:var(--bad);font-weight:600}button.go{background:#e7f6ee;border-color:#bfe6cf;color:var(--ok);font-weight:600}
+button.stop:not(:disabled):hover{background:var(--bad);color:#fff;border-color:var(--bad)}button.go:not(:disabled):hover{background:var(--ok);color:#fff;border-color:var(--ok)}button:disabled{opacity:.5;cursor:default}button.sm{padding:4px 9px;font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .kpi span{color:var(--mut);font-size:12px}.kpi b{display:block;font:700 28px "Space Grotesk"}
@@ -114,11 +115,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
   <button class="nav" data-v="approvals">Approvals <span class="pill" id="napp">0</span></button>
   <button class="nav" data-v="log">Activity log</button>
   <button class="nav" data-v="settings">Settings &amp; automation</button>
-  <div class="mode"><span id="agentState"></span>Send mode<b id="mode">dry run</b><span id="eng"></span></div>
+  <div class="mode"><span id="agentState"></span>Send mode<b id="mode">dry run</b><span id="eng"></span><span id="spend" style="display:block;margin-top:6px"></span></div>
 </aside>
 <main>
   <div class="top"><h1 id="title">Overview</h1>
     <span class="updated" id="updated"></span>
+    <button id="agentBtn" onclick="toggleAgent()"></button>
     <button id="refreshBtn" onclick="manualRefresh()" title="Reload everything"><span class="spin">↻</span> Refresh</button>
     <button onclick="openImport()">Import leads</button>
     <button class="dark" onclick="runTick()">Run agent now</button>
@@ -220,6 +222,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
         <textarea id="s-discovery" placeholder="gyms in Riyadh | SA | 20"></textarea>
         <label>Sequence (JSON)</label><textarea id="s-sequence" style="min-height:130px;font-family:ui-monospace,monospace;font-size:12px"></textarea>
       </div>
+      <div class="card"><h3>Claude usage &amp; cost</h3>
+        <label>How much to use Claude</label><select id="s-ai_mode" style="width:100%">
+          <option value="economy">Economy (recommended): Claude only for emails that really go out, replies, and posts asking online</option>
+          <option value="full">Full: Claude for research, every draft and call notes (costs more)</option>
+          <option value="off">Off: free templates only, no Claude costs</option></select>
+        <p class="muted" style="font-size:12px;margin:4px 0 0">In Economy, research, dry runs and call notes use free templates.</p>
+        <div class="row"><div style="flex:1"><label>Model</label><select id="s-ai_model" style="width:100%"><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest, $0.10 / $0.50 per million tokens)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 ($2 / $10)</option><option value="claude-opus-5-5">Claude Opus 5.5 (best, $4 / $20)</option></select></div>
+          <div><label>Daily budget, USD</label><input id="s-ai_daily_budget" type="number" step="0.05" min="0" style="width:110px"></div></div>
+        <label>Your current Anthropic credit balance, USD (copy it from the billing page; the agent's spend is subtracted from it)</label>
+        <div class="row"><input id="s-ai_balance" type="number" step="0.01" min="0" placeholder="e.g. 20.00" style="width:140px"><a class="btn" href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Open Anthropic billing ↗</a></div>
+        <div id="usage" style="margin-top:12px"></div></div>
       <div class="card"><h3>Sender &amp; email template</h3>
         <div class="row"><div><label>Sender name</label><input id="s-sender_name"></div><div><label>Sender email</label><input id="s-sender_email"></div></div>
         <label>Default booking / CTA link</label><input id="s-booking_link" style="width:100%">
@@ -287,9 +300,12 @@ async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f
 function setLProd(p){lProduct=p;loadFacets();loadLeads(0)}function setOvProd(p){ovProduct=p;loadFacets();loadStats()}
 
 async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='+ovProduct:''));
+  window.AGENT=s.agent_enabled;const ab=$('#agentBtn');ab.className=s.agent_enabled?'stop':'go';ab.innerHTML=s.agent_enabled?'■ Stop agent':'▶ Start agent';
   window.MODE=s.mode;$('#mode').textContent=s.mode.replace('_',' ');const L=s.llm_status||{};
   $('#eng').textContent=!s.llm?'Template engine (no API key)':L.error?'Claude: problem, using templates':'Claude connected';
-  $('#sysBanner').innerHTML=s.llm&&L.error?`<div class="banner"><b>Claude isn't answering right now</b>, so the agent is using built-in templates (research and emails still work, just less personal). ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}) It retries automatically every 10 minutes.</span></div>`:'';$('#napp').textContent=s.kpis.pending_approvals;
+  $('#spend').innerHTML=s.llm?`Claude today <b style="display:inline;font-size:12px;letter-spacing:0">${usd(L.today)}</b>${L.budget?' of $'+L.budget.toFixed(2):''}${L.balance_left!=null?'<br>Balance left ≈ $'+L.balance_left.toFixed(2):''}`:'';
+  $('#sysBanner').innerHTML=(!s.agent_enabled?'<div class="banner"><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches. Click "Start agent" to resume.</div>':'')
+   +(s.llm&&L.over_budget?`<div class="banner">Today's Claude budget ($${L.budget.toFixed(2)}) is used up, so the agent is on free templates until tomorrow. Change it in Settings &gt; Claude usage.</div>`:'')+(s.llm&&L.error?`<div class="banner"><b>Claude isn't answering right now</b>, so the agent is using built-in templates (research and emails still work, just less personal). ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}) It retries automatically every 10 minutes.</span></div>`:'');$('#napp').textContent=s.kpis.pending_approvals;
   $('#agentState').innerHTML=`<div style="margin-bottom:6px"><span class="dot ${s.agent_enabled?'':'off'}"></span>Agent ${s.agent_enabled?'running':'paused'}</div>`;
   if(!ovProduct)$('#nleads').textContent=s.kpis.leads;
   if(view!='overview')return;
@@ -393,10 +409,13 @@ async function loadApps(){const r=await api('/api/approvals');
   :`<div class="card empty"><h3>Nothing waiting for approval</h3><p class="muted">${MODE=='approval'?'The agent is in Approval mode. New drafts show up here as leads reach their next step (only during local business hours).':
    `Send mode is <b>${(MODE||'dry run').replace('_',' ')}</b>, so the agent drafts and logs every email without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.`}</p>
    ${MODE!='approval'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`}
+const usd=v=>'$'+(+v||0).toFixed((+v||0)<1?4:2);
+async function toggleAgent(){const on=!window.AGENT;if(!on&&!confirmText('Stop the agent? Nothing will run until you start it again.'))return;
+  await api('/api/agent/state',{method:'POST',body:{on}});toast(on?'Agent started':'Agent stopped');refresh()}
 async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}});toast('Send mode: '+m);refresh()}
 async function decide(id,ok,ch){const body={approve:ok};if(ok&&ch=='email')body.content={subject:$('#as'+id).value,body:$('#ab'+id).value,cta:$('#ac'+id).value};await api('/api/approvals/'+id,{method:'POST',body});refresh()}
 
-const SKEYS=['mode','agent_enabled','auto_discovery','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];
+const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];
 async function loadSettings(){const s=await api('/api/settings');
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
   SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');$('#s-sequence').value=JSON.stringify(s.sequence,null,1);$('#s-products').value=JSON.stringify(s.products,null,1);
@@ -405,6 +424,12 @@ async function loadSettings(){const s=await api('/api/settings');
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
   $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
+  const u=await api('/api/ai/usage');
+  $('#usage').innerHTML=`<div class="kpis" style="margin-bottom:8px"><div class="kpi"><span>Today</span><b>${usd(u.today)}</b></div><div class="kpi"><span>This month</span><b>${usd(u.month)}</b></div>
+   <div class="kpi"><span>Balance left (estimate)</span><b>${u.balance_left!=null?'$'+u.balance_left.toFixed(2):'–'}</b></div></div>
+   <p class="muted" style="font-size:12px;margin:0 0 8px">Anthropic doesn't let an app read your credit balance, so this is counted from every Claude call the agent makes${u.balance_at?', starting from the balance you entered on '+fdate(u.balance_at):''}. The billing page has the exact figure.</p>
+   ${u.days.length?`<table><tr><th>Day</th><th>Claude calls</th><th>Tokens in / out</th><th>Cost</th></tr>${u.days.slice(0,10).map(d=>`<tr><td>${d.day}</td><td>${d.calls}</td><td class="muted">${d.input_tokens.toLocaleString()} / ${d.output_tokens.toLocaleString()}</td><td>${usd(d.cost)}</td></tr>`).join('')}</table>
+   <p class="muted" style="font-size:12px">Last 30 days by task: ${u.tasks.map(t=>`${t.task} ${t.calls} calls ${usd(t.cost)}`).join(' · ')}</p>`:'<p class="muted">No Claude calls recorded yet.</p>'}`;
   const sup=await api('/api/suppression');$('#sup').innerHTML=sup.map(x=>`<tr><td>${esc(x.value)}</td><td class="muted">${esc(x.reason)}</td></tr>`).join('')||'<tr><td class="muted">Empty</td></tr>'}
 async function saveSettings(){const b={};SKEYS.forEach(k=>b[k]=$('#s-'+k).value);
   try{b.sequence=JSON.parse($('#s-sequence').value)}catch{return alertBanner('Sequence is not valid JSON',true)}
