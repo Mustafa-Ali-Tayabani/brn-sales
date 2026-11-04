@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>brn. pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0B0C10;--paper:#F4F4F0;--card:#fff;--blue:#010ECF;--blue2:#6E7BFF;--mut:#6b6d76;--line:#e3e3dd;--ok:#127a4a;--warn:#a15c00;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 "DM Sans",system-ui,sans-serif;background:var(--paper);color:var(--ink)}
+h1,h2,h3{font-family:"Space Grotesk",sans-serif;margin:0}
+.side{position:fixed;inset:0 auto 0 0;width:220px;background:var(--ink);color:#fff;padding:22px 16px;display:flex;flex-direction:column;gap:4px}
+.logo{font:700 22px "Space Grotesk";margin:0 8px 22px}.logo b{color:var(--blue2)}
+.nav{all:unset;cursor:pointer;padding:9px 12px;border-radius:8px;color:#c9cad1;display:flex;justify-content:space-between}
+.nav:hover{background:#1b1d25}.nav.on{background:var(--blue);color:#fff}
+.pill{font-size:11px;padding:1px 7px;border-radius:99px;background:#ffffff22}
+.mode{margin-top:auto;font-size:12px;color:#c9cad1;padding:10px 12px;border:1px solid #2a2c35;border-radius:10px}
+.mode b{display:block;color:#fff;font-size:14px;text-transform:uppercase;letter-spacing:.06em}
+main{margin-left:220px;padding:28px 32px;max-width:1300px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:20px}.top h1{font-size:26px;flex:1}
+button,.btn{font:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;cursor:pointer}
+button.pri{background:var(--blue);border-color:var(--blue);color:#fff}button.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+button:disabled{opacity:.5;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi span{color:var(--mut);font-size:12px}.kpi b{display:block;font:700 28px "Space Grotesk"}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card h3{font-size:15px;margin-bottom:12px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--mut);font-weight:500}tr.click{cursor:pointer}tr.click:hover{background:#f7f7ff}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#eef;color:var(--blue);white-space:nowrap}
+.tag.ok{background:#e7f6ee;color:var(--ok)}.tag.dry_run{background:#eef0ff;color:var(--blue)}.tag.blocked,.tag.error{background:#fdecea;color:var(--bad)}.tag.pending_approval{background:#fff4e0;color:var(--warn)}
+.funnel div{display:flex;align-items:center;gap:10px;margin:7px 0}.funnel span{width:80px;color:var(--mut);font-size:12px}
+.bar{height:22px;background:var(--blue);border-radius:5px;color:#fff;font-size:12px;padding:2px 8px;min-width:28px}
+.chart{display:flex;align-items:flex-end;gap:6px;height:170px;padding-top:10px}
+.chart .col{flex:1;display:flex;flex-direction:column-reverse;gap:2px;align-items:stretch}
+.chart .seg{border-radius:3px}.chart .lbl{font-size:10px;color:var(--mut);text-align:center;margin-top:4px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}input,select,textarea{font:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff}
+textarea{width:100%;min-height:90px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:#fff;border-left:1px solid var(--line);box-shadow:-10px 0 40px #0002;padding:22px;overflow:auto;transform:translateX(100%);transition:.2s}
+.drawer.open{transform:none}
+.tl{border-left:2px solid var(--line);margin-left:6px;padding-left:16px}.tl .ev{position:relative;margin-bottom:14px}
+.tl .ev:before{content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--blue)}
+.tl .ev small{color:var(--mut)}pre{white-space:pre-wrap;background:var(--paper);padding:10px;border-radius:8px;font:12px/1.5 ui-monospace,monospace;margin:6px 0 0}
+.muted{color:var(--mut)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.banner{background:#fff4e0;border:1px solid #f5d9a8;color:#6b3d00;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px}
+.hide{display:none}label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
+@media(max-width:900px){.side{position:static;width:auto;flex-direction:row;flex-wrap:wrap}.mode{display:none}main{margin:0;padding:16px}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<aside class="side">
+  <div class="logo">brn<b>.</b> pipeline</div>
+  <button class="nav on" data-v="overview">Overview</button>
+  <button class="nav" data-v="leads">Leads</button>
+  <button class="nav" data-v="approvals">Approvals <span class="pill" id="napp">0</span></button>
+  <button class="nav" data-v="log">Activity log</button>
+  <button class="nav" data-v="settings">Settings &amp; compliance</button>
+  <div class="mode">Send mode<b id="mode">dry run</b><span id="eng"></span></div>
+</aside>
+<main>
+  <div class="top"><h1 id="title">Overview</h1>
+    <button onclick="runTick()">Run agent now</button>
+    <button class="dark" id="simBtn" onclick="simulate()">Simulate 14 days</button>
+  </div>
+  <div id="banner"></div>
+
+  <section id="v-overview">
+    <div class="kpis" id="kpis"></div>
+    <div class="grid2">
+      <div class="card"><h3>Outreach, last 14 days</h3><div class="chart" id="chart"></div>
+        <div class="legend"><span><i style="background:var(--blue)"></i>Emails</span><span><i style="background:var(--blue2)"></i>Calls</span><span><i style="background:var(--ink)"></i>Replies</span></div></div>
+      <div class="card"><h3>Funnel</h3><div class="funnel" id="funnel"></div></div>
+    </div>
+    <div class="card"><h3>Latest agent activity</h3><table id="recent"></table></div>
+  </section>
+
+  <section id="v-leads" class="hide">
+    <div class="filters">
+      <input id="lq" placeholder="Search company, contact, city" oninput="loadLeads()">
+      <select id="ls" onchange="loadLeads()"><option value="">All stages</option></select>
+      <span style="flex:1"></span>
+      <button onclick="toggle('addbox')">Add / import leads</button>
+    </div>
+    <div class="card hide" id="addbox">
+      <h3>Import leads</h3>
+      <p class="muted">CSV columns: company, contact_name, title, email, phone, website, city, country, industry, consent_basis, notes</p>
+      <textarea id="csv" placeholder="company,contact_name,email,phone,city,country,industry"></textarea>
+      <div class="row" style="margin-top:8px"><button class="pri" onclick="importCsv()">Import CSV</button>
+        <span class="muted">or find businesses:</span><input id="pq" placeholder="gyms in Riyadh"><select id="pc"><option>SA</option><option>KW</option><option>AE</option></select>
+        <button onclick="importPlaces()">Search Google Places</button></div>
+    </div>
+    <div class="card" style="padding:0"><table id="leads"></table></div>
+  </section>
+
+  <section id="v-approvals" class="hide"><div id="apps"></div></section>
+
+  <section id="v-log" class="hide">
+    <div class="filters">
+      <select id="fk" onchange="loadLog()"><option value="">All events</option><option>research</option><option>email_sent</option><option>call_completed</option><option>email_reply</option><option>stage_change</option><option>approval</option><option>blocked</option><option>system</option></select>
+      <select id="fs" onchange="loadLog()"><option value="">Any status</option><option>ok</option><option>dry_run</option><option>pending_approval</option><option>blocked</option><option>error</option></select>
+      <span style="flex:1"></span><a class="btn" href="/api/export/activities.csv">Export CSV</a>
+    </div>
+    <div class="card" style="padding:0"><table id="log"></table></div>
+  </section>
+
+  <section id="v-settings" class="hide"><div class="grid2">
+    <div class="card"><h3>Agent</h3>
+      <label>Send mode</label><select id="s-mode"><option value="dry_run">Dry run: nothing leaves the system</option><option value="approval">Approval: a human approves every email and call</option><option value="live">Live: auto-send within caps</option></select>
+      <label>What we sell</label><textarea id="s-offer"></textarea>
+      <label>Ideal customer</label><textarea id="s-icp"></textarea>
+      <div class="row"><div><label>Sender name</label><input id="s-sender_name"></div><div><label>Sender email</label><input id="s-sender_email"></div></div>
+      <label>Booking link</label><input id="s-booking_link" style="width:100%">
+      <div class="row"><div><label>Emails / day</label><input id="s-daily_email_cap" type="number"></div><div><label>Calls / day</label><input id="s-daily_call_cap" type="number"></div><div><label>Min fit score</label><input id="s-min_score" type="number"></div></div>
+      <label>Sequence (JSON)</label><textarea id="s-sequence" style="min-height:140px;font-family:ui-monospace,monospace;font-size:12px"></textarea>
+      <div style="margin-top:12px"><button class="pri" onclick="saveSettings()">Save</button></div>
+    </div>
+    <div>
+      <div class="card"><h3>Providers</h3><table id="prov"></table></div>
+      <div class="card"><h3>Guardrails</h3><ul class="muted" style="padding-left:18px;margin:0">
+        <li>Every send checks the opt-out list, lawful basis, local business hours (Sun–Thu in KSA/Kuwait; calls 10:00–17:00) and daily caps.</li>
+        <li>Every email carries a "reply stop" opt-out; a stop reply or "remove me" on a call adds the lead to the suppression list for good.</li>
+        <li>The voice agent says it is an AI assistant for brn dynamics and asks permission to continue.</li>
+        <li>Live mode stays locked until the server sets BRN_ALLOW_LIVE=1.</li></ul></div>
+      <div class="card"><h3>Do-not-contact list</h3>
+        <div class="row"><input id="supv" placeholder="email, phone or domain"><button onclick="addSup()">Add</button></div>
+        <table id="sup" style="margin-top:8px"></table></div>
+    </div>
+  </div></section>
+</main>
+
+<div class="drawer" id="drawer"></div>
+
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const api=async(p,o={})=>{const r=await fetch(p,{headers:{'Content-Type':'application/json'},...o,body:o.body?JSON.stringify(o.body):undefined});if(!r.ok){const t=await r.text();alertBanner(t);throw t}return r.json()};
+const STAGES=['new','researched','in_sequence','awaiting_approval','replied','meeting_booked','nurture','completed','disqualified','opted_out','won','lost'];
+const fmt=t=>t?new Date(t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+let view='overview';
+function alertBanner(t){$('#banner').innerHTML=`<div class="banner">${esc(t)}</div>`;setTimeout(()=>$('#banner').innerHTML='',6000)}
+function toggle(id){$('#'+id).classList.toggle('hide')}
+document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){view=v;document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==v));
+  document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hide',s.id!='v-'+v));
+  $('#title').textContent={overview:'Overview',leads:'Leads',approvals:'Approvals',log:'Activity log',settings:'Settings & compliance'}[v];refresh()}
+function refresh(){loadStats();({overview:loadRecent,leads:loadLeads,approvals:loadApps,log:loadLog,settings:loadSettings})[view]()}
+
+async function loadStats(){const s=await api('/api/stats');
+  $('#mode').textContent=s.mode.replace('_',' ');$('#eng').textContent=s.llm?'Claude connected':'Template engine (no API key)';$('#napp').textContent=s.kpis.pending_approvals;
+  $('#simBtn').disabled=s.mode=='live';
+  if(view!='overview')return;
+  const k=s.kpis,K=[['Leads',k.leads],['Qualified',k.qualified],['Contacted',k.contacted],['Emails sent',k.emails],['Calls made',k.calls],['Replies',k.replies],['Meetings',k.meetings],['Blocked by guardrails',k.blocked]];
+  $('#kpis').innerHTML=K.map(([a,b])=>`<div class="kpi"><span>${a}</span><b>${b}</b></div>`).join('');
+  const max=Math.max(1,...s.funnel.map(f=>f[1]));
+  $('#funnel').innerHTML=s.funnel.map(([a,b])=>`<div><span>${a}</span><div class="bar" style="width:${Math.max(6,b/max*100)}%">${b}</div></div>`).join('');
+  const days=[...Array(14)].map((_,i)=>{const d=new Date(Date.now()-(13-i)*864e5).toISOString().slice(0,10);return s.daily.find(x=>x.d==d)||{d,emails:0,calls:0,replies:0}});
+  const m=Math.max(1,...days.map(d=>d.emails+d.calls+d.replies));
+  $('#chart').innerHTML=days.map(d=>`<div style="flex:1"><div class="col" style="height:150px" title="${d.d}: ${d.emails} emails, ${d.calls} calls, ${d.replies} replies">
+    <div class="seg" style="height:${d.emails/m*100}%;background:var(--blue)"></div><div class="seg" style="height:${d.calls/m*100}%;background:var(--blue2)"></div><div class="seg" style="height:${d.replies/m*100}%;background:var(--ink)"></div></div><div class="lbl">${d.d.slice(8)}</div></div>`).join('')}
+
+const logRow=a=>`<tr class="click" onclick="openLead(${a.lead_id||0})"><td class="muted" style="white-space:nowrap">${fmt(a.created_at)}</td><td>${esc(a.company||'System')}</td><td><span class="tag">${a.kind}</span></td><td><span class="tag ${a.status}">${a.status}</span></td><td>${esc(a.summary)}</td></tr>`;
+const logHead='<tr><th>When</th><th>Lead</th><th>Event</th><th>Status</th><th>Detail</th></tr>';
+async function loadRecent(){const r=await api('/api/activities?limit=12');$('#recent').innerHTML=logHead+r.map(logRow).join('')}
+async function loadLog(){const r=await api(`/api/activities?limit=500&kind=${$('#fk').value}&status=${$('#fs').value}`);$('#log').innerHTML=logHead+r.map(logRow).join('')}
+
+$('#ls').innerHTML+=STAGES.map(s=>`<option>${s}</option>`).join('');
+async function loadLeads(){const r=await api(`/api/leads?stage=${$('#ls').value}&q=${encodeURIComponent($('#lq').value)}`);
+  $('#leads').innerHTML='<tr><th>Company</th><th>Contact</th><th>Location</th><th>Score</th><th>Stage</th><th>Next action</th></tr>'+r.map(l=>`<tr class="click" onclick="openLead(${l.id})">
+  <td><b>${esc(l.company)}</b><br><span class="muted">${esc(l.industry)}</span></td><td>${esc(l.contact_name)}<br><span class="muted">${esc(l.email)}</span></td>
+  <td>${esc(l.city)} ${esc(l.country)}</td><td>${l.score??''}</td><td><span class="tag">${l.stage}</span></td><td class="muted">${esc(l.next_action)} ${fmt(l.next_action_at)}</td></tr>`).join('')}
+
+async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=l.research||{};
+  $('#drawer').innerHTML=`<div class="row"><h2 style="flex:1">${esc(l.company)}</h2><button onclick="$('#drawer').classList.remove('open')">Close</button></div>
+  <p class="muted">${esc(l.contact_name)} ${l.title?'· '+esc(l.title):''}<br>${esc(l.email)} · ${esc(l.phone)}<br>${esc(l.city)}, ${esc(l.country)} · source ${esc(l.source)} · basis ${esc(l.consent_basis)}</p>
+  <div class="row"><span class="tag">${l.stage}</span><span class="muted">score ${l.score??'–'}</span>
+   <select onchange="setStage(${l.id},this.value)"><option value="">Move to…</option>${STAGES.map(s=>`<option>${s}</option>`).join('')}</select></div>
+  ${r.summary?`<div class="card" style="margin-top:14px"><h3>Agent research</h3><p>${esc(r.summary)}</p><p class="muted"><b>Pain points:</b> ${esc((r.pain_points||[]).join('; '))}<br><b>Hooks:</b> ${esc((r.hooks||[]).join('; '))}<br><b>Why this score:</b> ${esc(r.score_reason)}</p></div>`:''}
+  <div class="card"><h3>Log a reply from this lead</h3><textarea id="rtext" placeholder="Paste their email reply, e.g. 'Sounds good, can we talk Tuesday?'"></textarea><button class="pri" style="margin-top:8px" onclick="sendReply(${l.id})">Classify and update</button></div>
+  <h3 style="margin:16px 0 10px">Timeline</h3><div class="tl">${l.activities.map(a=>{const p=JSON.parse(a.payload||'{}');
+   const body=p.body?`<pre>Subject: ${esc(p.subject)}\n\n${esc(p.body)}</pre>`:p.transcript?`<pre>${esc(p.transcript)}</pre>`:p.text?`<pre>${esc(p.text)}</pre>`:'';
+   return `<div class="ev"><small>${fmt(a.created_at)} · ${a.channel} · <span class="tag ${a.status}">${a.status}</span></small><div>${esc(a.summary)}</div>${body}</div>`}).join('')}</div>`;
+  $('#drawer').classList.add('open')}
+async function setStage(id,s){if(!s)return;await api('/api/leads/'+id,{method:'PATCH',body:{stage:s}});openLead(id);refresh()}
+async function sendReply(id){const r=await api(`/api/leads/${id}/reply`,{method:'POST',body:{text:$('#rtext').value}});alertBanner('Reply classified as: '+r.intent);openLead(id);refresh()}
+
+async function loadApps(){const r=await api('/api/approvals');
+  $('#apps').innerHTML=r.length?r.map(a=>`<div class="card"><div class="row"><h3 style="flex:1">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
+  ${a.channel=='email'?`<label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(a.content.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(a.content.body)}</textarea>`
+   :`<label>Call brief</label><pre>${esc(JSON.stringify(a.content,null,2))}</pre>`}
+  <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}')">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button></div></div>`).join('')
+  :'<div class="card muted">Nothing waiting. Drafts appear here when send mode is "Approval".</div>'}
+async function decide(id,ok,ch){const body={approve:ok};if(ok&&ch=='email')body.content={subject:$('#as'+id).value,body:$('#ab'+id).value};await api('/api/approvals/'+id,{method:'POST',body});refresh()}
+
+const SKEYS=['mode','offer','icp','sender_name','sender_email','booking_link','daily_email_cap','daily_call_cap','min_score'];
+async function loadSettings(){const s=await api('/api/settings');SKEYS.forEach(k=>$('#s-'+k).value=s[k]);$('#s-sequence').value=JSON.stringify(s.sequence,null,1);
+  $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;
+  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending (Resend)','email','RESEND_API_KEY'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
+   .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
+  const sup=await api('/api/suppression');$('#sup').innerHTML=sup.map(x=>`<tr><td>${esc(x.value)}</td><td class="muted">${esc(x.reason)}</td></tr>`).join('')||'<tr><td class="muted">Empty</td></tr>'}
+async function saveSettings(){const b={};SKEYS.forEach(k=>b[k]=$('#s-'+k).value);try{b.sequence=JSON.parse($('#s-sequence').value)}catch{return alertBanner('Sequence is not valid JSON')}
+  await api('/api/settings',{method:'POST',body:b});alertBanner('Saved');refresh()}
+async function addSup(){await api('/api/suppression',{method:'POST',body:{value:$('#supv').value,reason:'manual'}});$('#supv').value='';loadSettings()}
+async function importCsv(){const r=await api('/api/leads/import',{method:'POST',body:{csv:$('#csv').value}});alertBanner(`Imported ${r.imported.length} leads`);loadLeads()}
+async function importPlaces(){const r=await api('/api/leads/places',{method:'POST',body:{query:$('#pq').value,country:$('#pc').value}});alertBanner(`Imported ${r.imported.length} businesses`);loadLeads()}
+async function runTick(){const r=await api('/api/agent/tick',{method:'POST'});alertBanner(`Agent processed ${r.processed} actions`);refresh()}
+async function simulate(){$('#simBtn').disabled=true;$('#simBtn').textContent='Simulating…';try{const r=await api('/api/agent/simulate',{method:'POST',body:{days:14}});alertBanner(`Simulated 14 days: ${r.processed} agent actions (dry run, nothing sent)`)}finally{$('#simBtn').textContent='Simulate 14 days';refresh()}}
+refresh();setInterval(()=>{if(!$('#drawer').classList.contains('open'))refresh()},15000);
+</script>
+</body>
+</html>
