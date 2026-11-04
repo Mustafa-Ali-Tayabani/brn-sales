@@ -14,16 +14,11 @@ from email.utils import make_msgid
 
 import httpx
 
-from .. import db
+from .. import db, email_template
 
 
 def _live():
     return db.setting("mode") == "live"
-
-
-def unsubscribe_footer(lead):
-    return ("\n\n--\nbrn dynamics · Riyadh · Kuwait City · Karachi\n"
-            "Reply \"stop\" and we will not contact you again.")
 
 
 def email_provider():
@@ -39,7 +34,7 @@ def _sender():
     return db.setting("sender_email") or os.environ.get("SMTP_USER", "")
 
 
-def _send_smtp(lead, subject, body):
+def _send_smtp(lead, subject, body, html=None):
     user = os.environ["SMTP_USER"]
     sender = _sender()
     msg = EmailMessage()
@@ -49,6 +44,8 @@ def _send_smtp(lead, subject, body):
     msg["Message-ID"] = make_msgid(domain=sender.split("@")[-1])
     msg["List-Unsubscribe"] = f"<mailto:{sender}?subject=unsubscribe>"
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     port = int(os.environ.get("SMTP_PORT", "587"))
     ctx = ssl.create_default_context()
     try:
@@ -68,14 +65,14 @@ def _send_smtp(lead, subject, body):
     return {"status": "ok", "provider": "smtp", "provider_id": msg["Message-ID"], "to": lead["email"], "subject": subject, "body": body}
 
 
-def _send_resend(lead, subject, body):
+def _send_resend(lead, subject, body, html=None):
     sender = _sender()
     r = httpx.post(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"},
         json={
             "from": f"{db.setting('sender_name')} <{sender}>", "reply_to": sender,
-            "to": [lead["email"]], "subject": subject, "text": body,
+            "to": [lead["email"]], "subject": subject, "text": body, **({"html": html} if html else {}),
             "headers": {"List-Unsubscribe": f"<mailto:{sender}?subject=unsubscribe>"},
         },
         timeout=20,
@@ -85,21 +82,30 @@ def _send_resend(lead, subject, body):
     return {"status": "ok", "provider": "resend", "provider_id": r.json().get("id"), "to": lead["email"], "subject": subject, "body": body}
 
 
-def deliver(lead, subject, body):
+def deliver(lead, subject, body, html=None):
     """Send for real through whichever provider is configured (no mode check: callers decide)."""
     provider = email_provider()
     if provider == "resend":
-        return _send_resend(lead, subject, body)
+        return _send_resend(lead, subject, body, html)
     if provider == "smtp":
-        return _send_smtp(lead, subject, body)
+        return _send_smtp(lead, subject, body, html)
     raise RuntimeError("No email provider configured")
 
 
-def send_email(lead, subject, body):
-    body = body + unsubscribe_footer(lead)
+def build_email(lead, subject, body, cta=None, cta_label=None):
+    prod = db.products().get(lead.get("product") or "")
+    html = email_template.render(subject, body, cta, cta_label, prod["name"] if prod else None)
+    text = email_template.text_version(body, cta, cta_label)
+    return text, html
+
+
+def send_email(lead, subject, body, cta=None, cta_label=None):
+    text, html = build_email(lead, subject, body, cta, cta_label)
     if not (_live() and email_provider()):
-        return {"status": "dry_run", "to": lead["email"], "subject": subject, "body": body}
-    return deliver(lead, subject, body)
+        return {"status": "dry_run", "to": lead["email"], "subject": subject, "body": text, "cta": cta_label}
+    res = deliver(lead, subject, text, html)
+    res["body"], res["cta"] = text, cta_label
+    return res
 
 
 def place_call(lead, script):

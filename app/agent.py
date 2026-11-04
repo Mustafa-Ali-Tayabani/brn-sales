@@ -12,8 +12,17 @@ from .providers import channels, llm
 TERMINAL_BLOCKS = ("on suppression list", "no lawful basis", "GDPR", "calls need opt-in", "lead is ")
 
 
-def _settings():
-    return {k: db.setting(k) for k in ("offer", "icp", "sender_name", "booking_link")}
+def _settings(lead=None):
+    s = {k: db.setting(k) for k in ("offer", "icp", "sender_name", "booking_link")}
+    prods = db.products()
+    key = (lead or {}).get("product") or db.setting("default_product")
+    p = prods.get(key)
+    if p:
+        s["offer"], s["icp"], s["product_name"] = p["pitch"], p.get("icp", s["icp"]), p["name"]
+        if p.get("booking_link"):
+            s["booking_link"] = p["booking_link"]
+    s["product_key"] = key
+    return s
 
 
 def _iso(dt):
@@ -21,9 +30,13 @@ def _iso(dt):
 
 
 def research_lead(lead):
-    s = _settings()
+    if not (lead.get("email") or lead.get("phone")):
+        db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
+        db.log(lead["id"], "stage_change", "Needs contact details: no email or phone yet. Add one and move it back to 'new'.")
+        return
+    s = _settings(lead)
     try:
-        r = llm.research(lead, s["offer"], s["icp"])
+        r = llm.research(lead, s["offer"], s["icp"], s.get("product_key"))
     except Exception as e:  # keep the pipeline moving; log the failure
         db.log(lead["id"], "research", f"Research failed: {e}", status="error")
         return
@@ -39,7 +52,7 @@ def research_lead(lead):
 
 
 def _draft(lead, step):
-    s = _settings()
+    s = _settings(lead)
     r = json.loads(lead["research"] or "{}")
     if step["channel"] == "email":
         return llm.write_email(lead, r, step["action"], s)
@@ -60,10 +73,23 @@ def _advance(lead, seq, at):
 def deliver(lead, step, content, at):
     """Actually send (or dry-run) one step, log it, apply outcomes, and advance."""
     if step["channel"] == "email":
-        res = channels.send_email(lead, content["subject"], content["body"])
+        try:
+            res = channels.send_email(lead, content["subject"], content["body"], cta=_settings(lead)["booking_link"], cta_label=content.get("cta"))
+        except Exception as e:
+            db.log(lead["id"], "email_sent", f"Send failed, retrying in 1 hour: {e}", channel="email", status="error")
+            db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=1)))
+            return
+        res.pop("html", None)
         db.log(lead["id"], "email_sent", f"{step['action']}: {content['subject']}", channel="email", status=res["status"], payload=res)
+        db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
     else:
-        res = channels.place_call(lead, content)
+        try:
+            res = channels.place_call(lead, content)
+        except Exception as e:
+            db.log(lead["id"], "call_completed", f"Call failed, retrying in 2 hours: {e}", channel="phone", status="error")
+            db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=2)))
+            return
+        db.ex("UPDATE leads SET last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
         db.log(lead["id"], "call_completed", f"Call outcome: {res.get('outcome')}", channel="phone", status=res["status"], payload={**res, "script": content})
         if apply_outcome(lead["id"], res.get("outcome")):
             return
@@ -95,9 +121,9 @@ def run_step(lead, at):
         if reason == "outside local business hours":
             db.update_lead(lead["id"], next_action_at=_iso(compliance.next_window(lead.get("country"), step["channel"], at)))
             return
-        if "cap reached" in reason:
-            db.update_lead(lead["id"], next_action_at=_iso(at + timedelta(hours=12)))
-            db.log(lead["id"], "blocked", f"Deferred: {reason}", channel=step["channel"], status="blocked")
+        if "cap reached" in reason:  # wait for tomorrow's quota, quietly (not an error)
+            tomorrow = (at + timedelta(days=1)).replace(hour=0, minute=5, second=0, microsecond=0)
+            db.update_lead(lead["id"], next_action_at=_iso(compliance.next_window(lead.get("country"), step["channel"], tomorrow)))
             return
         if reason.startswith(("no email", "no phone")):
             db.log(lead["id"], "blocked", f"Skipped {step['action']}: {reason}", channel=step["channel"], status="blocked")
@@ -145,6 +171,7 @@ def decide(approval_id, approve, edited=None):
 def handle_reply(lead_id, text):
     intent = llm.classify_reply(text)
     db.log(lead_id, "email_reply", f"Reply ({intent.get('intent')}): {intent.get('summary', '')}", channel="email", payload={"text": text, **intent})
+    db.update_lead(lead_id, replied_at=db.now())
     apply_outcome(lead_id, intent.get("intent"))
     return intent
 
@@ -153,6 +180,8 @@ def tick(at=None):
     """One pass of the agent loop. Called every minute by the scheduler, or manually."""
     at = at or datetime.now(timezone.utc)
     done = 0
+    if db.setting("agent_enabled") != "1":
+        return 0
     for lead in db.q("SELECT * FROM leads WHERE stage='new' LIMIT 25"):
         research_lead(lead)
         done += 1

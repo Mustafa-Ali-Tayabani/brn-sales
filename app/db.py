@@ -62,8 +62,33 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_act_lead ON activities(lead_id);
+CREATE INDEX IF NOT EXISTS idx_act_time ON activities(created_at);
 CREATE INDEX IF NOT EXISTS idx_lead_next ON leads(next_action_at);
 """
+
+PRODUCTS = [
+    {"key": "fixify", "name": "Fixify",
+     "pitch": "Fixify by brn dynamics: WordPress maintenance as a service. One fixed monthly plan covers security, backups, speed, SEO, bug fixes, content updates and technical support, so the business has a technical team without hiring one.",
+     "icp": "Small businesses whose WordPress or small-business website is slow, insecure or has SEO problems"},
+    {"key": "gym_club", "name": "BRN Gym Club",
+     "pitch": "BRN Gym Club: gym and club management platform. Memberships, reservations, access control, POS, inventory, an AI assistant and an Arabic/English member app in one system.",
+     "icp": "Gyms, fitness studios and sports clubs in Saudi Arabia and Kuwait with 1 to 20 branches"},
+    {"key": "ai_waiter", "name": "AI Waiter",
+     "pitch": "AI Waiter: the table QR code becomes an ordering assistant with recommendations, voice ordering, loyalty and payments.",
+     "icp": "Restaurants and cafes, single site or small chains"},
+    {"key": "estimates", "name": "Estimate & Property Case Mgmt",
+     "pitch": "Estimate and property case management: service requests, estimates, scheduling, building data and diagnostics in one platform.",
+     "icp": "Property management, facilities and construction service companies"},
+    {"key": "qapipeline", "name": "QAPipeline",
+     "pitch": "QAPipeline: AI-powered test management. Test cases, automated runs, results analytics and AI-generated test scenarios.",
+     "icp": "Software companies and in-house product teams with QA needs"},
+    {"key": "rpa_finance", "name": "RPA Finance Automation",
+     "pitch": "Finance automation: reads bills from email with OCR, maps them to branches and supports reconciliation. One client saved 412 hours.",
+     "icp": "Multi-branch businesses with heavy bill processing in finance teams"},
+    {"key": "custom", "name": "Custom software & AI",
+     "pitch": "brn dynamics builds custom software: product design, SaaS, CRM/ERP, AI and automation, web and mobile apps. 80+ projects since 2019, 5.0 on Clutch.",
+     "icp": "Growing businesses that need custom software or AI automation"},
+]
 
 DEFAULT_SETTINGS = {
     # dry_run: nothing leaves the system. approval: every send waits for a human click. live: auto-send within caps.
@@ -76,6 +101,12 @@ DEFAULT_SETTINGS = {
     "daily_email_cap": "40",
     "daily_call_cap": "20",
     "min_score": "55",
+    "products": json.dumps(PRODUCTS),
+    "default_product": "custom",
+    "company_address": "brn dynamics, Karachi · Riyadh · Kuwait City · Geneva",
+    "agent_enabled": "1",
+    "discovery_queries": json.dumps([]),
+    "last_discovery": "",
     "sequence": json.dumps([
         {"day": 0, "channel": "email", "action": "intro"},
         {"day": 3, "channel": "email", "action": "follow_up_1"},
@@ -84,6 +115,19 @@ DEFAULT_SETTINGS = {
         {"day": 14, "channel": "email", "action": "breakup"},
     ]),
 }
+
+
+MIGRATIONS = [
+    ("product", "TEXT"), ("segment", "TEXT"), ("extra", "TEXT"),
+    ("emails_sent", "INTEGER NOT NULL DEFAULT 0"), ("last_contacted_at", "TEXT"), ("replied_at", "TEXT"),
+]
+
+
+def products():
+    try:
+        return {p["key"]: p for p in json.loads(setting("products"))}
+    except Exception:
+        return {p["key"]: p for p in PRODUCTS}
 
 
 def now() -> str:
@@ -105,6 +149,11 @@ def db() -> sqlite3.Connection:
     if _conn is None:
         _conn = conn()
         _conn.executescript(SCHEMA)
+        cols = {r[1] for r in _conn.execute("PRAGMA table_info(leads)")}
+        for col, typ in MIGRATIONS:
+            if col not in cols:
+                _conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {typ}")
+        _conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_product ON leads(product)")
         for k, v in DEFAULT_SETTINGS.items():
             _conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
         _conn.commit()

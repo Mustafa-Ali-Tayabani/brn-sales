@@ -9,9 +9,14 @@ from datetime import datetime, timedelta, timezone
 from . import db
 
 # UTC offsets and working days per country. KSA/Kuwait/Qatar/Bahrain work Sun-Thu, UAE Mon-Fri.
-COUNTRY_TZ = {"SA": 3, "KW": 3, "QA": 3, "BH": 3, "AE": 4, "OM": 4, "PK": 5, "GB": 0, "CH": 1}
-WORKDAYS = {"AE": {0, 1, 2, 3, 4}}  # Python weekday(): Mon=0 .. Sun=6
-DEFAULT_WORKDAYS = {6, 0, 1, 2, 3}   # Sun-Thu
+# US/CA use a central-time approximation so the window is reasonable coast to coast.
+COUNTRY_TZ = {"SA": 3, "KW": 3, "QA": 3, "BH": 3, "AE": 4, "OM": 4, "PK": 5, "GB": 0, "CH": 1,
+              "US": -6, "CA": -6, "AU": 10, "DE": 1, "FR": 1, "NL": 1, "IE": 0, "IN": 5}
+GULF_SUN_THU = {"SA", "KW", "QA", "BH", "OM"}
+SUN_THU = {6, 0, 1, 2, 3}   # Python weekday(): Mon=0 .. Sun=6
+MON_FRI = {0, 1, 2, 3, 4}
+# Countries where AI-voice cold calls need prior written consent (US TCPA / FCC 2024 ruling, Canada CRTC).
+CALL_NEEDS_OPT_IN = {"US", "CA"}
 CALL_WINDOW = (10, 17)   # local hours, calls allowed 10:00-16:59
 EMAIL_WINDOW = (8, 18)
 GDPR_COUNTRIES = {"GB", "CH", "DE", "FR", "IT", "ES", "NL", "IE", "BE", "SE", "AT", "PL", "PT", "DK", "FI"}
@@ -24,7 +29,7 @@ def local_now(country, at=None):
 
 def in_window(country, channel, at=None):
     t = local_now(country, at)
-    days = WORKDAYS.get(country, DEFAULT_WORKDAYS)
+    days = SUN_THU if (country or "SA") in GULF_SUN_THU else MON_FRI
     lo, hi = CALL_WINDOW if channel == "phone" else EMAIL_WINDOW
     return t.weekday() in days and lo <= t.hour < hi
 
@@ -58,7 +63,7 @@ def sent_today(kind):
 
 def check(lead, channel, at=None):
     """Return (allowed: bool, reason: str). Called right before any outbound email or call."""
-    if lead["stage"] in ("opted_out", "disqualified", "won", "lost", "meeting_booked"):
+    if lead["stage"] in ("opted_out", "disqualified", "won", "lost", "meeting_booked", "paused"):
         return False, f"lead is {lead['stage']}"
     if is_suppressed(lead):
         return False, "on suppression list"
@@ -77,6 +82,8 @@ def check(lead, channel, at=None):
             return False, "no phone"
         if basis not in ("opt_in", "existing_customer", "legitimate_interest_b2b"):
             return False, "calls need opt-in or a B2B business line"
+        if lead.get("country") in CALL_NEEDS_OPT_IN and basis != "opt_in":
+            return False, "no phone: AI calls in US/Canada need prior opt-in"
         if sent_today("call_completed") >= int(db.setting("daily_call_cap")):
             return False, "daily call cap reached"
     if not in_window(lead.get("country"), channel, at):

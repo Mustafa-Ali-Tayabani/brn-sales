@@ -34,26 +34,53 @@ SYSTEM = (
 )
 
 
-def research(lead, offer, icp):
+def _lead_view(lead):
+    """Lead fields for the prompt, with the imported scan data (extra) unpacked."""
+    v = {k: lead.get(k) for k in ("company", "contact_name", "title", "website", "city", "country", "industry", "segment", "notes")}
+    try:
+        extra = json.loads(lead.get("extra") or "{}")
+    except Exception:
+        extra = {}
+    if extra:
+        v["data"] = extra
+    return v
+
+
+def _extra(lead):
+    try:
+        return json.loads(lead.get("extra") or "{}")
+    except Exception:
+        return {}
+
+
+def research(lead, offer, icp, product_key=None):
     if enabled():
         return _ask_json(SYSTEM, f"""Offer: {offer}
 Ideal customer: {icp}
-Lead: {json.dumps(lead, ensure_ascii=False, default=str)}
+Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
+If the lead data includes website scan results (health score, issues), use the most concrete issue as the main hook.
 Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "language": "ar"|"en"}}""")
-    ind = (lead.get("industry") or "").lower()
-    fit = any(k in ind for k in ("gym", "fitness", "club", "sport", "yoga", "crossfit", "studio"))
-    score = 80 if fit else 35
-    if lead.get("country") in ("SA", "KW"):
-        score += 10
-    return {
-        "summary": f"{lead['company']} is a {lead.get('industry') or 'business'} in {lead.get('city') or lead.get('country')}.",
-        "pain_points": ["manual membership renewals", "no-shows in classes", "branch reporting in spreadsheets"] if fit else ["unclear"],
-        "hooks": ["Arabic/English member app", "automated renewals and payment reminders"],
-        "score": min(score, 100),
-        "score_reason": "industry matches ICP" if fit else "industry outside ICP",
-        "language": "en",
-        "_engine": "template",
-    }
+    ind = f"{lead.get('industry') or ''} {lead.get('segment') or ''}".lower()
+    ex = _extra(lead)
+    if product_key == "gym_club" or (not product_key and "gym" in ind):
+        fit = any(k in ind for k in ("gym", "fitness", "club", "sport", "yoga", "crossfit", "studio", "pilates"))
+        score = (80 if fit else 35) + (10 if lead.get("country") in ("SA", "KW") else 0)
+        pains = ["manual membership renewals", "no-shows in classes", "branch reporting in spreadsheets"] if fit else ["unclear"]
+        hooks = ["Arabic/English member app", "automated renewals and payment reminders"]
+        reason = "industry matches ICP" if fit else "industry outside ICP"
+    elif product_key == "fixify":
+        issues = [i.get("problem") for i in ex.get("issues", []) if i.get("problem")] or ([ex["top_issue"]] if ex.get("top_issue") else [])
+        hs = ex.get("health_score")
+        score = 85 if issues else (60 if lead.get("website") else 30)
+        if isinstance(hs, (int, float)) and hs >= 98 and not issues:
+            score = 45
+        pains, hooks = issues[:3] or ["website upkeep takes time away from the business"], ["fixed monthly plan", "security, backups, speed and SEO handled"]
+        reason = f"website scan found {len(issues)} issue(s)" if issues else "no scan issues recorded"
+    else:
+        score = 65 if (lead.get("email") or lead.get("phone")) else 40
+        pains, hooks, reason = ["unclear"], ["custom software and AI automation"], "generic fit"
+    return {"summary": f"{lead['company']} is a {lead.get('segment') or lead.get('industry') or 'business'} in {lead.get('city') or lead.get('country')}.",
+            "pain_points": pains, "hooks": hooks, "score": min(score, 100), "score_reason": reason, "language": "en", "_engine": "template"}
 
 
 STEP_GOAL = {
@@ -68,27 +95,52 @@ def write_email(lead, research_, action, settings):
     if enabled():
         return _ask_json(SYSTEM, f"""Write a cold B2B email.
 Goal of this step: {STEP_GOAL.get(action, action)}
-Offer: {settings['offer']}
-Sender: {settings['sender_name']}. Booking link: {settings['booking_link']}
-Lead: {json.dumps(lead, ensure_ascii=False, default=str)}
+Product: {settings.get('product_name', '')}. Offer: {settings['offer']}
+Sender: {settings['sender_name']}.
+Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 Research: {json.dumps(research_, ensure_ascii=False)}
-Rules: under 110 words, no hype, no fake claims, plain text. Write in {research_.get('language', 'en')}.
-Return JSON: {{"subject": str, "body": str}}""", 800)
+Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated by blank lines.
+Start with a greeting ("Hi <first name>," or "Hi there," if no name). Do NOT add a sign-off, signature, links or the booking URL:
+the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.
+Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 words"}}""", 800)
     name = (lead.get("contact_name") or "there").split(" ")[0]
     company = lead["company"]
-    bodies = {
-        "intro": f"Hi {name},\n\nRunning {company} across members, classes and renewals usually means a lot of manual follow-up. "
-                 f"BRN Gym Club handles memberships, billing reminders, access control and an Arabic/English member app in one place.\n\n"
-                 f"Would it be useful if I showed you how a gym in {lead.get('city') or 'the region'} cut missed renewals with it?",
-        "follow_up_1": f"Hi {name},\n\nQuick follow-up. Gyms we work with usually recover renewals they were losing to reminders that never went out. "
-                       f"Open to a 15 minute call this week? {settings['booking_link']}",
-        "follow_up_2": f"Hi {name},\n\nOne idea even if we never work together: send renewal reminders 10, 3 and 0 days before expiry over WhatsApp. "
-                       f"It is the single biggest lever we see. Happy to share the template.",
-        "breakup": f"Hi {name},\n\nI will stop reaching out after this one. If member management becomes a priority at {company}, "
-                   f"you can book time here: {settings['booking_link']}",
-    }
-    subjects = {"intro": f"{company} renewals", "follow_up_1": "re: renewals", "follow_up_2": "a renewal idea for you", "breakup": "closing the loop"}
-    return {"subject": subjects.get(action, company), "body": bodies.get(action, bodies["intro"]), "_engine": "template"}
+    key = settings.get("product_key")
+    pains = research_.get("pain_points") or []
+    if key == "fixify":
+        issue = pains[0] if pains and pains[0] != "unclear" else "a few things slowing the site down"
+        bodies = {
+            "intro": f"Hi {name},\n\nI ran a quick health check on the {company} website and noticed: {issue}.\n\n"
+                     f"Fixify is our WordPress care plan: one fixed monthly fee covers security, backups, speed, SEO and fixes like this one, so you never have to chase a developer.\n\nWant me to send the full report?",
+            "follow_up_1": f"Hi {name},\n\nFollowing up on the website check for {company}. Small issues like \"{issue}\" quietly cost visitors and Google ranking. Happy to walk you through the full list in 15 minutes.",
+            "follow_up_2": f"Hi {name},\n\nOne free tip whatever you decide: compress your largest images and turn on page caching. On most small business sites that alone halves load time.",
+            "breakup": f"Hi {name},\n\nI'll stop reaching out after this. If you ever want the website report for {company}, just reply and I'll send it over.",
+        }
+        subjects = {"intro": f"Quick website check for {company}", "follow_up_1": "re: your website check", "follow_up_2": "a free speed tip", "breakup": "closing the loop"}
+        ctas = {"intro": "Get the free report", "breakup": "Get the report"}
+    elif key == "gym_club":
+        bodies = {
+            "intro": f"Hi {name},\n\nRunning {company} across members, classes and renewals usually means a lot of manual follow-up. "
+                     f"BRN Gym Club handles memberships, billing reminders, access control and an Arabic/English member app in one place.\n\n"
+                     f"Would it be useful if I showed you how a gym in {lead.get('city') or 'the region'} cut missed renewals with it?",
+            "follow_up_1": f"Hi {name},\n\nQuick follow-up. Gyms we work with usually recover renewals they were losing to reminders that never went out. Open to a 15 minute call this week?",
+            "follow_up_2": f"Hi {name},\n\nOne idea even if we never work together: send renewal reminders 10, 3 and 0 days before expiry over WhatsApp. It is the single biggest lever we see.",
+            "breakup": f"Hi {name},\n\nI will stop reaching out after this one. If member management becomes a priority at {company}, I'm one reply away.",
+        }
+        subjects = {"intro": f"{company} renewals", "follow_up_1": "re: renewals", "follow_up_2": "a renewal idea for you", "breakup": "closing the loop"}
+        ctas = {"intro": "See a 15-min demo"}
+    else:
+        offer = settings["offer"].split(":")[0]
+        bodies = {
+            "intro": f"Hi {name},\n\nI'm reaching out from brn dynamics. We help businesses like {company} with {offer.lower()}.\n\nWould a short call to see if there's a fit be useful?",
+            "follow_up_1": f"Hi {name},\n\nQuick follow-up on my last note. Happy to share examples of what we've built for similar teams.",
+            "follow_up_2": f"Hi {name},\n\nSharing one idea we see work often: automate the most repetitive weekly task first. It usually pays back within a month.",
+            "breakup": f"Hi {name},\n\nI'll stop reaching out after this one. If it becomes a priority, I'm one reply away.",
+        }
+        subjects = {"intro": f"Idea for {company}", "follow_up_1": "re: quick idea", "follow_up_2": "one idea for you", "breakup": "closing the loop"}
+        ctas = {}
+    return {"subject": subjects.get(action, company), "body": bodies.get(action, bodies["intro"]),
+            "cta": ctas.get(action, "Book a 15-min call"), "_engine": "template"}
 
 
 def call_script(lead, research_, settings):

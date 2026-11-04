@@ -42,42 +42,120 @@ def index():
 
 
 # ---------- dashboard data ----------
+REPLIED_STAGES = ("replied", "meeting_booked", "won", "nurture", "lost", "opted_out")
+
+
+def _lead_filters(f):
+    """Shared WHERE clause for lead lists, stats and exports. f is a dict of query params."""
+    w, a = ["1=1"], []
+    def multi(col, val):
+        vals = [v for v in str(val).split(",") if v]
+        if vals:
+            w.append(f"{col} IN ({','.join('?' * len(vals))})"); a.extend(vals)
+    if f.get("q"):
+        w.append("(l.company LIKE ? OR l.contact_name LIKE ? OR l.email LIKE ? OR l.city LIKE ? OR l.website LIKE ? OR l.notes LIKE ?)")
+        a += [f"%{f['q']}%"] * 6
+    for key, col in (("stage", "l.stage"), ("product", "l.product"), ("segment", "l.segment"), ("country", "l.country"), ("source", "l.source")):
+        if f.get(key):
+            if key == "product" and f[key] == "__none":
+                w.append("l.product IS NULL")
+            else:
+                multi(col, f[key])
+    es = f.get("email_status")
+    if es == "never":
+        w.append("l.emails_sent=0 AND l.email IS NOT NULL")
+    elif es == "sent":
+        w.append("l.emails_sent>0")
+    elif es == "replied":
+        w.append("l.replied_at IS NOT NULL")
+    elif es == "no_reply":
+        w.append("l.emails_sent>0 AND l.replied_at IS NULL")
+    elif es == "no_email":
+        w.append("(l.email IS NULL OR l.email='')")
+    if f.get("has") == "email":
+        w.append("l.email IS NOT NULL AND l.email<>''")
+    elif f.get("has") == "phone":
+        w.append("l.phone IS NOT NULL AND l.phone<>''")
+    if f.get("score_min") not in (None, ""):
+        w.append("l.score>=?"); a.append(int(f["score_min"]))
+    if f.get("score_max") not in (None, ""):
+        w.append("l.score<=?"); a.append(int(f["score_max"]))
+    for key, col, op in (("created_from", "l.created_at", ">="), ("created_to", "l.created_at", "<="),
+                         ("contacted_from", "l.last_contacted_at", ">="), ("contacted_to", "l.last_contacted_at", "<="),
+                         ("replied_from", "l.replied_at", ">="), ("replied_to", "l.replied_at", "<=")):
+        if f.get(key):
+            w.append(f"{col}{op}?"); a.append(f[key] + ("T23:59:59" if op == "<=" and len(f[key]) == 10 else ""))
+    if f.get("ids"):
+        multi("l.id", f["ids"])
+    return " AND ".join(w), a
+
+
+SORTS = {"updated": "l.updated_at DESC", "created": "l.created_at DESC", "score": "l.score DESC", "company": "l.company COLLATE NOCASE",
+         "contacted": "l.last_contacted_at DESC", "next": "l.next_action_at IS NULL, l.next_action_at"}
+
+
 @app.get("/api/stats")
-def stats():
-    stages = {r["stage"]: r["n"] for r in db.q("SELECT stage, COUNT(*) n FROM leads GROUP BY stage")}
-    kinds = {r["kind"]: r["n"] for r in db.q("SELECT kind, COUNT(*) n FROM activities WHERE status IN ('ok','dry_run') GROUP BY kind")}
-    since = (datetime.now(timezone.utc) - timedelta(days=13)).date().isoformat()
-    daily = db.q("""SELECT substr(created_at,1,10) d,
-                    SUM(kind='email_sent') emails, SUM(kind='call_completed') calls, SUM(kind='email_reply') replies
-                    FROM activities WHERE created_at>=? GROUP BY d ORDER BY d""", (since,))
+def stats(request: Request):
+    f = dict(request.query_params)
+    where, args = _lead_filters(f)
+    base = f"FROM leads l WHERE {where}"
+    stages = {r["stage"]: r["n"] for r in db.q(f"SELECT l.stage, COUNT(*) n {base} GROUP BY l.stage", args)}
     total = sum(stages.values())
-    contacted = db.one("SELECT COUNT(DISTINCT lead_id) n FROM activities WHERE kind IN ('email_sent','call_completed')")["n"]
-    replied = stages.get("replied", 0) + stages.get("meeting_booked", 0) + stages.get("won", 0) + stages.get("nurture", 0) + stages.get("lost", 0) + stages.get("opted_out", 0)
+    agg = db.one(f"""SELECT COALESCE(SUM(l.emails_sent),0) emails, SUM(l.last_contacted_at IS NOT NULL) contacted,
+                     SUM(l.replied_at IS NOT NULL) replies {base}""", args)
+    act_where = f"a.lead_id IN (SELECT l.id {base})" if any(v for k, v in f.items()) else "1=1"
+    a_args = args if act_where != "1=1" else []
+    calls = db.one(f"SELECT COUNT(*) n FROM activities a WHERE a.kind='call_completed' AND a.status IN ('ok','dry_run') AND {act_where}", a_args)["n"]
+    since = (datetime.now(timezone.utc) - timedelta(days=13)).date().isoformat()
+    daily = db.q(f"""SELECT substr(a.created_at,1,10) d, SUM(a.kind='email_sent' AND a.status IN ('ok','dry_run')) emails,
+                    SUM(a.kind='call_completed') calls, SUM(a.kind='email_reply') replies
+                    FROM activities a WHERE a.created_at>=? AND {act_where} GROUP BY d ORDER BY d""", (since, *a_args))
+    meetings = stages.get("meeting_booked", 0) + stages.get("won", 0)
+    qualified = total - stages.get("new", 0) - stages.get("disqualified", 0) - stages.get("needs_contact", 0)
+    prods = db.products()
+    by_product = db.q(f"""SELECT COALESCE(l.product,'') product, COUNT(*) leads, SUM(l.emails_sent>0) emailed,
+                          SUM(l.replied_at IS NOT NULL) replied, SUM(l.stage IN ('meeting_booked','won')) meetings,
+                          SUM(l.stage='in_sequence') active {base} GROUP BY l.product ORDER BY leads DESC""", args)
+    for r in by_product:
+        r["name"] = prods.get(r["product"], {}).get("name", "No product")
     return {
-        "mode": db.setting("mode"), "llm": llm.enabled(), "stages": stages, "kinds": kinds, "daily": daily,
+        "mode": db.setting("mode"), "llm": llm.enabled(), "agent_enabled": db.setting("agent_enabled") == "1",
+        "stages": stages, "daily": daily, "by_product": by_product,
         "kpis": {
-            "leads": total, "qualified": total - stages.get("new", 0) - stages.get("disqualified", 0),
-            "contacted": contacted, "emails": kinds.get("email_sent", 0), "calls": kinds.get("call_completed", 0),
-            "replies": replied, "meetings": stages.get("meeting_booked", 0) + stages.get("won", 0),
+            "leads": total, "qualified": qualified, "contacted": agg["contacted"] or 0, "emails": agg["emails"] or 0, "calls": calls,
+            "replies": agg["replies"] or 0, "meetings": meetings,
             "pending_approvals": db.one("SELECT COUNT(*) n FROM approvals WHERE state='pending'")["n"],
             "blocked": db.one("SELECT COUNT(*) n FROM activities WHERE status='blocked'")["n"],
+            "errors": db.one("SELECT COUNT(*) n FROM activities WHERE status='error' AND created_at>=?", (since,))["n"],
         },
-        "funnel": [
-            ["Leads", total], ["Qualified", total - stages.get("new", 0) - stages.get("disqualified", 0)],
-            ["Contacted", contacted], ["Replied", replied], ["Meetings", stages.get("meeting_booked", 0) + stages.get("won", 0)],
-        ],
+        "funnel": [["Leads", total], ["Qualified", qualified], ["Contacted", agg["contacted"] or 0],
+                   ["Replied", agg["replies"] or 0], ["Meetings", meetings]],
     }
 
 
 # ---------- leads ----------
 @app.get("/api/leads")
-def leads(stage: str = None, q: str = None):
-    sql, args = "SELECT * FROM leads WHERE 1=1", []
-    if stage:
-        sql += " AND stage=?"; args.append(stage)
-    if q:
-        sql += " AND (company LIKE ? OR contact_name LIKE ? OR email LIKE ? OR city LIKE ?)"; args += [f"%{q}%"] * 4
-    return db.q(sql + " ORDER BY updated_at DESC LIMIT 500", args)
+def leads(request: Request):
+    f = dict(request.query_params)
+    where, args = _lead_filters(f)
+    total = db.one(f"SELECT COUNT(*) n FROM leads l WHERE {where}", args)["n"]
+    limit = min(int(f.get("limit", 100)), 1000)
+    offset = int(f.get("offset", 0))
+    rows = db.q(f"""SELECT l.id, l.company, l.contact_name, l.title, l.email, l.phone, l.website, l.city, l.country, l.industry,
+                    l.segment, l.product, l.source, l.stage, l.score, l.step, l.next_action, l.next_action_at, l.emails_sent,
+                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at
+                    FROM leads l WHERE {where} ORDER BY {SORTS.get(f.get('sort'), SORTS['updated'])} LIMIT ? OFFSET ?""",
+                (*args, limit, offset))
+    return {"total": total, "rows": rows}
+
+
+@app.get("/api/leads/facets")
+def facets():
+    def counts(col):
+        return db.q(f"SELECT {col} value, COUNT(*) n FROM leads WHERE {col} IS NOT NULL AND {col}<>'' GROUP BY {col} ORDER BY n DESC")
+    return {"stage": counts("stage"), "product": counts("product"), "segment": counts("segment"),
+            "country": counts("country"), "source": counts("source"),
+            "products": list(db.products().values())}
 
 
 @app.get("/api/leads/{lead_id}")
@@ -86,33 +164,73 @@ def lead(lead_id: int):
     if not l:
         raise HTTPException(404)
     l["research"] = json.loads(l["research"] or "null")
+    l["extra"] = json.loads(l["extra"] or "null")
     l["activities"] = db.q("SELECT * FROM activities WHERE lead_id=? ORDER BY id DESC", (lead_id,))
     l["approvals"] = db.q("SELECT * FROM approvals WHERE lead_id=? ORDER BY id DESC", (lead_id,))
     return l
 
 
-def _insert(row, source="manual"):
+STATUS_MAP = {"new": "new", "contacted": "completed", "replied": "replied", "interested": "replied", "meeting": "meeting_booked",
+              "won": "won", "lost": "lost", "closed": "lost", "unsubscribed": "opted_out", "do not contact": "opted_out"}
+
+
+def _insert(row, source="manual", defaults=None):
+    d = defaults or {}
+    email = (row.get("email") or "").strip().lower() or None
+    if email and db.one("SELECT 1 x FROM leads WHERE lower(email)=?", (email,)):
+        return None  # duplicate
     t = db.now()
-    lid = db.ex("""INSERT INTO leads(company, contact_name, title, email, phone, website, city, country, industry, source,
-                consent_basis, notes, stage, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'new', ?, ?)""",
-                (row.get("company"), row.get("contact_name"), row.get("title"), row.get("email"), row.get("phone"), row.get("website"),
-                 row.get("city"), (row.get("country") or "SA").upper(), row.get("industry"), row.get("source") or source,
-                 row.get("consent_basis") or "legitimate_interest_b2b", row.get("notes"), t, t))
-    db.log(lid, "system", f"Lead added from {row.get('source') or source}", channel="system")
+    stage = STATUS_MAP.get(str(row.get("status") or "new").strip().lower(), "new")
+    if row.get("date_contacted") and stage == "new":
+        stage = "completed"
+    extra = row.get("extra") or {}
+    if row.get("status") and stage != "new":
+        extra["imported_status"] = row["status"]
+    product = row.get("product") or d.get("product") or None
+    if product and product not in db.products():
+        product = next((k for k, p in db.products().items() if p["name"].lower() == str(product).lower()), product)
+    lid = db.ex("""INSERT INTO leads(company, contact_name, title, email, phone, website, city, country, industry, segment, product, extra,
+                source, consent_basis, notes, stage, last_contacted_at, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (row.get("company"), row.get("contact_name"), row.get("title"), email, row.get("phone"), row.get("website"),
+                 row.get("city"), (row.get("country") or d.get("country") or "SA").upper()[:2], row.get("industry"),
+                 row.get("segment") or d.get("segment"), product, json.dumps(extra, ensure_ascii=False, default=str) if extra else None,
+                 row.get("source") or source, row.get("consent_basis") or d.get("consent_basis") or "legitimate_interest_b2b",
+                 row.get("notes"), stage, row.get("date_contacted"), t, t))
+    db.log(lid, "system", f"Lead added from {row.get('source') or source}" + (f" ({stage})" if stage != "new" else ""), channel="system")
     return lid
+
+
+def _import(rows, source, payload):
+    defaults = {k: payload.get(k) for k in ("product", "country", "consent_basis", "segment") if payload.get(k)}
+    ids = [_insert(r, source, defaults) for r in rows]
+    added = [i for i in ids if i]
+    db.log(None, "system", f"Imported {len(added)} leads from {source} ({len(ids) - len(added)} duplicates skipped)", channel="system")
+    return {"imported": added, "skipped": len(ids) - len(added), "rows": len(ids)}
 
 
 @app.post("/api/leads")
 def add_lead(row: dict = Body(...)):
     if not row.get("company"):
         raise HTTPException(400, "company is required")
-    return {"id": _insert(row)}
+    lid = _insert(row)
+    if not lid:
+        raise HTTPException(409, "a lead with this email already exists")
+    return {"id": lid}
 
 
 @app.post("/api/leads/import")
-def import_csv(payload: dict = Body(...)):
-    rows = sources.parse_csv(payload.get("csv", ""))
-    return {"imported": [_insert(r, "csv") for r in rows]}
+def import_file(payload: dict = Body(...)):
+    """CSV text in `csv`, or an Excel/CSV file as base64 in `file` with its `filename`."""
+    if payload.get("file"):
+        data = base64.b64decode(payload["file"].split(",")[-1])
+        name = (payload.get("filename") or "").lower()
+        try:
+            rows = sources.parse_xlsx(data) if name.endswith((".xlsx", ".xlsm")) else sources.parse_csv(data.decode("utf-8-sig"))
+        except Exception as e:
+            raise HTTPException(400, f"Could not read the file: {e}")
+        return _import(rows, payload.get("filename") or "file", payload)
+    return _import(sources.parse_csv(payload.get("csv", "")), "csv", payload)
 
 
 @app.post("/api/leads/places")
@@ -121,16 +239,53 @@ def import_places(payload: dict = Body(...)):
         rows = sources.google_places(payload["query"], payload.get("country", "SA"), int(payload.get("limit", 20)))
     except RuntimeError as e:
         raise HTTPException(400, str(e))
-    return {"imported": [_insert(r, "google_places") for r in rows]}
+    return _import(rows, "google_places", payload)
+
+
+EDITABLE = ("stage", "notes", "consent_basis", "email", "phone", "contact_name", "title", "product", "segment", "country", "city", "website")
 
 
 @app.patch("/api/leads/{lead_id}")
 def edit_lead(lead_id: int, payload: dict = Body(...)):
-    allowed = {k: v for k, v in payload.items() if k in ("stage", "notes", "consent_basis", "email", "phone", "contact_name", "title")}
+    allowed = {k: v for k, v in payload.items() if k in EDITABLE}
+    if allowed.get("stage") == "in_sequence":
+        allowed["next_action_at"] = db.now()
+    cur = db.one("SELECT stage FROM leads WHERE id=?", (lead_id,))
+    if cur and cur["stage"] == "needs_contact" and (allowed.get("email") or allowed.get("phone")) and "stage" not in allowed:
+        allowed["stage"] = "new"
     if allowed:
         db.update_lead(lead_id, **allowed)
-        db.log(lead_id, "stage_change" if "stage" in allowed else "system", f"Edited by user: {', '.join(allowed)}", channel="system")
+        db.log(lead_id, "stage_change" if "stage" in allowed else "system", f"Edited by user: {', '.join(k for k in allowed if k != 'next_action_at')}", channel="system")
     return {"ok": True}
+
+
+@app.post("/api/leads/bulk")
+def bulk(payload: dict = Body(...)):
+    """actions: set_stage, set_product, set_segment, pause, resume, restart, delete. Targets `ids`, or every lead matching `filters`."""
+    if payload.get("ids"):
+        ids = [int(i) for i in payload["ids"]]
+    else:
+        where, args = _lead_filters(payload.get("filters") or {})
+        ids = [r["id"] for r in db.q(f"SELECT l.id FROM leads l WHERE {where}", args)]
+    action, value = payload.get("action"), payload.get("value")
+    for i in ids:
+        if action == "set_stage":
+            edit_lead(i, {"stage": value})
+        elif action in ("set_product", "set_segment"):
+            db.update_lead(i, **{action[4:]: value or None})
+        elif action == "pause":
+            db.update_lead(i, stage="paused", next_action=None, next_action_at=None)
+        elif action == "resume":
+            db.update_lead(i, stage="in_sequence", next_action_at=db.now())
+        elif action == "restart":
+            db.update_lead(i, stage="new", step=0, next_action=None, next_action_at=None)
+        elif action == "delete":
+            db.ex("DELETE FROM approvals WHERE lead_id=?", (i,)); db.ex("DELETE FROM activities WHERE lead_id=?", (i,))
+            db.ex("DELETE FROM leads WHERE id=?", (i,))
+        else:
+            raise HTTPException(400, "unknown action")
+    db.log(None, "system", f"Bulk {action}{' = ' + str(value) if value else ''} on {len(ids)} leads", channel="system")
+    return {"updated": len(ids)}
 
 
 @app.post("/api/leads/{lead_id}/reply")
@@ -138,25 +293,76 @@ def reply(lead_id: int, payload: dict = Body(...)):
     return agent.handle_reply(lead_id, payload.get("text", ""))
 
 
+def _csv_response(rows, fields, filename):
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    w.writeheader(); w.writerows(rows)
+    return PlainTextResponse(buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.get("/api/export/leads.csv")
+def export_leads(request: Request):
+    f = dict(request.query_params); f["limit"] = 100000
+    where, args = _lead_filters(f)
+    rows = db.q(f"SELECT l.* FROM leads l WHERE {where} ORDER BY l.company", args)
+    return _csv_response(rows, ["id", "company", "contact_name", "title", "email", "phone", "website", "city", "country", "segment",
+                                "product", "industry", "stage", "score", "emails_sent", "last_contacted_at", "replied_at",
+                                "source", "consent_basis", "notes", "created_at"], "brn-leads.csv")
+
+
 # ---------- activity log ----------
 @app.get("/api/activities")
-def activities(limit: int = 200, kind: str = None, status: str = None):
-    sql, args = "SELECT a.*, l.company FROM activities a LEFT JOIN leads l ON l.id=a.lead_id WHERE 1=1", []
-    if kind:
-        sql += " AND a.kind=?"; args.append(kind)
-    if status:
-        sql += " AND a.status=?"; args.append(status)
-    return db.q(sql + " ORDER BY a.id DESC LIMIT ?", (*args, min(limit, 2000)))
+def activities(limit: int = 200, kind: str = None, status: str = None, channel: str = None, product: str = None,
+               date_from: str = None, date_to: str = None, q: str = None, lead_id: int = None):
+    sql, args = "SELECT a.*, l.company, l.product FROM activities a LEFT JOIN leads l ON l.id=a.lead_id WHERE 1=1", []
+    for val, col in ((kind, "a.kind"), (status, "a.status"), (channel, "a.channel"), (product, "l.product")):
+        if val:
+            sql += f" AND {col}=?"; args.append(val)
+    if lead_id:
+        sql += " AND a.lead_id=?"; args.append(lead_id)
+    if date_from:
+        sql += " AND a.created_at>=?"; args.append(date_from)
+    if date_to:
+        sql += " AND a.created_at<=?"; args.append(date_to + ("T23:59:59" if len(date_to) == 10 else ""))
+    if q:
+        sql += " AND (a.summary LIKE ? OR l.company LIKE ?)"; args += [f"%{q}%"] * 2
+    return db.q(sql + " ORDER BY a.id DESC LIMIT ?", (*args, min(limit, 5000)))
 
 
 @app.get("/api/export/activities.csv")
-def export_activities():
-    rows = activities(limit=2000)
-    buf = io.StringIO()
-    w = csv.DictWriter(buf, fieldnames=["id", "created_at", "company", "lead_id", "kind", "channel", "status", "summary"], extrasaction="ignore")
-    w.writeheader(); w.writerows(rows)
-    return PlainTextResponse(buf.getvalue(), media_type="text/csv",
-                             headers={"Content-Disposition": "attachment; filename=brn-activity-log.csv"})
+def export_activities(request: Request):
+    f = {k: v for k, v in request.query_params.items() if k in ("kind", "status", "channel", "product", "date_from", "date_to", "q")}
+    rows = activities(limit=5000, **f)
+    return _csv_response(rows, ["id", "created_at", "company", "product", "lead_id", "kind", "channel", "status", "summary"], "brn-activity-log.csv")
+
+
+# ---------- email preview ----------
+@app.get("/api/email/preview")
+def email_preview(product: str = None, lead_id: int = None, activity_id: int = None):
+    """Renders the branded template: for a sent email (activity_id), a lead's next email, or a sample."""
+    from .email_template import render
+    if activity_id:
+        a = db.one("SELECT a.payload, l.* FROM activities a JOIN leads l ON l.id=a.lead_id WHERE a.id=?", (activity_id,))
+        p = json.loads(a["payload"] or "{}")
+        body = p.get("body", "").split("\n\n--\n")[0]
+        cta_line = body.rsplit("\n\n", 1)[-1] if ": http" in body.rsplit("\n\n", 1)[-1] else None
+        if cta_line:
+            body = body.rsplit("\n\n", 1)[0]
+        prod = db.products().get(a.get("product") or "")
+        return Response(render(p.get("subject", ""), body, agent._settings(a)["booking_link"], p.get("cta"),
+                               prod["name"] if prod else None), media_type="text/html")
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,)) if lead_id else None
+    lead = lead or {"company": "Acme Lavender Farm", "contact_name": "Sarah Miller", "city": "Hood River", "country": "US",
+                    "product": product or db.setting("default_product"), "research": None,
+                    "extra": json.dumps({"issues": [{"problem": "Home page took 7.0s to respond"}]})}
+    if product:
+        lead = {**lead, "product": product}
+    s = agent._settings(lead)
+    r = json.loads(lead.get("research") or "null") or llm.research(lead, s["offer"], s["icp"], s["product_key"])
+    content = llm.write_email(lead, r or {}, "intro", s)
+    prod = db.products().get(lead.get("product") or "")
+    return Response(render(content["subject"], content["body"], s["booking_link"], content.get("cta"), prod["name"] if prod else None),
+                    media_type="text/html")
 
 
 # ---------- approvals ----------
@@ -179,7 +385,11 @@ def decide(approval_id: int, payload: dict = Body(...)):
 @app.get("/api/settings")
 def get_settings():
     s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings")}
-    s["sequence"] = json.loads(s["sequence"])
+    for k in ("sequence", "products", "discovery_queries"):
+        try:
+            s[k] = json.loads(s[k])
+        except Exception:
+            pass
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
     s["email_via"] = channels.email_provider()
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
@@ -193,7 +403,7 @@ def save_settings(payload: dict = Body(...)):
         raise HTTPException(403, "Live sending is locked. Set BRN_ALLOW_LIVE=1 on the server once outreach is approved.")
     for k, v in payload.items():
         if k in db.DEFAULT_SETTINGS:
-            db.set_setting(k, json.dumps(v) if k == "sequence" else v)
+            db.set_setting(k, json.dumps(v) if k in ("sequence", "products", "discovery_queries") else v)
     db.log(None, "system", f"Settings changed: {', '.join(payload)}", channel="system")
     return {"ok": True}
 
@@ -259,6 +469,24 @@ def check_inbox():
     return {"replies": inbox.poll(agent.handle_reply)}
 
 
+def _auto_discover():
+    """Runs the saved Google Places searches once a day and imports new businesses."""
+    queries = db.setting("discovery_queries", json.loads) or []
+    last = db.setting("last_discovery") if "last_discovery" in db.DEFAULT_SETTINGS else None
+    if not queries or not os.environ.get("GOOGLE_PLACES_API_KEY"):
+        return
+    if last and datetime.fromisoformat(last) > datetime.now(timezone.utc) - timedelta(hours=23):
+        return
+    db.set_setting("last_discovery", db.now())
+    for qd in queries:
+        try:
+            rows = sources.google_places(qd["query"], qd.get("country", "SA"), int(qd.get("limit", 20)))
+            res = _import(rows, "google_places", qd)
+            db.log(None, "system", f"Auto-discovery '{qd['query']}': {len(res['imported'])} new leads", channel="system")
+        except Exception as e:
+            db.log(None, "system", f"Auto-discovery '{qd.get('query')}' failed: {e}", channel="system", status="error")
+
+
 def _loop():
     n = 0
     while True:
@@ -266,6 +494,8 @@ def _loop():
             agent.tick()
             if n % 5 == 0 and inbox.enabled():  # read replies every 5 minutes
                 inbox.poll(agent.handle_reply)
+            if n % 60 == 0:  # hourly: auto-discovery runs at most once a day
+                _auto_discover()
         except Exception as e:
             db.log(None, "system", f"Scheduler error: {e}", channel="system", status="error")
         n += 1
