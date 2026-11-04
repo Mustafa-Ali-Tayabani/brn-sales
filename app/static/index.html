@@ -7,140 +7,220 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#0B0C10;--paper:#F4F4F0;--card:#fff;--blue:#010ECF;--blue2:#6E7BFF;--mut:#6b6d76;--line:#e3e3dd;--ok:#127a4a;--warn:#a15c00;--bad:#b42318;--soft:#f7f7ff}
-*{box-sizing:border-box}body{margin:0;font:14px/1.45 "DM Sans",system-ui,sans-serif;background:var(--paper);color:var(--ink)}
-h1,h2,h3{font-family:"Space Grotesk",sans-serif;margin:0}
-.side{position:fixed;inset:0 auto 0 0;width:220px;background:var(--ink);color:#fff;padding:22px 16px;display:flex;flex-direction:column;gap:4px;z-index:5}
-.logo{font:700 22px "Space Grotesk";margin:0 8px 22px}.logo b{color:var(--blue2)}
-.nav{all:unset;cursor:pointer;padding:9px 12px;border-radius:8px;color:#c9cad1;display:flex;justify-content:space-between}
-.nav:hover{background:#1b1d25}.nav.on{background:var(--blue);color:#fff}
-.pill{font-size:11px;padding:1px 7px;border-radius:99px;background:#ffffff22}
-.mode{margin-top:auto;font-size:12px;color:#c9cad1;padding:10px 12px;border:1px solid #2a2c35;border-radius:10px}
-.mode b{display:block;color:#fff;font-size:14px;text-transform:uppercase;letter-spacing:.06em}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ccf7a;margin-right:6px}.dot.off{background:#e5484d}
-main{margin-left:220px;padding:28px 32px;max-width:1440px}
-.top{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}.top h1{font-size:26px;flex:1}
-button,.btn{font:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;cursor:pointer;color:var(--ink);text-decoration:none;display:inline-block}
-button.pri{background:var(--blue);border-color:var(--blue);color:#fff}button.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
-button.danger{color:var(--bad)}button.stop{background:#fdecea;border-color:#f3c2bc;color:var(--bad);font-weight:600}button.go{background:#e7f6ee;border-color:#bfe6cf;color:var(--ok);font-weight:600}
-button.stop:not(:disabled):hover{background:var(--bad);color:#fff;border-color:var(--bad)}button.go:not(:disabled):hover{background:var(--ok);color:#fff;border-color:var(--ok)}button:disabled{opacity:.5;cursor:default}button.sm{padding:4px 9px;font-size:12px}
-.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-.kpi span{color:var(--mut);font-size:12px}.kpi b{display:block;font:700 28px "Space Grotesk"}
-.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
-.card h3{font-size:15px;margin-bottom:12px}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-th{font-size:12px;color:var(--mut);font-weight:500;white-space:nowrap}th.s{cursor:pointer}th.s:hover{color:var(--ink)}
-tr.click{cursor:pointer}tr.click:hover{background:var(--soft)}tr.sel{background:#eef0ff}
-.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:#eef;color:var(--blue);white-space:nowrap}
-.tag.p{background:var(--ink);color:#fff}.tag.g{background:#eeeee8;color:#4a4b52}
-.tag.ok,.tag.meeting_booked,.tag.won{background:#e7f6ee;color:var(--ok)}.tag.dry_run{background:#eef0ff;color:var(--blue)}
-.tag.blocked,.tag.error,.tag.opted_out,.tag.lost,.tag.disqualified{background:#fdecea;color:var(--bad)}
-.tag.pending_approval,.tag.awaiting_approval,.tag.needs_contact,.tag.paused{background:#fff4e0;color:var(--warn)}
-.tag.replied,.tag.nurture{background:#e9f3ff;color:#0b5cad}
-.funnel div{display:flex;align-items:center;gap:10px;margin:7px 0}.funnel span{width:80px;color:var(--mut);font-size:12px}
-.bar{height:22px;background:var(--blue);border-radius:5px;color:#fff;font-size:12px;padding:2px 8px;min-width:28px}
-.chart{display:flex;align-items:flex-end;gap:6px;height:170px;padding-top:10px}
-.chart .col{display:flex;flex-direction:column-reverse;gap:2px;align-items:stretch}.chart .seg{border-radius:3px}
-.chart .lbl{font-size:10px;color:var(--mut);text-align:center;margin-top:4px}
-.legend{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+:root{--ink:#0B0C10;--ink2:#14161d;--paper:#F4F4F0;--card:#fff;--blue:#010ECF;--blue2:#6E7BFF;--bluebg:#eef0ff;--mut:#6b6d76;--mut2:#9a9ca4;--line:#e6e6e0;--line2:#efefea;
+ --ok:#127a4a;--okbg:#e7f6ee;--warn:#a15c00;--warnbg:#fff4e0;--bad:#b42318;--badbg:#fdecea;--soft:#f7f7ff;--r:14px;--sh:0 1px 2px #0b0c100a,0 4px 16px #0b0c1008;--sh2:0 2px 4px #0b0c100d,0 12px 32px #0b0c1014}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font:14px/1.5 "DM Sans",system-ui,sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:"Space Grotesk",sans-serif;margin:0;letter-spacing:-.015em}
+a{color:var(--blue)}
+/* sidebar */
+.side{position:fixed;inset:0 auto 0 0;width:236px;background:var(--ink);color:#fff;padding:22px 14px;display:flex;flex-direction:column;gap:2px;z-index:5}
+.logo{font:700 22px "Space Grotesk";margin:0 10px 6px;letter-spacing:-.02em}.logo b{color:var(--blue2)}
+.sublogo{font-size:11px;color:#6f717c;margin:0 10px 22px;letter-spacing:.06em;text-transform:uppercase}
+.navlbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#5d5f69;margin:14px 12px 6px}
+.nav{all:unset;cursor:pointer;padding:9px 12px;border-radius:10px;color:#b9bac3;display:flex;align-items:center;gap:11px;font-size:14px;transition:background .15s,color .15s}
+.nav svg{width:18px;height:18px;flex:none;opacity:.85}.nav .pill{margin-left:auto}
+.side button.nav:not(:disabled):hover{background:#1a1c24;color:#fff;border:0;box-shadow:none;transform:none}.side button.nav.on,.side button.nav.on:not(:disabled):hover{background:var(--blue);color:#fff;box-shadow:0 6px 18px #010ecf55}.nav.on svg{opacity:1}
+.pill{font-size:11px;padding:1px 8px;border-radius:99px;background:#ffffff1c;min-width:22px;text-align:center}
+.pill.hot{background:#f0b400;color:#000;font-weight:700}
+.mode{margin-top:auto;font-size:12px;color:#b9bac3;padding:14px;border:1px solid #23252e;border-radius:14px;background:var(--ink2);display:flex;flex-direction:column;gap:10px}
+.mode .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#6f717c}
+.mode b{color:#fff;font-size:13px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ccf7a;margin-right:7px;box-shadow:0 0 0 3px #3ccf7a33}.dot.off{background:#e5484d;box-shadow:0 0 0 3px #e5484d33}
+.meter{height:5px;border-radius:9px;background:#262833;overflow:hidden;margin-top:6px}.meter i{display:block;height:100%;background:var(--blue2);border-radius:9px}
+/* layout */
+main{margin-left:236px;padding:26px 34px 60px;max-width:1500px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:22px;flex-wrap:wrap}
+.top .ttl{flex:1;min-width:200px}.top h1{font-size:28px}.top .sub{color:var(--mut);font-size:13px;margin-top:2px}
+/* buttons */
+button,.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px;cursor:pointer;color:var(--ink);text-decoration:none;display:inline-flex;align-items:center;gap:7px;
+ transition:background .15s,border-color .15s,color .15s,box-shadow .15s,transform .15s;line-height:1.3}
+button:not(:disabled):hover,.btn:hover{border-color:#c5c8f3;color:var(--blue);box-shadow:0 3px 10px #010ecf1c;transform:translateY(-1px)}
+button:not(:disabled):active{transform:none;box-shadow:none}
+button.pri{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:0 4px 14px #010ecf40}button.pri:not(:disabled):hover{background:#000bb0;color:#fff;border-color:#000bb0}
+button.dark{background:var(--ink);color:#fff;border-color:var(--ink)}button.dark:not(:disabled):hover{background:#262833;color:#fff}
+button.ghost{background:transparent;border-color:transparent}button.ghost:not(:disabled):hover{background:#fff;border-color:var(--line)}
+button.icon{padding:8px 10px}
+button.danger{color:var(--bad)}button.danger:not(:disabled):hover{border-color:var(--bad);color:var(--bad);background:#fff6f5}
+button:disabled{opacity:.5;cursor:default}button.sm{padding:5px 10px;font-size:12px;border-radius:8px}
+/* agent switch (one control) */
+.agentsw{display:inline-flex;align-items:center;gap:10px;padding:6px 8px 6px 14px;border-radius:99px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:600;font-size:13px;transition:.15s;user-select:none}
+.agentsw:hover{box-shadow:0 3px 10px #0b0c1012;border-color:#d0d0ca}
+.agentsw .tg{width:38px;height:22px;border-radius:99px;background:#d6d6d0;position:relative;transition:.2s}
+.agentsw .tg:after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0003;transition:.2s}
+.agentsw.on .tg{background:var(--ok)}.agentsw.on .tg:after{left:19px}
+.agentsw .st{color:var(--mut);font-weight:500}.agentsw.on .st{color:var(--ok)}
+/* cards & kpis */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;margin-bottom:16px;box-shadow:var(--sh)}
+.card h3{font-size:15px;margin-bottom:14px;display:flex;align-items:center;gap:8px}.card h3 .r{margin-left:auto;font:500 12px "DM Sans";color:var(--mut)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh)}
+.kpi span{color:var(--mut);font-size:12px}.kpi b{display:block;font:700 26px "Space Grotesk";letter-spacing:-.02em}
+.grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}.grid2>*{min-width:0}
+.grid2e{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid2e>*{min-width:0}
+/* hero funnel */
+.hero{background:var(--ink);color:#fff;border-radius:18px;padding:22px 24px;margin-bottom:16px;position:relative;overflow:hidden;box-shadow:var(--sh2)}
+.hero:before{content:"";position:absolute;right:-80px;top:-120px;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,#010ecf88,transparent 65%)}
+.hero .hd{display:flex;align-items:center;gap:12px;margin-bottom:18px;position:relative}.hero .hd h2{font-size:17px;flex:1}
+.hero .hd .chips .chip{background:#ffffff10;border-color:#ffffff22;color:#d9dae0}.hero .hd .chips .chip.on{background:#fff;color:var(--ink)}
+.hero .hd .chips .chip:hover{border-color:#fff;color:#fff}.hero .hd .chips .chip.on:hover{color:var(--ink)}
+.stages{display:grid;grid-template-columns:repeat(5,1fr);gap:0;position:relative}
+.stg{padding:4px 18px;border-left:1px solid #ffffff1a}.stg:first-child{border-left:0;padding-left:0}
+.stg span{font-size:12px;color:#a9abb5;display:block}.stg b{font:700 34px "Space Grotesk";letter-spacing:-.03em;display:block;line-height:1.15}
+.stg em{font-style:normal;font-size:12px;color:var(--blue2)}.stg .fb{height:4px;border-radius:9px;background:#ffffff14;margin-top:10px;overflow:hidden}.stg .fb i{display:block;height:100%;background:var(--blue2)}
+/* attention list */
+.att{display:flex;flex-direction:column;gap:2px}
+.att a{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;text-decoration:none;color:var(--ink);cursor:pointer;transition:background .15s}
+.att a:hover{background:var(--soft)}.att .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;font-size:15px}
+.att .tx{flex:1;line-height:1.3}.att .tx small{display:block;color:var(--mut);font-size:12px}.att b{font:700 18px "Space Grotesk"}
+/* chart */
+.chart2{position:relative;height:200px;display:flex;align-items:flex-end;gap:8px;padding:0 0 22px 32px}
+.chart2 .grid{position:absolute;left:32px;right:0;border-top:1px dashed var(--line2);font-size:10px;color:var(--mut2)}.chart2 .grid span{position:absolute;left:-30px;top:-7px;width:24px;text-align:right}
+.chart2 .c{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;position:relative;cursor:default}
+.chart2 .c .stack{display:flex;flex-direction:column-reverse;gap:2px;border-radius:6px 6px 2px 2px;overflow:hidden;transition:filter .15s}
+.chart2 .c:hover .stack{filter:brightness(1.15)}.chart2 .c .seg{min-height:0}
+.chart2 .c .d{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--mut2)}
+.chart2 .c .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;font-size:11px;padding:6px 9px;border-radius:8px;white-space:nowrap;z-index:2}
+.chart2 .c:hover .tip{display:block}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--mut);margin-top:6px}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.tot{display:flex;gap:22px;margin:-4px 0 14px}.tot div{font-size:12px;color:var(--mut)}.tot b{display:block;font:700 20px "Space Grotesk";color:var(--ink)}
+/* stage distribution */
+.dist{display:flex;height:12px;border-radius:99px;overflow:hidden;background:var(--line2);margin-bottom:14px}.dist i{display:block;height:100%}
+.dlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}.dlist a{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;font-size:13px;color:var(--ink);text-decoration:none;cursor:pointer}
+.dlist a:hover{background:var(--soft)}.dlist a b{margin-left:auto;font-weight:600}.dlist a i{width:9px;height:9px;border-radius:3px;flex:none}
+.mini{height:6px;border-radius:9px;background:var(--line2);overflow:hidden;min-width:60px}.mini i{display:block;height:100%;background:var(--blue)}
+/* feed */
+.feed{display:flex;flex-direction:column}.fi{display:flex;gap:12px;padding:11px 6px;border-bottom:1px solid var(--line2);cursor:pointer;border-radius:8px;transition:background .15s}
+.fi:hover{background:var(--soft)}.fi:last-child{border-bottom:0}
+.fi .ic{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:14px;background:var(--bluebg);color:var(--blue)}
+.fi .tx{flex:1;min-width:0}.fi .tx div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fi .tx small{color:var(--mut)}
+.fi .when{font-size:12px;color:var(--mut2);white-space:nowrap}
+/* tables */
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line2);vertical-align:middle}
+th{font-size:11px;color:var(--mut);font-weight:600;white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;background:#fafaf7;position:sticky;top:0;z-index:1}
+th.s{cursor:pointer}th.s:hover{color:var(--ink)}
+tr.click{cursor:pointer;transition:background .12s}tr.click:hover{background:var(--soft)}tr.sel{background:#eef0ff}
+.card>table th:first-child,.card .tablewrap th:first-child{border-top-left-radius:10px}
+/* tags */
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:2px 9px;border-radius:99px;background:var(--bluebg);color:var(--blue);white-space:nowrap}
+.tag.p{background:var(--ink);color:#fff;max-width:180px;overflow:hidden;text-overflow:ellipsis;display:inline-block}.tag.g{background:#efefe9;color:#4a4b52}
+.tag.ok,.tag.meeting_booked,.tag.won{background:var(--okbg);color:var(--ok)}.tag.dry_run{background:var(--bluebg);color:var(--blue)}
+.tag.blocked,.tag.error,.tag.opted_out,.tag.lost,.tag.disqualified{background:var(--badbg);color:var(--bad)}
+.tag.pending_approval,.tag.awaiting_approval,.tag.needs_contact,.tag.paused{background:var(--warnbg);color:var(--warn)}
+.tag.replied,.tag.nurture{background:#e9f3ff;color:#0b5cad}.tag.reply_manually{background:#ecedff;color:#3a46d8}
+/* inputs */
 .filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
-.fbox{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
-.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
-.fgrid label{margin:0 0 3px}
-input,select,textarea{font:inherit;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;color:var(--ink);max-width:100%}
-.fgrid input,.fgrid select{width:100%}
-textarea{width:100%;min-height:90px}
-.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;cursor:pointer;font-size:13px}
-.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}.chip small{opacity:.6;margin-left:4px}
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:#fff;border-left:1px solid var(--line);box-shadow:-10px 0 40px #0002;padding:22px;overflow:auto;transform:translateX(105%);transition:.2s;z-index:10}
+.fbox{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;box-shadow:var(--sh)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}.fgrid label{margin:0 0 4px}
+input,select,textarea{font:inherit;border:1px solid var(--line);border-radius:10px;padding:8px 11px;background:#fff;color:var(--ink);max-width:100%;transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover,textarea:hover{border-color:#d2d2cc}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #010ecf1a}
+.fgrid input,.fgrid select{width:100%}textarea{width:100%;min-height:90px}
+code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;border-radius:5px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 13px;cursor:pointer;font-size:13px;transition:.15s}
+.chip:hover{border-color:var(--blue);color:var(--blue)}.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}.chip.on:hover{color:#fff}.chip small{opacity:.6;margin-left:5px}
+/* drawer / modal */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:#fbfbf9;border-left:1px solid var(--line);box-shadow:-20px 0 60px #0b0c1022;padding:24px;overflow:auto;transform:translateX(105%);transition:transform .25s cubic-bezier(.2,.8,.2,1);z-index:10}
 .drawer.open{transform:none}
-.modal{position:fixed;inset:0;background:#0b0c10aa;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
-.modal.open{display:flex}.modal .box{background:#fff;border-radius:14px;width:min(760px,100%);max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
-.modal .hd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}.modal .hd h3{flex:1}
-.modal .bd{padding:16px 18px;overflow:auto}.modal iframe{width:100%;height:70vh;border:0;background:var(--paper)}
-.tl{border-left:2px solid var(--line);margin-left:6px;padding-left:16px}.tl .ev{position:relative;margin-bottom:14px}
-.tl .ev:before{content:"";position:absolute;left:-22px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--blue)}
-.tl .ev small{color:var(--mut)}pre{white-space:pre-wrap;background:var(--paper);padding:10px;border-radius:8px;font:12px/1.5 ui-monospace,monospace;margin:6px 0 0}
+.modal{position:fixed;inset:0;background:#0b0c10a6;backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
+.modal.open{display:flex}.modal .box{background:#fff;border-radius:18px;width:min(780px,100%);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px #0006}
+.modal .hd{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)}.modal .hd h3{flex:1}
+.modal .bd{padding:18px 20px;overflow:auto}.modal iframe{width:100%;height:70vh;border:0;background:var(--paper);border-radius:10px}
+.tl{border-left:2px solid var(--line);margin-left:6px;padding-left:18px}.tl .ev{position:relative;margin-bottom:16px}
+.tl .ev:before{content:"";position:absolute;left:-24px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 3px var(--bluebg)}
+.tl .ev small{color:var(--mut)}pre{white-space:pre-wrap;background:var(--paper);padding:10px 12px;border-radius:10px;font:12px/1.55 ui-monospace,monospace;margin:6px 0 0}
 .muted{color:var(--mut)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.banner{background:#fff4e0;border:1px solid #f5d9a8;color:#6b3d00;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px}
-.banner.good{background:#e7f6ee;border-color:#bfe6cf;color:#0d5a36}
-.bulk{position:sticky;top:0;z-index:4;background:var(--ink);color:#fff;border-radius:10px;padding:10px 14px;margin-bottom:10px;display:none;gap:8px;align-items:center;flex-wrap:wrap}
-.bulk.on{display:flex}.bulk select,.bulk button{font-size:13px;padding:5px 9px}
-.hide{display:none!important}label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
-.kv{display:grid;grid-template-columns:120px 1fr;gap:4px 10px;font-size:13px}.kv span{color:var(--mut)}
-.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:10px}
+.banner{background:var(--warnbg);border:1px solid #f5d9a8;color:#6b3d00;border-radius:12px;padding:11px 16px;margin-bottom:14px;font-size:13px;display:flex;gap:10px;align-items:center}
+.banner.good{background:var(--okbg);border-color:#bfe6cf;color:#0d5a36}.banner .x{margin-left:auto}
+.bulk{position:sticky;top:8px;z-index:4;background:var(--ink);color:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;display:none;gap:8px;align-items:center;flex-wrap:wrap;box-shadow:var(--sh2)}
+.bulk.on{display:flex}.bulk select,.bulk button{font-size:13px;padding:5px 9px}.bulk button:not(:disabled):hover{color:var(--ink)}
+.hide{display:none!important}label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px;font-weight:500}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px}.kv span{color:var(--mut)}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:12px}
 .sev-critical,.sev-high{color:var(--bad);font-weight:600}.sev-medium{color:var(--warn)}.sev-low{color:var(--mut)}
 .tablewrap{overflow-x:auto}
-/* interaction polish */
-button,.btn,.chip,.nav,.kpi,.card,.pcard,.kcard,tr.click{transition:background .15s,border-color .15s,color .15s,box-shadow .15s,transform .15s}
-button:not(:disabled):hover,.btn:hover{border-color:var(--blue);color:var(--blue);box-shadow:0 2px 8px #010ecf1f;transform:translateY(-1px)}
-button:not(:disabled):active{transform:translateY(0);box-shadow:none}
-button.pri:not(:disabled):hover{background:#000bb0;color:#fff}button.dark:not(:disabled):hover{background:#22242c;color:#fff}
-button.danger:not(:disabled):hover{border-color:var(--bad);color:var(--bad);background:#fff6f5}
-.bulk button:not(:disabled):hover{color:var(--ink)}
-.chip:hover{border-color:var(--blue);color:var(--blue)}.chip.on:hover{color:#fff;background:#22242c}
-.kpi:hover,.card.hov:hover{border-color:#c9ccf5;box-shadow:0 4px 18px #0b0c1010}
-.side .nav:hover{color:#fff;background:#1b1d25;border:0;box-shadow:none;transform:none}.side .nav.on,.side .nav.on:hover{background:var(--blue);color:#fff}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #010ecf1a}
-.kpi b{letter-spacing:-.02em}.card h3{letter-spacing:-.01em}
-.spin{display:inline-block}.spinning .spin{animation:sp 0.8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+.spin{display:inline-block}.spinning .spin{animation:sp .8s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
 .updated{font-size:12px;color:var(--mut)}
 /* pipelines */
-.psec{font:600 12px "DM Sans";text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:18px 0 10px}
-.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
-.pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;cursor:pointer}
-.pcard:hover{border-color:var(--blue);box-shadow:0 6px 22px #010ecf18;transform:translateY(-2px)}
-.pcard h3{font-size:16px}.pcard .n{font:700 26px "Space Grotesk"}
-.sbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:#eeeee8}.sbar i{display:block;height:100%}
-.board{display:flex;gap:10px;overflow-x:auto;padding-bottom:10px;align-items:flex-start}
-.kcol{flex:0 0 250px;background:#ebebe5;border-radius:12px;padding:10px;min-height:200px}
-.kcol h4{margin:2px 4px 10px;font:600 13px "DM Sans";display:flex;justify-content:space-between}
-.kcol.over{background:#dfe2ff;outline:2px dashed var(--blue)}
-.kcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;cursor:grab;font-size:13px}
-.kcard:hover{border-color:var(--blue);box-shadow:0 3px 12px #0b0c1014}
-.kcard.drag{opacity:.4}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;z-index:30;font-size:13px;box-shadow:0 8px 30px #0004}
-.empty{text-align:center;padding:36px 20px}.empty h3{margin-bottom:8px}
-@media(max-width:900px){.side{position:static;width:auto;flex-direction:row;flex-wrap:wrap}.mode{display:none}main{margin:0;padding:16px}.grid2{grid-template-columns:1fr}}
+.psec{font:600 11px "DM Sans";text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:22px 0 10px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.pcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;cursor:pointer;box-shadow:var(--sh);transition:.18s}
+.pcard:hover{border-color:#c5c8f3;box-shadow:0 10px 30px #010ecf1a;transform:translateY(-2px)}
+.pcard h3{font-size:16px}.pcard .n{font:700 28px "Space Grotesk";letter-spacing:-.02em}
+.sbar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:var(--line2)}.sbar i{display:block;height:100%}
+/* kanban */
+.btool{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.board{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 14px;align-items:flex-start;scroll-snap-type:x proximity}
+.board::-webkit-scrollbar{height:10px}.board::-webkit-scrollbar-thumb{background:#d6d6d0;border-radius:9px}
+.kcol{flex:0 0 272px;background:#ecece6;border-radius:16px;display:flex;flex-direction:column;max-height:calc(100vh - 230px);scroll-snap-align:start;border:2px solid transparent;transition:background .15s,border-color .15s}
+.kcol .kh{padding:12px 14px 10px;border-top:3px solid var(--c);border-radius:14px 14px 0 0;display:flex;align-items:center;gap:8px}
+.kcol .kh h4{font:600 13px "DM Sans";flex:1}.kcol .kh .cnt{font-size:12px;font-weight:600;background:#fff;border-radius:99px;padding:1px 9px;color:var(--mut)}
+.kcol .kb{padding:0 10px 10px;overflow-y:auto;flex:1;min-height:80px}
+.kcol.over{background:#e3e6ff;border-color:var(--blue)}
+.kempty{border:1.5px dashed #cfcfc8;border-radius:12px;padding:18px 10px;text-align:center;color:var(--mut2);font-size:12px}
+.kcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:grab;font-size:13px;box-shadow:0 1px 2px #0b0c100a;transition:.15s;position:relative}
+.kcard:hover{border-color:#c5c8f3;box-shadow:0 6px 18px #0b0c1014;transform:translateY(-1px)}
+.kcard:active{cursor:grabbing}.kcard.drag{opacity:.35;transform:rotate(2deg)}
+.kcard .t{display:flex;gap:10px;align-items:flex-start}.av{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font:700 12px "Space Grotesk";color:#fff;flex:none}
+.kcard .nm{font-weight:600;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.kcard .sub{color:var(--mut);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcard .ft{display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.kcard .sc{margin-left:auto;font:700 12px "Space Grotesk";padding:2px 8px;border-radius:7px}
+.sc.hi{background:var(--okbg);color:var(--ok)}.sc.md{background:var(--warnbg);color:var(--warn)}.sc.lo{background:#efefe9;color:var(--mut)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;z-index:30;font-size:13px;box-shadow:0 10px 30px #0005;animation:tin .2s ease-out}
+@keyframes tin{from{opacity:0;transform:translate(-50%,8px)}}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px}
+.step{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;background:#fff;cursor:pointer;transition:.15s}
+.step:hover{border-color:#c5c8f3;box-shadow:0 4px 14px #010ecf14}
+.step .n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:700 12px "Space Grotesk";background:var(--line2);color:var(--mut)}
+.step.done .n{background:var(--ok);color:#fff}.step b{font-size:13px}.step small{color:var(--mut);font-size:12px;line-height:1.35}
+.qa{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 16px}
+.adv{margin-top:12px;padding-top:12px;border-top:1px solid var(--line2)}
+.cell2{line-height:1.35}.cell2 small{display:block;color:var(--mut);font-size:12px}
+@media(max-width:1100px){.steps{grid-template-columns:1fr 1fr}}
+.empty{text-align:center;padding:40px 20px}.empty h3{margin-bottom:8px;justify-content:center}
+@media(max-width:1100px){.stages{grid-template-columns:repeat(3,1fr);row-gap:14px}.grid2,.grid2e{grid-template-columns:1fr}}
+@media(max-width:900px){.side{position:static;width:auto;flex-direction:row;flex-wrap:wrap}.navlbl,.sublogo{display:none}.mode{display:none}main{margin:0;padding:16px}.stages{grid-template-columns:repeat(2,1fr)}.dlist{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <aside class="side">
-  <div class="logo">brn<b>.</b> pipeline</div>
-  <button class="nav on" data-v="overview">Overview</button>
-  <button class="nav" data-v="pipelines">Pipelines</button>
-  <button class="nav" data-v="leads">Leads <span class="pill" id="nleads">0</span></button>
-  <button class="nav" data-v="approvals">Approvals <span class="pill" id="napp">0</span></button>
-  <button class="nav" data-v="log">Activity log</button>
-  <button class="nav" data-v="settings">Settings &amp; automation</button>
-  <div class="mode"><span id="agentState"></span>Send mode<b id="mode">dry run</b><span id="eng"></span><span id="spend" style="display:block;margin-top:6px"></span></div>
+  <div class="logo">brn<b>.</b> pipeline</div><div class="sublogo">Sales agent</div>
+  <div class="navlbl">Sell</div>
+  <button class="nav on" data-v="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</button>
+  <button class="nav" data-v="pipelines"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg>Pipelines</button>
+  <button class="nav" data-v="leads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14.7c1.8.7 3 2.5 3.5 5.3"/></svg>Leads <span class="pill" id="nleads">0</span></button>
+  <button class="nav" data-v="approvals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11.5l2.2 2.2L15.5 9"/><rect x="3.5" y="3.5" width="17" height="17" rx="4"/></svg>Approvals <span class="pill" id="napp">0</span></button>
+  <div class="navlbl">Monitor</div>
+  <button class="nav" data-v="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>Activity log</button>
+  <button class="nav" data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+  <div class="mode"><div id="agentState"></div>
+    <div><div class="lbl">Send mode</div><b id="mode">dry run</b></div>
+    <div><div class="lbl">Claude</div><span id="eng"></span><div id="spend"></div></div></div>
 </aside>
 <main>
-  <div class="top"><h1 id="title">Overview</h1>
-    <span class="updated" id="updated"></span>
-    <button id="agentBtn" onclick="toggleAgent()"></button>
-    <button id="refreshBtn" onclick="manualRefresh()" title="Reload everything"><span class="spin">↻</span> Refresh</button>
-    <button onclick="openImport()">Import leads</button>
-    <button class="dark" onclick="runTick()">Run agent now</button>
+  <div class="top"><div class="ttl"><h1 id="title">Overview</h1><div class="sub" id="subtitle"></div></div>
+    <div class="agentsw" id="agentBtn" onclick="toggleAgent()" title="Turn the automatic agent on or off"><span>Agent</span><span class="st" id="agentTxt"></span><span class="tg"></span></div>
+    <button class="icon" id="refreshBtn" onclick="manualRefresh()" title="Refresh"><span class="spin">↻</span></button>
+    <button class="pri" onclick="openImport()">+ Import leads</button>
   </div>
   <div id="sysBanner"></div><div id="banner"></div>
 
   <!-- OVERVIEW -->
   <section id="v-overview">
-    <div class="filters"><div class="chips" id="ovProducts"></div></div>
-    <div class="kpis" id="kpis"></div>
+    <div class="card hide" id="setup"></div>
+    <div class="hero"><div class="hd"><h2>Pipeline health</h2><div class="chips" id="ovProducts"></div></div><div class="stages" id="kpis"></div></div>
     <div class="grid2">
-      <div class="card"><h3>Outreach, last 14 days</h3><div class="chart" id="chart"></div>
+      <div class="card"><h3>Outreach, last 14 days<span class="r" id="chartRange"></span></h3><div class="tot" id="chartTot"></div><div class="chart2" id="chart"></div>
         <div class="legend"><span><i style="background:var(--blue)"></i>Emails</span><span><i style="background:var(--blue2)"></i>Calls</span><span><i style="background:var(--ink)"></i>Replies</span></div></div>
-      <div class="card"><h3>Funnel</h3><div class="funnel" id="funnel"></div></div>
+      <div class="card"><h3>Needs your attention</h3><div class="att" id="attention"></div></div>
     </div>
-    <div class="grid2">
-      <div class="card"><h3>By pipeline</h3><table id="byProduct"></table></div>
-      <div class="card"><h3>By stage</h3><div class="chips" id="byStage"></div></div>
+    <div class="grid2e">
+      <div class="card"><h3>Pipelines<span class="r"><a onclick="show('pipelines')" style="cursor:pointer">See all →</a></span></h3><div class="tablewrap"><table id="byProduct"></table></div></div>
+      <div class="card"><h3>Where leads are</h3><div class="dist" id="dist"></div><div class="dlist" id="byStage"></div></div>
     </div>
-    <div class="card"><h3>Latest agent activity</h3><div class="tablewrap"><table id="recent"></table></div></div>
+    <div class="card"><h3>Latest agent activity<span class="r"><a onclick="show('log')" style="cursor:pointer">Full log →</a></span></h3><div class="feed" id="recent"></div></div>
   </section>
 
   <!-- LEADS -->
@@ -152,10 +232,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
     <div class="fbox">
       <div class="fgrid">
         <div><label>Status</label><select id="f-stage" onchange="loadLeads(0)"></select></div>
-        <div><label>Category / segment</label><select id="f-segment" onchange="loadLeads(0)"></select></div>
         <div><label>Email</label><select id="f-email_status" onchange="loadLeads(0)">
           <option value="">Any</option><option value="never">Not emailed yet</option><option value="sent">Emailed</option>
           <option value="no_reply">Emailed, no reply</option><option value="replied">Replied</option><option value="no_email">No email address</option></select></div>
+        <div><label>Sort by</label><select id="f-sort" onchange="loadLeads(0)"><option value="updated">Recently updated</option><option value="created">Newest</option><option value="score">Highest score</option><option value="contacted">Last contacted</option><option value="next">Next action due</option><option value="company">Company A–Z</option></select></div>
+      </div>
+      <div class="fgrid adv hide" id="advF">
+        <div><label>Category / segment</label><select id="f-segment" onchange="loadLeads(0)"></select></div>
         <div><label>Country</label><select id="f-country" onchange="loadLeads(0)"></select></div>
         <div><label>Source</label><select id="f-source" onchange="loadLeads(0)"></select></div>
         <div><label>Score from / to</label><div class="row" style="flex-wrap:nowrap"><input id="f-score_min" type="number" placeholder="0" onchange="loadLeads(0)"><input id="f-score_max" type="number" placeholder="100" onchange="loadLeads(0)"></div></div>
@@ -164,9 +247,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
         <div><label>Last contacted from</label><input id="f-contacted_from" type="date" onchange="loadLeads(0)"></div>
         <div><label>Last contacted to</label><input id="f-contacted_to" type="date" onchange="loadLeads(0)"></div>
         <div><label>Replied from</label><input id="f-replied_from" type="date" onchange="loadLeads(0)"></div>
-        <div><label>Sort by</label><select id="f-sort" onchange="loadLeads(0)"><option value="updated">Recently updated</option><option value="created">Newest</option><option value="score">Highest score</option><option value="contacted">Last contacted</option><option value="next">Next action due</option><option value="company">Company A–Z</option></select></div>
       </div>
       <div class="row" style="margin-top:10px"><span class="muted" id="lcount"></span><span style="flex:1"></span>
+        <button class="sm" id="advBtn" onclick="$('#advF').classList.toggle('hide');this.textContent=$('#advF').classList.contains('hide')?'More filters ▾':'Fewer filters ▴'">More filters ▾</button>
         <button class="sm" onclick="clearFilters()">Clear filters</button><button class="sm" onclick="exportLeads()">Export these (CSV)</button></div>
     </div>
     <div class="bulk" id="bulk"><b id="bulkN"></b>
@@ -184,9 +267,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
   <section id="v-pipelines" class="hide">
     <div id="plist"></div>
     <div id="pboard" class="hide">
-      <div class="row" style="margin-bottom:12px"><button onclick="closeBoard()">← All pipelines</button><h2 id="pbTitle" style="flex:1;font-size:20px"></h2>
-        <button onclick="findLeads(pbKey,this)">Find leads now</button><button onclick="lProduct=pbKey;show('leads');loadFacets()">Open as list</button></div>
-      <p class="muted" id="pbPitch" style="margin-top:-4px"></p>
+      <div class="row" style="margin-bottom:6px"><button class="ghost" onclick="closeBoard()">← Pipelines</button><h2 id="pbTitle" style="flex:1;font-size:22px"></h2>
+        <button id="pbFind" onclick="findLeads(pbKey,this)">Find leads now</button><button onclick="lProduct=pbKey=='__all'?'':pbKey;show('leads');loadFacets()">Open as list</button></div>
+      <p class="muted" id="pbPitch" style="margin:0 0 14px;max-width:900px"></p>
+      <div class="btool"><input id="bq" placeholder="Search this board" oninput="renderBoard()" style="width:260px"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--mut)"><input type="checkbox" id="bEmpty" onchange="renderBoard()"> Hide empty columns</label>
+        <span class="muted" style="font-size:12px;margin-left:auto">Drag a card to another column to change its status</span></div>
       <div class="board" id="board"></div>
     </div>
   </section>
@@ -213,6 +298,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);bo
     <div>
       <div class="card"><h3>Automation</h3>
         <label>Agent</label><select id="s-agent_enabled"><option value="1">On: runs every minute (research, emails, follow-ups, calls, replies)</option><option value="0">Paused: nothing runs</option></select>
+        <div class="row" style="margin-top:8px"><button class="sm" onclick="runTick()">Run one pass now</button><span class="muted" style="font-size:12px">The agent runs by itself every minute while it's on. This just runs it once immediately.</span></div>
         <label>Send mode</label><select id="s-mode"><option value="dry_run">Dry run: everything is drafted and logged, nothing is sent</option><option value="approval">Approval: each email/call waits for your click</option><option value="live">Live: fully automatic within daily caps</option></select>
         <p class="muted" id="liveNote" style="font-size:12px"></p>
         <div class="row"><div><label>Emails / day</label><input id="s-daily_email_cap" type="number"></div><div><label>Calls / day</label><input id="s-daily_call_cap" type="number"></div><div><label>Min fit score</label><input id="s-min_score" type="number"></div></div>
@@ -285,7 +371,7 @@ function show(v){view=v;document.querySelectorAll('.nav').forEach(b=>b.classList
   $('#title').textContent={overview:'Overview',pipelines:'Pipelines',leads:'Leads',approvals:'Approvals',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 async function manualRefresh(){const b=$('#refreshBtn');b.classList.add('spinning');b.disabled=true;try{await loadFacets();await refresh();toast('Up to date')}finally{b.classList.remove('spinning');b.disabled=false}}
-function refresh(){$('#updated').textContent='Updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});return Promise.all([loadStats(),({overview:loadRecent,pipelines:loadPipelines,leads:()=>loadLeads(page),approvals:loadApps,log:loadLog,settings:loadSettings})[view]()])}
+function refresh(){if(view=='overview')loadSetup();$('#refreshBtn').title='Refresh (updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')';return Promise.all([loadStats(),({overview:loadRecent,pipelines:loadPipelines,leads:()=>loadLeads(page),approvals:loadApps,log:loadLog,settings:loadSettings})[view]()])}
 
 async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f.products.forEach(p=>PRODUCTS[p.key]=p);
   const opt=(arr,all)=>`<option value="">${all}</option>`+arr.map(x=>`<option value="${esc(x.value)}">${esc(SL[x.value]||PRODUCTS[x.value]?.name||x.value)} (${x.n})</option>`).join('');
@@ -300,29 +386,49 @@ async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f
 function setLProd(p){lProduct=p;loadFacets();loadLeads(0)}function setOvProd(p){ovProduct=p;loadFacets();loadStats()}
 
 async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='+ovProduct:''));
-  window.AGENT=s.agent_enabled;const ab=$('#agentBtn');ab.className=s.agent_enabled?'stop':'go';ab.innerHTML=s.agent_enabled?'■ Stop agent':'▶ Start agent';
+  window.AGENT=s.agent_enabled;const ab=$('#agentBtn');ab.classList.toggle('on',s.agent_enabled);$('#agentTxt').textContent=s.agent_enabled?'Running':'Stopped';
   window.MODE=s.mode;$('#mode').textContent=s.mode.replace('_',' ');const L=s.llm_status||{};
-  $('#eng').textContent=!s.llm?'Template engine (no API key)':L.error?'Claude: problem, using templates':'Claude connected';
-  $('#spend').innerHTML=s.llm?`Claude today <b style="display:inline;font-size:12px;letter-spacing:0">${usd(L.today)}</b>${L.budget?' of $'+L.budget.toFixed(2):''}${L.balance_left!=null?'<br>Balance left ≈ $'+L.balance_left.toFixed(2):''}`:'';
-  $('#sysBanner').innerHTML=(!s.agent_enabled?'<div class="banner"><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches. Click "Start agent" to resume.</div>':'')
-   +(s.llm&&L.over_budget?`<div class="banner">Today's Claude budget ($${L.budget.toFixed(2)}) is used up, so the agent is on free templates until tomorrow. Change it in Settings &gt; Claude usage.</div>`:'')+(s.llm&&L.error?`<div class="banner"><b>Claude isn't answering right now</b>, so the agent is using built-in templates (research and emails still work, just less personal). ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}) It retries automatically every 10 minutes.</span></div>`:'');$('#napp').textContent=s.kpis.pending_approvals;
-  $('#agentState').innerHTML=`<div style="margin-bottom:6px"><span class="dot ${s.agent_enabled?'':'off'}"></span>Agent ${s.agent_enabled?'running':'paused'}</div>`;
+  $('#subtitle').textContent=new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+' · '+(s.mode=='dry_run'?'Dry run: nothing is sent':s.mode=='approval'?'Approval mode: you approve every send':'Live sending');
+  $('#eng').innerHTML=!s.llm?'Templates only (no key)':L.error?'<span style="color:#f0b400">Problem, using templates</span>':`${esc((L.model||'').replace('claude-','').replace(/-(\d)-(\d)$/,' $1.$2'))} · ${esc(L.ai_mode||'')}`;
+  const pct=L.budget?Math.min(100,(L.today||0)/L.budget*100):0;
+  $('#spend').innerHTML=s.llm?`<div style="margin-top:4px">${usd(L.today)} today${L.budget?' of $'+L.budget.toFixed(2):''}</div>${L.budget?`<div class="meter"><i style="width:${pct}%"></i></div>`:''}${L.balance_left!=null?`<div style="margin-top:6px">≈ $${L.balance_left.toFixed(2)} credit left</div>`:''}`:'';
+  $('#sysBanner').innerHTML=(!s.agent_enabled?'<div class="banner"><span><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches.</span><button class="sm x" onclick="toggleAgent()">Start agent</button></div>':'')
+   +(s.llm&&L.over_budget?`<div class="banner">Today's Claude budget ($${L.budget.toFixed(2)}) is used up, so the agent is on free templates until tomorrow. Change it in Settings &gt; Claude usage.</div>`:'')+(s.llm&&L.error?`<div class="banner"><span><b>Claude isn't answering right now</b>, so the agent is using built-in templates. ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}, retries every 10 minutes)</span></span></div>`:'');
+  $('#napp').textContent=s.kpis.pending_approvals;$('#napp').classList.toggle('hot',s.kpis.pending_approvals>0);
+  $('#agentState').innerHTML=`<b style="font-size:13px"><span class="dot ${s.agent_enabled?'':'off'}"></span>Agent ${s.agent_enabled?'running':'stopped'}</b>`;
   if(!ovProduct)$('#nleads').textContent=s.kpis.leads;
   if(view!='overview')return;
-  const k=s.kpis,K=[['Leads',k.leads],['Qualified',k.qualified],['Contacted',k.contacted],['Emails sent',k.emails],['Calls made',k.calls],['Replies',k.replies],['Meetings',k.meetings],['Needs contact',s.stages.needs_contact||0],['Blocked by guardrails',k.blocked],['Errors (14 days)',k.errors]];
-  $('#kpis').innerHTML=K.map(([a,b])=>`<div class="kpi"><span>${a}</span><b>${b}</b></div>`).join('');
-  const max=Math.max(1,...s.funnel.map(f=>f[1]));
-  $('#funnel').innerHTML=s.funnel.map(([a,b])=>`<div><span>${a}</span><div class="bar" style="width:${Math.max(6,b/max*100)}%">${b}</div></div>`).join('');
+  const k=s.kpis,F=[['Leads',k.leads,'in the system'],['Qualified',k.qualified],['Contacted',k.contacted],['Replied',k.replies],['Meetings',k.meetings]];
+  $('#kpis').innerHTML=F.map(([a,b,c],i)=>{const prev=i?F[i-1][1]:0,r=i&&prev?Math.round(b/prev*100):null;
+    return `<div class="stg"><span>${a}</span><b>${b.toLocaleString()}</b><em>${i?(r!=null?r+'% of '+F[i-1][0].toLowerCase():'–'):(c)}</em><div class="fb"><i style="width:${k.leads?Math.max(b?3:0,b/k.leads*100):0}%"></i></div></div>`}).join('');
   const days=[...Array(14)].map((_,i)=>{const d=new Date(Date.now()-(13-i)*864e5).toISOString().slice(0,10);return s.daily.find(x=>x.d==d)||{d,emails:0,calls:0,replies:0}});
-  const m=Math.max(1,...days.map(d=>d.emails+d.calls+d.replies));
-  $('#chart').innerHTML=days.map(d=>`<div style="flex:1"><div class="col" style="height:150px" title="${d.d}: ${d.emails} emails, ${d.calls} calls, ${d.replies} replies">
-    <div class="seg" style="height:${d.emails/m*100}%;background:var(--blue)"></div><div class="seg" style="height:${d.calls/m*100}%;background:var(--blue2)"></div><div class="seg" style="height:${d.replies/m*100}%;background:var(--ink)"></div></div><div class="lbl">${d.d.slice(8)}</div></div>`).join('');
-  $('#byProduct').innerHTML='<tr><th>Pipeline</th><th>Leads</th><th>Active</th><th>Emailed</th><th>Replied</th><th>Meetings</th></tr>'+s.by_product.map(r=>`<tr class="click" onclick="lProduct='${r.product}';show('leads');loadFacets()"><td>${esc(r.name)}</td><td>${r.leads}</td><td>${r.active||0}</td><td>${r.emailed||0}</td><td>${r.replied||0}</td><td>${r.meetings||0}</td></tr>`).join('');
-  $('#byStage').innerHTML=STAGES.filter(x=>s.stages[x]).map(x=>`<span class="chip" onclick="show('leads');$('#f-stage').value='${x}';loadLeads(0)">${SL[x]}<small>${s.stages[x]}</small></span>`).join('')||'<span class="muted">No leads yet. Click "Import leads".</span>'}
+  const m=Math.max(4,...days.map(d=>d.emails+d.calls+d.replies)),step=Math.ceil(m/4);const top=step*4;
+  const sum=f=>days.reduce((a,d)=>a+(+d[f]||0),0);
+  $('#chartTot').innerHTML=`<div><b>${sum('emails')}</b>emails${s.mode=='dry_run'?' (dry run)':''}</div><div><b>${sum('calls')}</b>calls</div><div><b>${sum('replies')}</b>replies</div>`;
+  $('#chart').innerHTML=[0,1,2,3,4].map(i=>`<div class="grid" style="bottom:${22+i*(178/4)}px"><span>${i*step}</span></div>`).join('')+days.map(d=>{const dt=new Date(d.d+'T12:00:00');
+    return `<div class="c"><div class="tip">${dt.toLocaleDateString([], {month:'short',day:'numeric'})}: ${d.emails} emails · ${d.calls} calls · ${d.replies} replies</div>
+    <div class="stack" style="height:${(d.emails+d.calls+d.replies)/top*100}%"><div class="seg" style="flex:${d.emails};background:var(--blue)"></div><div class="seg" style="flex:${d.calls};background:var(--blue2)"></div><div class="seg" style="flex:${d.replies};background:var(--ink)"></div></div>
+    <div class="d">${dt.getDate()}</div></div>`}).join('');
+  const att=[['✓','#fff4e0','#a15c00',k.pending_approvals,'Emails waiting for approval','Review and send',"show('approvals')"],
+    ['💬','#ecedff','#3a46d8',s.stages.reply_manually||0,'People asking online','Copy the drafted reply and post it',"filterStage('reply_manually')"],
+    ['☎','#fff4e0','#a15c00',s.stages.needs_contact||0,'Leads without email or phone','Add a contact to start outreach',"filterStage('needs_contact')"],
+    ['↩','#e9f3ff','#0b5cad',s.stages.replied||0,'Replies to follow up','Book the meeting',"filterStage('replied')"],
+    ['!','#fdecea','#b42318',k.errors,'Errors in the last 14 days','Open in the activity log',"show('log');$('#g-status').value='error';loadLog()"]].filter(x=>x[3]>0);
+  $('#attention').innerHTML=att.length?att.map(([i,bg,c,n,t,sub,on])=>`<a onclick="${on}"><span class="ic" style="background:${bg};color:${c}">${i}</span><span class="tx">${t}<small>${sub}</small></span><b>${n}</b></a>`).join(''):'<div class="empty" style="padding:24px"><h3>All clear</h3><p class="muted">Nothing needs you right now.</p></div>';
+  const bp=s.by_product,mx=Math.max(1,...bp.map(r=>r.leads));
+  $('#byProduct').innerHTML='<tr><th>Pipeline</th><th>Leads</th><th>Active</th><th>Emailed</th><th>Replied</th></tr>'+(bp.map(r=>`<tr class="click" onclick="lProduct='${r.product}';show('leads');loadFacets()"><td><b>${esc(r.name)}</b><div class="mini" style="margin-top:6px"><i style="width:${r.leads/mx*100}%"></i></div></td><td>${r.leads}</td><td>${r.active||0}</td><td>${r.emailed||0}</td><td>${r.replied||0}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No leads yet</td></tr>');
+  const tot=Object.values(s.stages).reduce((a,b)=>a+b,0)||1;
+  $('#dist').innerHTML=KCOLS.filter(x=>s.stages[x]).map(x=>`<i title="${SL[x]}: ${s.stages[x]}" style="width:${s.stages[x]/tot*100}%;background:${SCOL[x]}"></i>`).join('');
+  $('#byStage').innerHTML=KCOLS.filter(x=>s.stages[x]).map(x=>`<a onclick="filterStage('${x}')"><i style="background:${SCOL[x]}"></i>${SL[x]}<b>${s.stages[x]}</b></a>`).join('')||'<span class="muted">No leads yet. Click "Import leads".</span>'}
+function filterStage(x){show('leads');$('#f-stage').value=x;loadLeads(0)}
 
 const logRow=a=>`<tr class="click" onclick="openLead(${a.lead_id||0})"><td class="muted" style="white-space:nowrap">${fmt(a.created_at)}</td><td>${esc(a.company||'System')}</td><td>${a.product?prodTag(a.product):''}</td><td><span class="tag g">${a.kind}</span></td><td><span class="tag ${a.status}">${a.status}</span></td><td>${esc(a.summary)}</td></tr>`;
 const logHead='<tr><th>When</th><th>Lead</th><th>Product</th><th>Event</th><th>Status</th><th>Detail</th></tr>';
-async function loadRecent(){const r=await api('/api/activities?limit=12'+(ovProduct?'&product='+ovProduct:''));$('#recent').innerHTML=logHead+r.map(logRow).join('')}
+const KI={email_sent:['✉','#eef0ff','#010ECF'],email_reply:['↩','#e9f3ff','#0b5cad'],call_completed:['☎','#ecedff','#3a46d8'],research:['🔎','#f2f2ec','#4a4b52'],stage_change:['→','#f2f2ec','#4a4b52'],approval:['✓','#fff4e0','#a15c00'],blocked:['⦸','#fdecea','#b42318'],system:['⚙','#f2f2ec','#6b6d76']};
+const ago=t=>{if(!t)return'';const m=(Date.now()-new Date(t))/6e4;return m<1?'now':m<60?Math.round(m)+'m':m<1440?Math.round(m/60)+'h':Math.round(m/1440)+'d'};
+async function loadRecent(){const r=await api('/api/activities?limit=10'+(ovProduct?'&product='+ovProduct:''));
+  $('#recent').innerHTML=r.map(a=>{const [i,bg,c]=a.status=='error'?['!','#fdecea','#b42318']:(KI[a.kind]||KI.system);
+   return `<div class="fi" onclick="openLead(${a.lead_id||0})"><span class="ic" style="background:${bg};color:${c}">${i}</span><div class="tx"><div><b>${esc(a.company||'System')}</b> ${a.product?prodTag(a.product):''} <span class="tag ${a.status}">${esc(a.status)}</span></div><small>${esc(a.summary)}</small></div><span class="when">${ago(a.created_at)}</span></div>`}).join('')||'<p class="muted">No activity yet.</p>'}
 function logParams(){return ['q','kind','status','channel','product','date_from','date_to'].map(k=>[k,$('#g-'+k).value]).filter(x=>x[1]).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&')}
 async function loadLog(){const r=await api('/api/activities?limit=1000&'+logParams());$('#gcount').textContent=r.length+(r.length==1000?'+':'')+' events';$('#log').innerHTML=logHead+r.map(logRow).join('')}
 function exportLog(){location.href='/api/export/activities.csv?'+logParams()}
@@ -336,9 +442,9 @@ async function loadLeads(p){if(p!==undefined)page=p;const r=await api('/api/lead
   $('#lcount').textContent=`${r.total} lead${r.total==1?'':'s'} match`;$('#bulkAllN').textContent=r.total;
   $('#leads').innerHTML=`<tr><th><input type="checkbox" onclick="selPage(this.checked)"></th><th>Company</th><th>Product · category</th><th>Contact</th><th>Location</th><th>Score</th><th>Status</th><th>Emails</th><th>Last contacted</th><th>Next action</th></tr>`+r.rows.map(l=>`<tr class="click ${sel.has(l.id)?'sel':''}" onclick="openLead(${l.id})">
   <td onclick="event.stopPropagation()"><input type="checkbox" ${sel.has(l.id)?'checked':''} onchange="toggleSel(${l.id},this.checked)"></td>
-  <td><b>${esc(l.company)}</b>${l.website?`<br><span class="muted">${esc(l.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</span>`:''}</td>
+  <td class="cell2"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(l.company)}<div><b>${esc(l.company)}</b>${l.website?`<small>${esc(l.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</small>`:''}</div></div></td>
   <td>${prodTag(l.product)}<br><span class="muted">${esc(l.segment||l.industry||'')}</span></td>
-  <td>${esc(l.contact_name||'')}<br><span class="muted">${esc(l.email||l.phone||'no contact')}</span></td>
+  <td class="cell2">${l.contact_name?esc(l.contact_name)+'<small>':'<small style="color:inherit">'}${esc(l.email||l.phone||'No contact yet')}</small></td>
   <td>${esc(l.city||'')} ${esc(l.country||'')}</td><td>${l.score??'–'}</td><td>${stageTag(l.stage)}</td>
   <td>${l.emails_sent?`<span class="tag ok">${l.emails_sent} sent</span>`:'<span class="muted">none</span>'}${l.replied_at?'<br><span class="tag replied">replied</span>':''}</td>
   <td class="muted">${fdate(l.last_contacted_at)}</td><td class="muted">${esc(l.next_action||'')} ${fmt(l.next_action_at)}</td></tr>`).join('');
@@ -354,6 +460,7 @@ async function bulkDo(action,value){if(action.startsWith('set_')&&!value)return 
 async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=l.research||{},x=l.extra||{};
   const issues=x.issues||[];const xr=Object.entries(x).filter(([k])=>!['issues'].includes(k));
   $('#drawer').innerHTML=`<div class="row"><h2 style="flex:1">${esc(l.company)}</h2><button onclick="$('#drawer').classList.remove('open')">Close</button></div>
+  <div class="qa">${quickActions(l)}</div>
   <div class="row" style="margin:10px 0">${stageTag(l.stage)} ${prodTag(l.product)} ${l.segment?`<span class="tag g">${esc(l.segment)}</span>`:''}<span class="muted">score ${l.score??'–'} · ${l.emails_sent} emails sent${l.replied_at?' · replied '+fdate(l.replied_at):''}</span></div>
   <div class="card"><h3>Details</h3><div class="fgrid">
    ${[['contact_name','Contact'],['title','Title'],['email','Email'],['phone','Phone'],['website','Website'],['city','City'],['country','Country'],['segment','Category']].map(([k,n])=>`<div><label>${n}</label><input id="e-${k}" value="${esc(l[k]||'')}"></div>`).join('')}
@@ -361,7 +468,7 @@ async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=
    <div><label>Status</label><select id="e-stage">${STAGES.map(s=>`<option value="${s}" ${s==l.stage?'selected':''}>${SL[s]}</option>`).join('')}</select></div>
    <div><label>Lawful basis</label><select id="e-consent_basis">${['legitimate_interest_b2b','opt_in','existing_customer','public_post','none'].map(s=>`<option ${s==l.consent_basis?'selected':''}>${s}</option>`).join('')}</select></div></div>
    <label>Notes</label><textarea id="e-notes" style="min-height:60px">${esc(l.notes||'')}</textarea>
-   <div class="row" style="margin-top:8px"><button class="pri" onclick="saveLead(${l.id})">Save</button><button onclick="previewLead(${l.id})">Preview next email</button><span class="muted">source: ${esc(l.source)} · added ${fdate(l.created_at)}</span></div></div>
+   <div class="row" style="margin-top:8px"><button class="pri" onclick="saveLead(${l.id})">Save changes</button><span class="muted">source: ${esc(l.source)} · added ${fdate(l.created_at)}</span></div></div>
   ${r.reply_draft?`<div class="card" style="border-color:var(--blue)"><h3>Someone asked for this online: reply by hand</h3><p class="muted" style="margin-top:-6px">${esc(r.summary||'')}</p>
    ${l.notes?`<pre>${esc(l.notes)}</pre>`:''}<label>Suggested reply (edit, copy, post it yourself)</label><textarea id="rdraft" style="min-height:130px">${esc(r.reply_draft)}</textarea>
    <div class="row" style="margin-top:8px">${l.website?`<a class="btn" href="${esc(l.website)}" target="_blank" rel="noopener">Open the post ↗</a>`:''}<button onclick="navigator.clipboard.writeText($('#rdraft').value);toast('Reply copied')">Copy reply</button>
@@ -374,6 +481,16 @@ async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=
    const body=a.kind=='email_sent'&&p.subject?`<pre>Subject: ${esc(p.subject)}\n\n${esc((p.body||'').split('\n\n--\n')[0])}</pre><button class="sm" style="margin-top:6px" onclick="previewAct(${a.id})">View branded email</button>`:p.transcript?`<pre>${esc(p.transcript)}</pre>`:p.text?`<pre>${esc(p.text)}</pre>`:'';
    return `<div class="ev"><small>${fmt(a.created_at)} · ${a.channel} · <span class="tag ${a.status}">${a.status}</span></small><div>${esc(a.summary)}</div>${body}</div>`}).join('')}</div>`;
   $('#drawer').classList.add('open')}
+function quickActions(l){const A=[];const st=l.stage;
+  if(['new','needs_contact','paused','completed','nurture','disqualified','replied'].includes(st)&&(l.email||l.phone))A.push(['▶ Start outreach','in_sequence','pri']);
+  if(['in_sequence','awaiting_approval'].includes(st))A.push(['❚❚ Pause','paused','']);
+  if(!['meeting_booked','won'].includes(st))A.push(['📅 Meeting booked','meeting_booked','']);
+  if(st=='meeting_booked')A.push(['🏆 Won','won','']);
+  if(!['lost','won'].includes(st))A.push(['Lost','lost','']);
+  if(st!='opted_out')A.push(['Do not contact','opted_out','danger']);
+  return A.map(([t,s,c])=>`<button class="sm ${c}" onclick="quickStage(${l.id},'${s}')">${t}</button>`).join('')+`<button class="sm" onclick="previewLead(${l.id})">✉ Preview next email</button>`}
+async function quickStage(id,stage){if(stage=='opted_out'&&!confirmText('Never contact this lead again?'))return;
+  await api('/api/leads/'+id,{method:'PATCH',body:{stage}});toast('Status: '+SL[stage]);openLead(id);refresh()}
 async function markReplied(id){await api('/api/leads/'+id,{method:'PATCH',body:{stage:'replied'}});toast('Marked as replied');openLead(id);refresh()}
 async function saveLead(id){const b={};['contact_name','title','email','phone','website','city','country','segment','product','stage','consent_basis','notes'].forEach(k=>b[k]=$('#e-'+k).value||null);
   await api('/api/leads/'+id,{method:'PATCH',body:b});alertBanner('Saved');openLead(id);loadFacets();refresh()}
@@ -452,26 +569,45 @@ async function loadPipelines(){const r=await api('/api/pipelines');PIPES=r.pipel
     <div class="muted" style="font-size:12px">Sources: ${srcTxt}<br>${p.last_run?`Last search ${fmt(p.last_run.at)}: ${p.last_run.imported} new`:'Not searched yet'}</div>
     <div class="row" onclick="event.stopPropagation()"><button class="sm" onclick="findLeads('${p.key}',this)">Find leads now</button><button class="sm" onclick="openBoard('${p.key}')">Open board →</button></div></div>`};
   const note=!r.places_key?'<div class="banner">Map searches (businesses near you, businesses without a website) need a Google Places API key: add <b>GOOGLE_PLACES_API_KEY</b> in Railway Variables. Reddit intent search works without a key.</div>':'';
-  $('#plist').innerHTML=note+`<p class="muted" style="margin:0">Every product and service runs as its own pipeline with its own pitch, sources and follow-up sequence. Automatic discovery is <b>${r.auto?'on (daily)':'off'}</b>.</p>`
+  $('#plist').innerHTML=note+`<div class="row" style="margin-bottom:4px"><button class="dark" onclick="openBoard('__all')">Open board with all leads</button></div><p class="muted" style="margin:10px 0 0">Every product and service runs as its own pipeline with its own pitch, sources and follow-up sequence. Automatic discovery is <b>${r.auto?'on (daily)':'off'}</b>.</p>`
    +`<div class="psec">Products</div><div class="pgrid">${PIPES.filter(p=>p.type!='service').map(card).join('')}</div><div class="psec">Services</div><div class="pgrid">${PIPES.filter(p=>p.type=='service').map(card).join('')}</div>`}
 async function findLeads(key,b){const t=b.textContent;b.disabled=true;b.textContent='Searching…';
   try{const r=await api(`/api/pipelines/${key}/discover`,{method:'POST'});alertBanner(`Found ${r.imported} new leads (${r.skipped} already known).`+(r.notes.length?' '+r.notes.join(' '):'')+(r.errors.length?' Problems: '+r.errors.join('; '):''),r.errors.length&&!r.imported);loadFacets();refresh()}
   finally{b.disabled=false;b.textContent=t}}
 function openBoard(k){pbKey=k;window._keepBoard=true;show('pipelines')}
-function closeBoard(silent){pbKey=null;$('#pboard').classList.add('hide');$('#plist').classList.remove('hide');if(silent!==true)loadPipelines()}
-async function loadBoard(){const p=PIPES.find(x=>x.key==pbKey);if(!p)return closeBoard();$('#plist').classList.add('hide');$('#pboard').classList.remove('hide');
-  $('#pbTitle').textContent=p.name;$('#pbPitch').textContent=p.pitch;
-  const r=await api('/api/leads?'+qs({product:pbKey,limit:1000,sort:'updated'}));const by={};r.rows.forEach(l=>(by[l.stage]=by[l.stage]||[]).push(l));
-  const cols=KCOLS.filter(k=>['new','needs_contact','in_sequence','replied','meeting_booked','won'].includes(k)||by[k]);
-  $('#board').innerHTML=cols.map(k=>`<div class="kcol" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
-   <h4><span><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${SCOL[k]};margin-right:6px"></i>${SL[k]}</span><span class="muted">${(by[k]||[]).length}</span></h4>
-   ${(by[k]||[]).slice(0,80).map(l=>`<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('id',${l.id});this.classList.add('drag')" ondragend="this.classList.remove('drag')" onclick="openLead(${l.id})">
-    <b>${esc(l.company)}</b><div class="muted">${esc(l.city||'')} ${esc(l.email||l.phone||'no contact')}</div>
-    <div class="row" style="margin-top:4px">${l.score!=null?`<span class="tag g">score ${l.score}</span>`:''}${l.emails_sent?`<span class="tag ok">${l.emails_sent} sent</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}</div></div>`).join('')}
-   ${(by[k]||[]).length>80?`<div class="muted" style="font-size:12px">+${by[k].length-80} more, open as list</div>`:''}</div>`).join('')}
+function closeBoard(silent){$('#bq')&&($('#bq').value='');pbKey=null;$('#pboard').classList.add('hide');$('#plist').classList.remove('hide');if(silent!==true)loadPipelines()}
+const AVC=['#010ECF','#0B0C10','#3a46d8','#127a4a','#a15c00','#0b5cad','#6E7BFF'];
+const avatar=n=>{const t=String(n||'?').replace(/[^\p{L}\p{N} ]/gu,'').trim().split(/\s+/);const h=[...String(n)].reduce((a,c)=>a+c.charCodeAt(0),0);
+  return `<span class="av" style="background:${AVC[h%AVC.length]}">${esc(((t[0]||'?')[0]+((t[1]||'')[0]||'')).toUpperCase())}</span>`};
+let BOARD=[];
+async function loadBoard(){const all=pbKey=='__all',p=all?{name:'All leads',pitch:'Every pipeline on one board. Drag a card to change its status.'}:PIPES.find(x=>x.key==pbKey);if(!p)return closeBoard();
+  $('#plist').classList.add('hide');$('#pboard').classList.remove('hide');$('#pbTitle').textContent=p.name;$('#pbPitch').textContent=p.pitch;
+  $('#pbFind').classList.toggle('hide',all);
+  const r=await api('/api/leads?'+qs({...(all?{}:{product:pbKey}),limit:1000,sort:'updated'}));BOARD=r.rows;renderBoard()}
+function renderBoard(){const q=($('#bq').value||'').toLowerCase();const rows=BOARD.filter(l=>!q||[l.company,l.email,l.city,l.contact_name].join(' ').toLowerCase().includes(q));
+  const by={};rows.forEach(l=>(by[l.stage]=by[l.stage]||[]).push(l));const hideEmpty=$('#bEmpty').checked;
+  const cols=KCOLS.filter(k=>by[k]||(!hideEmpty&&['new','needs_contact','in_sequence','replied','meeting_booked','won'].includes(k)));
+  const card=l=>{const sc=l.score==null?'':`<span class="sc ${l.score>=70?'hi':l.score>=55?'md':'lo'}">${l.score}</span>`;
+   return `<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('id',${l.id});this.classList.add('drag')" ondragend="this.classList.remove('drag')" onclick="openLead(${l.id})">
+    <div class="t">${avatar(l.company)}<div style="min-width:0;flex:1"><div class="nm">${esc(l.company)}</div><div class="sub">${esc(l.contact_name||l.email||l.phone||'No contact yet')}</div></div></div>
+    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}${sc}</div></div>`};
+  $('#board').innerHTML=cols.map(k=>{const L=by[k]||[];return `<div class="kcol" style="--c:${SCOL[k]}" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
+   <div class="kh"><h4>${SL[k]}</h4><span class="cnt">${L.length}</span></div>
+   <div class="kb">${L.slice(0,100).map(card).join('')||'<div class="kempty">Drop leads here</div>'}${L.length>100?`<div class="muted" style="font-size:12px;text-align:center;padding:6px">+${L.length-100} more in the list view</div>`:''}</div></div>`}).join('')}
 async function dropLead(e,stage){e.preventDefault();document.querySelectorAll('.kcol').forEach(c=>c.classList.remove('over'));const id=e.dataTransfer.getData('id');if(!id)return;
-  await api('/api/leads/'+id,{method:'PATCH',body:{stage}});toast('Moved to '+SL[stage]);loadBoard();loadStats()}
+  const l=BOARD.find(x=>x.id==id);if(l){if(l.stage==stage)return;l.stage=stage;renderBoard()}
+  await api('/api/leads/'+id,{method:'PATCH',body:{stage}});toast('Moved to '+SL[stage]);loadStats()}
 $('#modal').onclick=e=>{if(e.target.id=='modal')closeModal()};
+async function loadSetup(){if(view!='overview')return;const[s,st]=await Promise.all([api('/api/settings'),api('/api/stats')]);const P=s.providers||{};
+  const steps=[[P.claude,'Connect Claude','Writes emails and reads replies',"show('settings')"],[P.email,'Connect email','Sends from your domain',"show('settings')"],
+   [st.kpis.leads>0,'Add leads','Import a file or let pipelines find them',"openImport()"],[st.mode!='dry_run','Pick send mode','Approval mode lets you check each email first',"show('settings')"],
+   [st.kpis.contacted>0,'First email out','Approve drafts in Approvals',"show('approvals')"]];
+  const done=steps.filter(x=>x[0]).length;const el=$('#setup');let hidden=false;try{hidden=localStorage.getItem('brnSetupHide')=='1'}catch{}
+  el.classList.toggle('hide',done==steps.length||hidden);
+  el.innerHTML=`<h3>Get started<span class="r">${done} of ${steps.length} done · <a style="cursor:pointer" onclick="try{localStorage.setItem('brnSetupHide','1')}catch{};$('#setup').classList.add('hide')">Hide</a></span></h3>
+   <div class="steps">${steps.map(([ok,t,sub,on],i)=>`<div class="step ${ok?'done':''}" onclick="${on}"><span class="n">${ok?'✓':i+1}</span><b>${t}</b><small>${sub}</small></div>`).join('')}</div>`}
+document.addEventListener('keydown',e=>{if(e.key=='Escape'){closeModal();$('#drawer').classList.remove('open')}});
+document.addEventListener('mousedown',e=>{const d=$('#drawer');if(d.classList.contains('open')&&!d.contains(e.target)&&!$('#modal').contains(e.target)&&!e.target.closest('tr.click,.kcard,.fi,.att a'))d.classList.remove('open')});
 loadFacets().then(refresh);setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings')refresh()},20000);
 </script>
 </body>

@@ -107,7 +107,7 @@ PRODUCTS = [
      "pitch": "Finance automation: reads bills from email with OCR, maps them to branches and supports reconciliation. One client saved 412 hours.",
      "icp": "Multi-branch businesses with heavy bill processing in finance teams",
      "sources": {"places": [], "reddit": ["automate invoice processing"]}},
-    {"key": "website_build", "name": "Websites for businesses without one", "type": "service",
+    {"key": "website_build", "name": "New websites (no-site businesses)", "type": "service",
      "pitch": "brn dynamics designs and launches a fast, mobile-friendly business website with Google Maps, WhatsApp and booking built in, at a fixed price, live in about two weeks.",
      "icp": "Local businesses with good reviews but no website",
      "sequence": CALL_FIRST,
