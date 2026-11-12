@@ -128,6 +128,7 @@ def stats(request: Request):
             "pending_approvals": db.one("SELECT COUNT(*) n FROM approvals WHERE state='pending'")["n"],
             "blocked": db.one("SELECT COUNT(*) n FROM activities WHERE status='blocked'")["n"],
             "errors": db.one("SELECT COUNT(*) n FROM activities WHERE status='error' AND created_at>=?", (since,))["n"],
+            "unread_mail": db.one(f"SELECT COUNT(DISTINCT a.lead_id) n FROM activities a JOIN leads l ON l.id=a.lead_id WHERE {UNREAD}")["n"],
         },
         "funnel": [["Leads", total], ["Qualified", qualified], ["Contacted", agg["contacted"] or 0],
                    ["Replied", agg["replies"] or 0], ["Meetings", meetings]],
@@ -386,6 +387,92 @@ def _email_preview(product=None, lead_id=None, activity_id=None):
                     media_type="text/html")
 
 
+# ---------- mailbox: every email sent and every reply, as one conversation per lead ----------
+UNREAD = "a.kind='email_reply' AND a.created_at>COALESCE(l.mail_seen_at,'')"
+
+
+def _message(a):
+    """One activity row as a mailbox message."""
+    p = json.loads(a["payload"] or "{}")
+    if a["kind"] == "email_reply":
+        text = p.get("text") or ""
+        subject = p.get("subject")
+        if text.startswith("Subject: "):
+            head, _, text = text.partition("\n\n")
+            subject = subject or head[9:]
+        return {"id": a["id"], "dir": "in", "at": p.get("received_at") or a["created_at"], "status": a["status"], "subject": subject or "",
+                "body": text.strip(), "from": p.get("from"), "intent": p.get("intent"), "summary": p.get("summary")}
+    body = p.get("body") or ""
+    return {"id": a["id"], "dir": "out", "at": a["created_at"], "status": a["status"], "subject": p.get("subject") or "",
+            "body": body if p.get("manual") else body.split("\n\n--\n")[0], "to": p.get("to"), "manual": bool(p.get("manual")),
+            "via": p.get("provider"), "note": a["summary"] if a["status"] == "error" else None}
+
+
+@app.get("/api/mail")
+def mail(filter: str = "all", q: str = None, product: str = None):
+    w, args = ["a.kind IN ('email_sent','email_reply')", "a.status IN ('ok','dry_run')"], []
+    if q:
+        w.append("""(l.company LIKE ? OR l.contact_name LIKE ? OR l.email LIKE ? OR l.id IN
+                    (SELECT lead_id FROM activities WHERE kind IN ('email_sent','email_reply') AND payload LIKE ?))""")
+        args += [f"%{q}%"] * 4
+    if product:
+        w.append("l.product=?"); args.append(product)
+    having = {"unread": "unread>0", "replied": "replies>0", "waiting": "sent>0 AND replies=0", "sent": "sent>0"}.get(filter, "1=1")
+    rows = db.q(f"""SELECT l.id, l.company, l.contact_name, l.email, l.product, l.stage,
+                    SUM(a.kind='email_sent' AND a.status='ok') sent, SUM(a.kind='email_sent' AND a.status='dry_run') dry_runs,
+                    SUM(a.kind='email_reply') replies, SUM({UNREAD}) unread, MAX(a.id) last_id
+                    FROM activities a JOIN leads l ON l.id=a.lead_id WHERE {' AND '.join(w)}
+                    GROUP BY l.id HAVING {having} ORDER BY last_id DESC LIMIT 300""", args)
+    last = {a["id"]: _message(a) for a in db.q(
+        f"SELECT * FROM activities WHERE id IN ({','.join('?' * len(rows))})", [r["last_id"] for r in rows])} if rows else {}
+    for r in rows:
+        m = last.get(r["last_id"]) or {}
+        r["last"] = {"dir": m.get("dir"), "at": m.get("at"), "status": m.get("status"), "subject": m.get("subject"),
+                     "snippet": " ".join((m.get("body") or "").split())[:160]}
+    return {"threads": rows, "inbox": inbox.enabled(), "email": bool(channels.email_provider()),
+            "last_check": db.setting("inbox_checked_at"), "mailbox": os.environ.get("IMAP_USER") or os.environ.get("SMTP_USER") or ""}
+
+
+@app.get("/api/mail/{lead_id}")
+def mail_thread(lead_id: int):
+    l = db.one("SELECT id, company, contact_name, title, email, product, stage, emails_sent, replied_at FROM leads WHERE id=?", (lead_id,))
+    if not l:
+        raise HTTPException(404)
+    msgs = [_message(a) for a in db.q("""SELECT * FROM activities WHERE lead_id=? AND kind IN ('email_sent','email_reply')
+                                         AND status IN ('ok','dry_run','error') ORDER BY id""", (lead_id,))]
+    l["messages"] = sorted(msgs, key=lambda m: m["at"] or "")
+    l["can_send"] = bool(channels.email_provider())
+    db.ex("UPDATE leads SET mail_seen_at=? WHERE id=?", (db.now(), lead_id))  # opening the conversation marks it read
+    return l
+
+
+@app.post("/api/mail/{lead_id}/send")
+def mail_send(lead_id: int, payload: dict = Body(...)):
+    """A reply typed by a person in the Mailbox. It is sent straight away, as plain text, whatever the send mode."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        raise HTTPException(404)
+    subject, body = (payload.get("subject") or "").strip(), (payload.get("body") or "").strip()
+    if not subject or not body:
+        raise HTTPException(400, "Write a subject and a message first.")
+    if not lead.get("email"):
+        raise HTTPException(400, "This lead has no email address.")
+    if lead["stage"] == "opted_out" or compliance.is_suppressed(lead):
+        raise HTTPException(400, "This lead is on the do-not-contact list, so the email was not sent.")
+    if not channels.email_provider():
+        raise HTTPException(400, "Email not connected. Set RESEND_API_KEY, or SMTP_HOST, SMTP_USER and SMTP_PASSWORD.")
+    prev = db.q("SELECT payload FROM activities WHERE lead_id=? AND kind='email_reply' ORDER BY id DESC LIMIT 1", (lead_id,))
+    mid = json.loads(prev[0]["payload"] or "{}").get("message_id") if prev else None
+    try:  # In-Reply-To keeps it in the same thread in the lead's mail app
+        res = channels.deliver(lead, subject, body, headers={"In-Reply-To": mid, "References": mid} if mid else None)
+    except Exception as e:
+        db.log(lead_id, "email_sent", f"Reply failed to send: {e}", channel="email", status="error")
+        raise HTTPException(502, f"The email was not sent: {e}")
+    db.log(lead_id, "email_sent", f"reply by hand: {subject}", channel="email", status="ok", payload={**res, "manual": True})
+    db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=?, mail_seen_at=? WHERE id=?", (db.now(), db.now(), lead_id))
+    return {"ok": True}
+
+
 # ---------- approvals ----------
 @app.get("/api/approvals")
 def approvals(state: str = "pending"):
@@ -503,7 +590,11 @@ def test_email():
 def check_inbox():
     if not inbox.enabled():
         raise HTTPException(400, "Mailbox not connected. Set IMAP_HOST, SMTP_USER and SMTP_PASSWORD.")
-    return {"replies": inbox.poll(agent.handle_reply)}
+    try:
+        return {"replies": inbox.poll(agent.handle_reply)}
+    except Exception as e:
+        db.log(None, "system", f"Inbox check failed: {e}", channel="email", status="error")
+        raise HTTPException(502, f"Could not read the mailbox: {e}")
 
 
 def discover_pipeline(key, sources_only=None):

@@ -34,7 +34,7 @@ def _sender():
     return db.setting("sender_email") or os.environ.get("SMTP_USER", "")
 
 
-def _send_smtp(lead, subject, body, html=None):
+def _send_smtp(lead, subject, body, html=None, headers=None):
     user = os.environ["SMTP_USER"]
     sender = _sender()
     msg = EmailMessage()
@@ -43,6 +43,8 @@ def _send_smtp(lead, subject, body, html=None):
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid(domain=sender.split("@")[-1])
     msg["List-Unsubscribe"] = f"<mailto:{sender}?subject=unsubscribe>"
+    for k, v in (headers or {}).items():
+        msg[k] = v
     msg.set_content(body)
     if html:
         msg.add_alternative(html, subtype="html")
@@ -65,7 +67,7 @@ def _send_smtp(lead, subject, body, html=None):
     return {"status": "ok", "provider": "smtp", "provider_id": msg["Message-ID"], "to": lead["email"], "subject": subject, "body": body}
 
 
-def _send_resend(lead, subject, body, html=None):
+def _send_resend(lead, subject, body, html=None, headers=None):
     sender = _sender()
     r = httpx.post(
         "https://api.resend.com/emails",
@@ -73,7 +75,7 @@ def _send_resend(lead, subject, body, html=None):
         json={
             "from": f"{db.setting('sender_name')} <{sender}>", "reply_to": sender,
             "to": [lead["email"]], "subject": subject, "text": body, **({"html": html} if html else {}),
-            "headers": {"List-Unsubscribe": f"<mailto:{sender}?subject=unsubscribe>"},
+            "headers": {"List-Unsubscribe": f"<mailto:{sender}?subject=unsubscribe>", **(headers or {})},
         },
         timeout=20,
     )
@@ -82,13 +84,13 @@ def _send_resend(lead, subject, body, html=None):
     return {"status": "ok", "provider": "resend", "provider_id": r.json().get("id"), "to": lead["email"], "subject": subject, "body": body}
 
 
-def deliver(lead, subject, body, html=None):
+def deliver(lead, subject, body, html=None, headers=None):
     """Send for real through whichever provider is configured (no mode check: callers decide)."""
     provider = email_provider()
     if provider == "resend":
-        return _send_resend(lead, subject, body, html)
+        return _send_resend(lead, subject, body, html, headers)
     if provider == "smtp":
-        return _send_smtp(lead, subject, body, html)
+        return _send_smtp(lead, subject, body, html, headers)
     raise RuntimeError("No email provider configured")
 
 

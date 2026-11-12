@@ -13,6 +13,15 @@ uvicorn app.main:app --port 8000     # open http://localhost:8000
 ```
 Click **Simulate 14 days** to watch a full sequence play out on sample data.
 
+To connect your mailbox locally, copy `.env.example` to `.env` and fill it in (the app loads it on start).
+
+## Mailbox
+
+The **Mailbox** page shows every email sent to a lead and every reply from them as one conversation, so you don't
+need to open webmail. Replies are pulled from your inbox over IMAP every 5 minutes (or with **Check for new replies**),
+including ones already opened in webmail and ones sent from a different address in answer to the agent's email.
+You can answer from the same page: that reply is sent straight away as a plain email, whatever the send mode.
+
 ## How the agent works
 
 ```
@@ -30,7 +39,7 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/compliance.py`: opt-out list, lawful basis, local business hours (Sun–Thu KSA/Kuwait, calls 10–17), daily caps
 * `app/providers/llm.py`: Claude for research, scoring, emails, call briefs, reply triage (templates if no key)
 * `app/providers/channels.py`: email from your own mailbox (SMTP) or Resend, Vapi voice calls
-* `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes and lets the agent act on them
+* `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes, records them once and lets the agent act on them
 * `app/providers/sources.py`: CSV import, Google Places search
 * `app/static/index.html`: dashboard (overview, leads, approvals, activity log, settings)
 

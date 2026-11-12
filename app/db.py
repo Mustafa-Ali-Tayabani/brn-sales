@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS inbox_seen (
+  message_id TEXT PRIMARY KEY,  -- Message-ID of every mailbox email already recorded, so nothing is logged twice
+  lead_id INTEGER,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_act_lead ON activities(lead_id);
 CREATE INDEX IF NOT EXISTS idx_act_time ON activities(created_at);
 CREATE INDEX IF NOT EXISTS idx_lead_next ON leads(next_action_at);
@@ -175,6 +180,7 @@ DEFAULT_SETTINGS = {
 MIGRATIONS = [
     ("product", "TEXT"), ("segment", "TEXT"), ("extra", "TEXT"),
     ("emails_sent", "INTEGER NOT NULL DEFAULT 0"), ("last_contacted_at", "TEXT"), ("replied_at", "TEXT"),
+    ("mail_seen_at", "TEXT"),  # when a human last opened this lead's conversation in the Mailbox
 ]
 
 

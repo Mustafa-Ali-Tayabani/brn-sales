@@ -178,11 +178,21 @@ def decide(approval_id, approve, edited=None):
     return True
 
 
-def handle_reply(lead_id, text):
+AGENT_STAGES = ("new", "researched", "in_sequence", "awaiting_approval", "completed", "paused", "nurture")
+
+
+def handle_reply(lead_id, text, meta=None):
+    """Log and classify one reply. meta carries mailbox details (from, subject, message_id, received_at).
+    meta["already_read"]: a human read it in the mailbox before the agent saw it. It is still recorded, but a
+    status a human has already chosen (replied, meeting booked, won, lost) is left alone, except for opt-outs."""
+    meta = dict(meta or {})
+    already_read = meta.pop("already_read", False)
     intent = llm.classify_reply(text)
-    db.log(lead_id, "email_reply", f"Reply ({intent.get('intent')}): {intent.get('summary', '')}", channel="email", payload={"text": text, **intent})
-    db.update_lead(lead_id, replied_at=db.now())
-    apply_outcome(lead_id, intent.get("intent"))
+    db.log(lead_id, "email_reply", f"Reply ({intent.get('intent')}): {intent.get('summary', '')}", channel="email", payload={"text": text, **meta, **intent})
+    lead = db.one("SELECT stage FROM leads WHERE id=?", (lead_id,)) or {}
+    db.update_lead(lead_id, replied_at=meta.get("received_at") or db.now())
+    if not already_read or lead.get("stage") in AGENT_STAGES or intent.get("intent") == "unsubscribe":
+        apply_outcome(lead_id, intent.get("intent"))
     return intent
 
 
