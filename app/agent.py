@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from . import compliance, db
-from .providers import channels, llm
+from .providers import channels, llm, site_scan
 
 TERMINAL_BLOCKS = ("on suppression list", "no lawful basis", "GDPR", "calls need opt-in", "lead is ")
 
@@ -29,6 +29,34 @@ def _iso(dt):
     return dt.isoformat(timespec="seconds")
 
 
+def scan_website(lead):
+    """Fixify leads: scan the lead's website once and store the confirmed problems in lead.extra.issues, so the
+    research and email steps can use real, specific findings. Skipped if the lead already has issues (imported
+    from a spreadsheet) or was scanned before. Never raises: a failed scan just leaves the lead as it was."""
+    if not lead.get("website") or lead.get("product") not in (None, "", "fixify"):
+        return lead
+    try:
+        extra = json.loads(lead.get("extra") or "{}") or {}
+    except Exception:
+        extra = {}
+    if extra.get("issues") or extra.get("scanned_at"):
+        return lead
+    try:
+        site_scan.BUDGET, site_scan.TIMEOUT, site_scan.WAITS = 25, 8, (1, 3)  # one scan must not stall the 1-minute tick
+        R = site_scan.scan(lead["website"], 5)
+        rows = [x for x in R.rows if x["severity"] != "low"
+                and not any(w in x["problem"].lower() for w in ("confirm", "unconfirmed", "could not"))]
+        extra.update(issues=[{k: x[k] for k in ("severity", "category", "problem", "fix")} for x in rows[:10]],
+                     health_score=site_scan.score(R.rows), scanned_at=_iso(datetime.now(timezone.utc)))
+        db.update_lead(lead["id"], extra=json.dumps(extra, ensure_ascii=False))
+        db.log(lead["id"], "research", f"Website scan: score {extra['health_score']}, {len(rows)} confirmed issue(s)",
+               payload={"issues": extra["issues"]})
+        return {**lead, "extra": json.dumps(extra, ensure_ascii=False)}
+    except Exception as e:
+        db.log(lead["id"], "research", f"Website scan failed: {e}", status="error")
+        return lead
+
+
 def research_lead(lead):
     if lead.get("source") == "reddit":
         s = _settings(lead)
@@ -41,6 +69,7 @@ def research_lead(lead):
         db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
         db.log(lead["id"], "stage_change", "Needs contact details: no email or phone yet. Add one and move it back to 'new'.")
         return
+    lead = scan_website(lead)
     s = _settings(lead)
     try:
         r = llm.research(lead, s["offer"], s["icp"], s.get("product_key"))
