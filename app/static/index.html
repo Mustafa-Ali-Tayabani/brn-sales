@@ -170,7 +170,28 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 .sc.hi{background:var(--okbg);color:var(--ok)}.sc.md{background:var(--warnbg);color:var(--warn)}.sc.lo{background:#efefe9;color:var(--mut)}
 /* mailbox */
 #v-mail{display:flex;flex-direction:column;height:calc(100vh - 172px);min-height:520px}
-.mailwrap{display:grid;grid-template-columns:minmax(280px,380px) 1fr;gap:16px;flex:1;min-height:0}
+.mb{display:grid;grid-template-columns:172px 1fr;gap:16px;flex:1;min-height:0}
+.mbrail{display:flex;flex-direction:column;gap:2px;overflow-y:auto;min-width:0}.mbrail>button{justify-content:center;margin:1px 1px 10px;padding:10px 14px}
+.mbf{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:10px;cursor:pointer;color:var(--ink);font-size:14px;transition:background .12s}
+.mbf:hover{background:#e9e9e3}.mbf.on{background:var(--bluebg);color:var(--blue);font-weight:600}.mbf b{margin-left:auto;font-size:12px;font-weight:600}
+.mbf .fi2{width:18px;text-align:center;flex:none;font-size:13px}.mbf .fl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.mbsep{height:1px;background:var(--line);margin:8px 4px}
+.mbmain{display:flex;flex-direction:column;min-width:0;min-height:0}
+.mbar{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--mut);position:sticky;top:0;background:#fff;z-index:1;flex-wrap:wrap;min-height:44px}
+.mrow input[type=checkbox],.star{align-self:center;flex:none}.star{cursor:pointer;color:#d3d3cc;font-size:17px;line-height:1}.star:hover{color:#e0b100}.star.on{color:#f0b400}
+.mmeta{padding:12px 18px;border-bottom:1px solid var(--line2);font-size:13px}
+.mread{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto}.mread iframe{flex:1;width:100%;min-height:240px;border:0;background:#fff}
+.mtext{padding:18px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6}
+.atts{display:flex;gap:8px;flex-wrap:wrap;padding:10px 18px;border-top:1px solid var(--line2)}
+.compose{position:fixed;right:28px;bottom:0;width:min(580px,calc(100vw - 24px));max-height:88vh;background:#fff;border:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -8px 50px #0b0c1040;z-index:15;display:flex;flex-direction:column}
+.compose .ch{background:var(--ink);color:#fff;padding:9px 10px 9px 16px;border-radius:13px 13px 0 0;display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.compose .ch button{background:transparent;border-color:transparent;color:#fff}.compose .ch button:hover{background:#ffffff22;color:#fff;border-color:transparent;box-shadow:none;transform:none}
+#cState{font-weight:400;font-size:12px;color:#b9bac3}
+.compose .cb{padding:4px 16px 0;display:flex;flex-direction:column;overflow:auto;min-height:0}
+.compose .cb input{border:0;border-bottom:1px solid var(--line2);border-radius:0;padding:10px 2px;width:100%}.compose .cb input:focus,.compose textarea:focus{box-shadow:none;border-color:var(--line)}
+.compose textarea{border:0;min-height:min(300px,38vh);padding:12px 2px;resize:none}
+.compose .cf{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line2);flex-wrap:wrap}
+.compose.min .cb,.compose.min .cf{display:none}
+.mailwrap{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:16px;flex:1;min-height:0}
 .mailwrap>.card{margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column;min-width:0}
 .mlist{overflow-y:auto}
 .mrow{display:flex;gap:11px;padding:13px 14px;border-bottom:1px solid var(--line2);cursor:pointer;transition:background .12s;border-left:3px solid transparent}
@@ -186,7 +207,8 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 .msg .mh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-bottom:6px}.msg .mh b{color:var(--ink)}
 .msg .sj{font-weight:600;margin-bottom:4px}.msg .bd{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.55}
 .mcomp{border-top:1px solid var(--line);padding:12px 18px;background:#fff}.mcomp textarea{min-height:74px}
-@media(max-width:900px){#v-mail{height:auto}.mailwrap{grid-template-columns:1fr}.mlist{max-height:44vh}.mmsgs{max-height:60vh}}
+@media(max-width:1100px){.mb{grid-template-columns:1fr}.mbrail{flex-direction:row;flex-wrap:wrap;align-items:center;overflow:visible}.mbrail>button{margin:0 8px 0 0}#mbFolders{display:flex;flex-wrap:wrap;gap:2px}.mbsep{display:none}}
+@media(max-width:900px){#v-mail{height:auto}.mailwrap{grid-template-columns:1fr}.mread{min-height:50vh}.compose{right:0}.mlist{max-height:44vh}.mmsgs{max-height:60vh}}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;z-index:30;font-size:13px;box-shadow:0 10px 30px #0005;animation:tin .2s ease-out}
 @keyframes tin{from{opacity:0;transform:translate(-50%,8px)}}
 .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px}
@@ -301,10 +323,15 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
   <!-- MAILBOX -->
   <section id="v-mail" class="hide">
     <div id="mailNote"></div>
-    <div class="filters"><input id="mq" placeholder="Search company, address or email text" style="flex:1;min-width:200px;max-width:380px" oninput="debounce(loadMail)">
-      <div class="chips" id="mailChips"></div><span style="flex:1"></span><span class="updated" id="mailSync"></span>
-      <button id="mailSyncBtn" onclick="syncMail(this)">Check for new replies</button></div>
-    <div class="mailwrap"><div class="card mlist" id="mlist"></div><div class="card" id="mthread"></div></div>
+    <div class="mb">
+      <div class="mbrail"><button class="pri" id="mbCompose" onclick="compose()">✎ Compose</button><div id="mbFolders"></div></div>
+      <div class="mbmain">
+        <div class="filters"><input id="mq" placeholder="Search mail" style="flex:1;min-width:180px;max-width:380px" oninput="debounce(mailSearch)">
+          <div class="chips" id="mailChips"></div><span style="flex:1"></span><span class="updated" id="mailSync"></span>
+          <button id="mailSyncBtn" onclick="syncMail(this)">Check mail</button></div>
+        <div class="mailwrap"><div class="card mlist" id="mlist"></div><div class="card" id="mthread"></div></div>
+      </div>
+    </div>
   </section>
 
   <!-- LOG -->
@@ -376,6 +403,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 </main>
 
 <div class="drawer" id="drawer"></div>
+<div class="compose hide" id="compose"></div>
 <div class="modal" id="modal"><div class="box"><div class="hd"><h3 id="mTitle"></h3><button onclick="closeModal()">Close</button></div><div class="bd" id="mBody"></div></div></div>
 
 <script>
@@ -394,7 +422,7 @@ function alertBanner(t,err){try{const j=JSON.parse(t);if(j.detail)t=j.detail}cat
 function openModal(title,html){$('#mTitle').textContent=title;$('#mBody').innerHTML=html;$('#modal').classList.add('open')}
 function closeModal(){$('#modal').classList.remove('open');$('#mBody').innerHTML=''}
 document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.v));
-function show(v){view=v;history.replaceState(null,'','#'+v+(v=='mail'&&mailLead?'/'+mailLead:''));document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==v));
+function show(v){view=v;history.replaceState(null,'','#'+v+(v=='mail'&&MB.mode=='leads'&&mailLead?'/'+mailLead:''));document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==v));
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hide',s.id!='v-'+v));
   if(v=='pipelines'&&!window._keepBoard)closeBoard(true);window._keepBoard=false;
   $('#title').textContent={overview:'Overview',pipelines:'Pipelines',leads:'Leads',approvals:'Approvals',mail:'Mailbox',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
@@ -423,7 +451,7 @@ async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='
   $('#spend').innerHTML=s.llm?`<div style="margin-top:4px">${usd(L.today)} today${L.budget?' of $'+L.budget.toFixed(2):''}</div>${L.budget?`<div class="meter"><i style="width:${pct}%"></i></div>`:''}${L.balance_left!=null?`<div style="margin-top:6px">≈ $${L.balance_left.toFixed(2)} credit left</div>`:''}`:'';
   $('#sysBanner').innerHTML=(!s.agent_enabled?'<div class="banner"><span><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches.</span><button class="sm x" onclick="toggleAgent()">Start agent</button></div>':'')
    +(s.llm&&L.over_budget?`<div class="banner">Today's Claude budget ($${L.budget.toFixed(2)}) is used up, so the agent is on free templates until tomorrow. Change it in Settings &gt; Claude usage.</div>`:'')+(s.llm&&L.error?`<div class="banner"><span><b>Claude isn't answering right now</b>, so the agent is using built-in templates. ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}, retries every 10 minutes)</span></span></div>`:'');
-  $('#nmail').textContent=s.kpis.unread_mail;$('#nmail').classList.toggle('hot',s.kpis.unread_mail>0);$('#napp').textContent=s.kpis.pending_approvals;$('#napp').classList.toggle('hot',s.kpis.pending_approvals>0);
+  const nm=s.kpis.inbox_unread??s.kpis.unread_mail;$('#nmail').textContent=nm;$('#nmail').classList.toggle('hot',nm>0);$('#napp').textContent=s.kpis.pending_approvals;$('#napp').classList.toggle('hot',s.kpis.pending_approvals>0);
   $('#agentState').innerHTML=`<b style="font-size:13px"><span class="dot ${s.agent_enabled?'':'off'}"></span>Agent ${s.agent_enabled?'running':'stopped'}</b>`;
   if(!ovProduct)$('#nleads').textContent=s.kpis.leads;
   if(view!='overview')return;
@@ -439,7 +467,7 @@ async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='
     <div class="stack" style="height:${(d.emails+d.calls+d.replies)/top*100}%"><div class="seg" style="flex:${d.emails};background:var(--blue)"></div><div class="seg" style="flex:${d.calls};background:var(--blue2)"></div><div class="seg" style="flex:${d.replies};background:var(--ink)"></div></div>
     <div class="d">${dt.getDate()}</div></div>`}).join('');
   const att=[['✓','#fff4e0','#a15c00',k.pending_approvals,'Emails waiting for approval','Review and send',"show('approvals')"],
-    ['✉','#e9f3ff','#0b5cad',k.unread_mail,'Unread replies in the mailbox','Read them and answer',"mailF='unread';show('mail')"],
+    ['✉','#e9f3ff','#0b5cad',k.unread_mail,'Unread replies in the mailbox','Read them and answer',"MB.mode='leads';mailF='unread';show('mail')"],
     ['💬','#ecedff','#3a46d8',s.stages.reply_manually||0,'People asking online','Copy the drafted reply and post it',"filterStage('reply_manually')"],
     ['☎','#fff4e0','#a15c00',s.stages.needs_contact||0,'Leads without email or phone','Add a contact to start outreach',"filterStage('needs_contact')"],
     ['↩','#e9f3ff','#0b5cad',s.stages.replied||0,'Replies to follow up','Book the meeting',"filterStage('replied')"],
@@ -556,23 +584,117 @@ async function loadApps(){const r=await api('/api/approvals');
   :`<div class="card empty"><h3>Nothing waiting for approval</h3><p class="muted">${MODE=='approval'?'The agent is in Approval mode. New drafts show up here as leads reach their next step (only during local business hours).':
    `Send mode is <b>${(MODE||'dry run').replace('_',' ')}</b>, so the agent drafts and logs every email without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.`}</p>
    ${MODE!='approval'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`}
-let mailF='all',mailLead=null,mailN=0;
-const MF=[['all','All'],['unread','Unread'],['replied','Replied'],['waiting','Waiting for a reply']];
-function setMailF(f){mailF=f;loadMail()}
-function openMail(id){$('#drawer').classList.remove('open');mailF='all';mailLead=id;mailN=-1;show('mail')}
-async function loadMail(){const r=await api('/api/mail?'+qs({filter:mailF,q:$('#mq').value}));
-  $('#mailChips').innerHTML=MF.map(([k,n])=>`<span class="chip ${mailF==k?'on':''}" onclick="setMailF('${k}')">${n}</span>`).join('');
-  $('#mailSyncBtn').classList.toggle('hide',!r.inbox);$('#mailSync').textContent=r.inbox?(r.last_check?'Mailbox checked '+ago(r.last_check)+(ago(r.last_check)=='now'?'':' ago'):'Mailbox not checked yet'):'';
-  $('#mailNote').innerHTML=r.inbox?'':`<div class="banner"><span><b>Replies are not being read yet.</b> Emails the agent sends show up here already. To pull replies in from your Hostinger mailbox, set <code>IMAP_HOST=imap.hostinger.com</code> with <code>SMTP_USER</code> and <code>SMTP_PASSWORD</code> (the mailbox address and its password), then restart. Until then you can paste a reply on the lead's page.</span></div>`;
+let mailF='all',mailLead=null,mailN=0,C=null;
+const MB={on:false,inbox:false,canSend:false,me:'',folders:[],folder:null,mode:'folder',page:0,filter:'all',sel:new Set(),rows:[],total:0,size:50,open:null,msg:null};
+const MF=[['all','All'],['unread','Unread'],['replied','Replied'],['waiting','Waiting for a reply']],MBF=[['all','All'],['unread','Unread'],['starred','Starred']];
+const FIC={inbox:'📥',sent:'➤',drafts:'✎',archive:'▣',spam:'⚠',trash:'🗑'};
+const mbRole=()=>(MB.folders.find(f=>f.name==MB.folder)||{}).role,mbQ=o=>qs({folder:MB.folder,...o});
+const fsize=n=>n<1024?n+' B':n<1048576?Math.round(n/1024)+' KB':(n/1048576).toFixed(1)+' MB';
+const mdate=t=>{if(!t)return'';const d=new Date(t),n=new Date();return d.toDateString()==n.toDateString()?d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString([], d.getFullYear()==n.getFullYear()?{month:'short',day:'numeric'}:{month:'short',day:'numeric',year:'2-digit'})};
+const person=p=>p.name?`${/[,;<>"]/.test(p.name)?'"'+p.name.replace(/"/g,'')+'"':p.name} <${p.email}>`:p.email,people=a=>a.map(person).join(', ');
+const note=t=>`<div class="banner"><span>${t}</span></div>`,emptyPane=(h,p)=>`<div class="empty" style="margin:auto"><h3>${h}</h3><p class="muted">${p}</p></div>`;
+function openMail(id){$('#drawer').classList.remove('open');MB.mode='leads';mailF='all';mailLead=id;mailN=-1;show('mail')}
+function setFolder(i){MB.mode='folder';MB.folder=MB.folders[i].name;MB.page=0;MB.filter='all';MB.sel.clear();MB.open=null;MB.rows=[];$('#mq').value='';$('#mlist').innerHTML='';$('#mthread').innerHTML='';history.replaceState(null,'','#mail');loadMail()}
+function setLeadMode(){MB.mode='leads';MB.open=null;$('#mq').value='';$('#mlist').innerHTML='';$('#mthread').innerHTML='';loadMail()}
+function mailSearch(){MB.page=0;loadMail()}
+function setMailF(f){if(MB.mode=='leads')mailF=f;else{MB.filter=f;MB.page=0}loadMail()}
+async function loadMail(){const f=await api('/api/mailbox/folders');MB.on=f.enabled&&!f.error;MB.inbox=f.inbox;MB.folders=f.folders;MB.me=f.me;MB.canSend=f.can_send&&!f.locked;
+  if(!MB.on)MB.mode='leads';else if(MB.mode=='folder'&&!MB.folders.find(x=>x.name==MB.folder))MB.folder=(MB.folders.find(x=>x.role=='inbox')||MB.folders[0]||{}).name;
+  $('#mailNote').innerHTML=f.locked?note('<b>Inbox, Sent and Drafts are locked.</b> '+esc(f.locked)+' Lead conversations below still work.')
+   :f.error?note('<b>Could not open the mailbox.</b> '+esc(f.error)+' Lead conversations below still work.')
+   :!f.inbox?note('<b>The mailbox is not connected yet.</b> Emails the agent sends show up under Lead conversations already. To get your Inbox, Sent, Drafts and replies here, set <code>IMAP_HOST=imap.hostinger.com</code> with <code>SMTP_USER</code> and <code>SMTP_PASSWORD</code> (the mailbox address and its password), then restart.'):'';
+  $('#mbCompose').disabled=!MB.canSend;$('#mbCompose').title=MB.canSend?'Write a new email':'Email sending is not connected';
+  $('#mbFolders').innerHTML=MB.folders.map((x,i)=>{const n=x.role=='drafts'?x.total:x.unread;return `<a class="mbf ${MB.mode=='folder'&&x.name==MB.folder?'on':''}" onclick="setFolder(${i})"><span class="fi2">${FIC[x.role]||'▫'}</span><span class="fl">${esc(x.label)}</span>${n?`<b>${n}</b>`:''}</a>`}).join('')
+   +(MB.folders.length?'<div class="mbsep"></div>':'')+`<a class="mbf ${MB.mode=='leads'?'on':''}" onclick="setLeadMode()"><span class="fi2">👥</span><span class="fl">Lead conversations</span>${f.lead_unread?`<b>${f.lead_unread}</b>`:''}</a>`;
+  const cur=MB.mode=='leads'?mailF:MB.filter;$('#mailChips').innerHTML=(MB.mode=='leads'?MF:MBF).map(([k,n])=>`<span class="chip ${cur==k?'on':''}" onclick="setMailF('${k}')">${n}</span>`).join('');
+  $('#mq').placeholder=MB.mode=='leads'?'Search company, address or email text':'Search '+((MB.folders.find(x=>x.name==MB.folder)||{}).label||'mail');
+  $('#mailSyncBtn').classList.toggle('hide',!f.inbox);$('#mailSync').textContent=f.inbox&&f.last_check?'Replies checked '+ago(f.last_check)+(ago(f.last_check)=='now'?'':' ago'):'';
+  return MB.mode=='leads'?loadLeadMail():loadFolder()}
+
+/* ---- folders: Inbox, Sent, Drafts, ... ---- */
+async function loadFolder(){const folder=MB.folder;if(!folder)return;const r=await api('/api/mailbox/messages?'+mbQ({page:MB.page,q:$('#mq').value,filter:MB.filter=='all'?'':MB.filter}));
+  if(folder!=MB.folder||MB.mode!='folder')return;MB.rows=r.rows;MB.total=r.total;MB.size=r.size;[...MB.sel].forEach(u=>r.rows.some(x=>x.uid==u)||MB.sel.delete(u));renderFolder();
+  if(!MB.open)$('#mthread').innerHTML=emptyPane('Pick an email','Choose a message on the left to read it here.')}
+function renderFolder(){const role=mbRole(),out=role=='sent'||role=='drafts',n=MB.sel.size,from=MB.total?MB.page*MB.size+1:0,to=Math.min(MB.total,(MB.page+1)*MB.size);
+  const all=MB.rows.length&&MB.rows.every(x=>MB.sel.has(x.uid));
+  const bar=`<div class="mbar"><input type="checkbox" title="Select all" ${all?'checked':''} onchange="MB.rows.forEach(x=>this.checked?MB.sel.add(x.uid):MB.sel.delete(x.uid));renderFolder()">`+(n?`<b style="color:var(--ink)">${n} selected</b>
+    <button class="sm" onclick="mbFlag([...MB.sel],{seen:true})">Mark read</button><button class="sm" onclick="mbFlag([...MB.sel],{seen:false})">Mark unread</button>
+    ${['inbox',undefined,null].includes(role)?`<button class="sm" onclick="mbMove([...MB.sel],'archive')">Archive</button>`:''}${role=='spam'?`<button class="sm" onclick="mbMove([...MB.sel],'inbox')">Not spam</button>`:role=='inbox'?`<button class="sm" onclick="mbMove([...MB.sel],'spam')">Spam</button>`:''}
+    <button class="sm danger" onclick="mbMove([...MB.sel],'trash')">Delete</button>`
+   :`<span>${MB.total?`${from}–${to} of ${MB.total.toLocaleString()}`:'No emails'}</span><span style="flex:1"></span><button class="sm ghost" ${MB.page?'':'disabled'} onclick="MB.page--;loadFolder()">‹</button><button class="sm ghost" ${to<MB.total?'':'disabled'} onclick="MB.page++;loadFolder()">›</button>`)+'</div>';
+  $('#mlist').innerHTML=bar+(MB.rows.map(x=>{const who=out?'To: '+(x.to.map(p=>p.name||p.email).join(', ')||'(no recipient)'):(x.from.name||x.from.email||'(unknown sender)');
+   return `<div class="mrow ${x.seen?'':'unread'} ${MB.open==x.uid?'on':''}" onclick="openMsg(${x.uid})"><input type="checkbox" ${MB.sel.has(x.uid)?'checked':''} onclick="event.stopPropagation()" onchange="this.checked?MB.sel.add(${x.uid}):MB.sel.delete(${x.uid});renderFolder()">
+    <div class="mx"><div class="mt"><b>${esc(who)}</b><small>${mdate(x.at)}</small></div><div class="ms">${x.answered?'↩ ':''}${esc(x.subject||'(no subject)')}${x.attach?' 📎':''}</div><div class="mp">${esc(x.snippet||'')}</div>
+    ${x.lead?`<div class="mf"><span class="tag">Lead · ${esc(x.lead.company)}</span></div>`:''}</div><span class="star ${x.starred?'on':''}" title="Star" onclick="event.stopPropagation();mbStar(${x.uid})">★</span></div>`}).join('')
+   ||`<div class="empty"><h3>Nothing here</h3><p class="muted">${$('#mq').value||MB.filter!='all'?'No email matches this search or filter.':'This folder is empty.'}</p></div>`)}
+async function mbFlag(uids,body){await api('/api/mailbox/flags',{method:'POST',body:{folder:MB.folder,uids,...body}});MB.sel.clear();loadMail();loadStats()}
+async function mbStar(u){const x=MB.rows.find(r=>r.uid==u);if(!x)return;x.starred=!x.starred;renderFolder();await api('/api/mailbox/flags',{method:'POST',body:{folder:MB.folder,uids:[u],starred:x.starred}})}
+async function mbMove(uids,to){if(!uids.length)return;const gone=to=='delete'||(to=='trash'&&mbRole()=='trash');if(gone&&!confirmText(`Delete ${uids.length==1?'this email':uids.length+' emails'} for good? This cannot be undone.`))return;
+  await api('/api/mailbox/move',{method:'POST',body:{folder:MB.folder,uids,to}});if(uids.includes(MB.open)){MB.open=null;$('#mthread').innerHTML=''}MB.sel.clear();
+  toast(gone?'Deleted for good':to=='trash'?'Moved to Trash':to=='spam'?'Moved to Spam':to=='archive'?'Archived':'Moved to Inbox');loadMail();loadStats()}
+async function openMsg(uid){if(mbRole()=='drafts')return openDraft(uid);const m=await api('/api/mailbox/message?'+mbQ({uid}));MB.open=uid;MB.msg=m;const x=MB.rows.find(r=>r.uid==uid),was=x&&!x.seen;if(x)x.seen=true;renderFolder();
+  const role=mbRole(),many=m.to.length+m.cc.length>1;
+  $('#mthread').innerHTML=`<div class="mhead"><h3 style="flex:1;min-width:180px;overflow-wrap:anywhere">${esc(m.subject||'(no subject)')}</h3>${m.lead?`<span class="tag">Lead · ${esc(m.lead.company)}</span><button class="sm" onclick="openLead(${m.lead.id})">Open lead</button>`:''}</div>
+   <div class="mmeta"><div class="row" style="align-items:flex-start;flex-wrap:nowrap"><div style="flex:1;min-width:0;overflow-wrap:anywhere"><b>${esc(m.from.name||m.from.email)}</b> ${m.from.name?`<span class="muted">&lt;${esc(m.from.email)}&gt;</span>`:''}
+      <div class="muted">to ${esc(people(m.to)||'(no recipient)')}${m.cc.length?' · cc '+esc(people(m.cc)):''}</div></div><span class="muted" style="white-space:nowrap">${fmt(m.at)}</span></div>
+    <div class="row" style="margin-top:10px"><button class="sm pri" onclick="mbReply()">↩ Reply</button>${many?'<button class="sm" onclick="mbReply(true)">Reply all</button>':''}<button class="sm" onclick="mbForward()">Forward →</button><span style="flex:1"></span>
+     <button class="sm" onclick="mbFlag([${uid}],{seen:false})">Mark unread</button>${role=='inbox'?`<button class="sm" onclick="mbMove([${uid}],'archive')">Archive</button><button class="sm" onclick="mbMove([${uid}],'spam')">Spam</button>`:role=='spam'?`<button class="sm" onclick="mbMove([${uid}],'inbox')">Not spam</button>`:['trash','archive'].includes(role)?`<button class="sm" onclick="mbMove([${uid}],'inbox')">Move to Inbox</button>`:''}
+     <button class="sm danger" onclick="mbMove([${uid}],'trash')">${role=='trash'?'Delete for good':'Delete'}</button></div></div>
+   <div class="mread">${m.has_html?'<iframe id="mframe" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>':`<div class="mtext">${esc(m.text||'(empty message)')}</div>`}</div>
+   ${m.attachments.length?`<div class="atts">${m.attachments.map(a=>`<a class="btn sm" href="/api/mailbox/attachment?${mbQ({uid,i:a.i})}" download>📎 ${esc(a.name)} <span class="muted">${fsize(a.size)}</span></a>`).join('')}</div>`:''}`;
+  if(m.has_html){const r=await fetch('/api/mailbox/html?'+mbQ({uid}));if(MB.open==uid&&$('#mframe'))$('#mframe').srcdoc=r.ok?await r.text():'<p style="font:14px sans-serif;color:#666">This email could not be displayed.</p>'}
+  if(was){loadStats();const f=MB.folders.find(f=>f.name==MB.folder);if(f&&f.unread){f.unread--;const b=document.querySelector('.mbf.on b');if(b)f.unread?b.textContent=f.unread:b.remove()}}}
+const quoted=m=>`\n\nOn ${fmt(m.at)}, ${m.from.name||m.from.email} wrote:\n`+(m.text||'').split('\n').map(l=>'> '+l).join('\n');
+function mbReply(all){const m=MB.msg,me=MB.me,mine=m.from.email.toLowerCase()==me,to=mine?m.to.map(p=>p.email):[(m.reply_to[0]||m.from).email];
+  const cc=all?[...(mine?[]:m.to),...m.cc].map(p=>p.email).filter(e=>e.toLowerCase()!=me&&!to.some(t=>t.toLowerCase()==e.toLowerCase())):[];
+  compose({to:to.join(', '),cc:cc.join(', '),subject:/^re:/i.test(m.subject)?m.subject:'Re: '+m.subject,body:quoted(m),in_reply_to:m.message_id,references:(m.references+' '+m.message_id).trim(),answered:{folder:m.folder,uid:m.uid},title:'Reply'})}
+function mbForward(){const m=MB.msg;compose({subject:/^fwd?:/i.test(m.subject)?m.subject:'Fwd: '+m.subject,title:'Forward',touched:true,
+  body:`\n\n---------- Forwarded message ----------\nFrom: ${person(m.from)}\nDate: ${fmt(m.at)}\nSubject: ${m.subject}\nTo: ${people(m.to)}\n\n${m.text||''}`,carry:m.attachments.length?{folder:m.folder,uid:m.uid,items:m.attachments}:null})}
+async function openDraft(uid){const m=await api('/api/mailbox/message?'+mbQ({uid,seen:0}));
+  compose({to:people(m.to),cc:people(m.cc),bcc:people(m.bcc),subject:m.subject,body:m.text,in_reply_to:m.in_reply_to,references:m.references,draft_uid:uid,draft_folder:MB.folder,title:'Draft',carry:m.attachments.length?{folder:MB.folder,uid,items:m.attachments}:null})}
+
+/* ---- compose window ---- */
+async function compose(init={}){if(!MB.canSend)return alertBanner('Email sending is not connected, so you can read here but not write.',true);if(C)await cClose();
+  C={to:'',cc:'',bcc:'',subject:'',body:'',files:[],carry:null,draft_uid:null,draft_folder:null,in_reply_to:'',references:'',answered:null,title:'New message',touched:false,chain:Promise.resolve(),...init};const c=C;
+  const el=$('#compose');el.className='compose';el.innerHTML=`<div class="ch" onclick="$('#compose').classList.toggle('min')"><span style="flex:1">${esc(c.title)}</span><span id="cState"></span><button class="sm" onclick="event.stopPropagation();cClose()" title="${MB.on?'Save as draft and close':'Close'}">✕</button></div>
+   <div class="cb"><input id="c-to" placeholder="To" value="${esc(c.to)}" autocomplete="off"><div id="cMore" class="${c.cc||c.bcc?'':'hide'}"><input id="c-cc" placeholder="Cc" value="${esc(c.cc)}" autocomplete="off"><input id="c-bcc" placeholder="Bcc" value="${esc(c.bcc)}" autocomplete="off"></div>
+    <input id="c-subject" placeholder="Subject" value="${esc(c.subject)}"><textarea id="c-body" placeholder="Write your email…">${esc(c.body)}</textarea><div class="row" id="cAtts" style="padding-bottom:6px"></div></div>
+   <div class="cf"><button class="pri" id="cSend" onclick="cSend()">Send</button><button onclick="$('#cFile').click()">📎 Attach</button><input type="file" id="cFile" multiple class="hide" onchange="cAttach(this)"><button class="ghost" onclick="$('#cMore').classList.toggle('hide')">Cc / Bcc</button>
+    <span style="flex:1"></span><button class="ghost danger" onclick="cDiscard()" title="Discard this email">🗑 Discard</button></div>`;
+  el.querySelectorAll('.cb input,.cb textarea').forEach(e=>e.oninput=cTouch);cAtts();const b=$('#c-body');if(c.to){b.focus();b.setSelectionRange(0,0);b.scrollTop=0}else $('#c-to').focus()}
+function cRead(){if(C&&$('#c-to'))['to','cc','bcc','subject','body'].forEach(k=>C[k]=$('#c-'+k).value)}
+function cTouch(){if(!C)return;cRead();C.touched=true;$('#cState').textContent='';clearTimeout(C.t);const c=C;if(MB.on)C.t=setTimeout(()=>cSave(c),2500)}
+function cAtts(){const c=C;$('#cAtts').innerHTML=((c.carry||{}).items||[]).map((a,i)=>`<span class="tag g">📎 ${esc(a.name)} · ${fsize(a.size)} <a style="cursor:pointer" onclick="C.carry.items.splice(${i},1);cAtts();cTouch()">✕</a></span>`).join('')
+  +c.files.map((a,i)=>`<span class="tag g">📎 ${esc(a.name)} · ${fsize(a.size)} <a style="cursor:pointer" onclick="C.files.splice(${i},1);cAtts();cTouch()">✕</a></span>`).join('')}
+async function cAttach(inp){for(const f of inp.files){if(f.size>15e6){alertBanner(f.name+' is over 15 MB, too large to attach',true);continue}
+   C.files.push({name:f.name,type:f.type||'application/octet-stream',size:f.size,data:await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.readAsDataURL(f)})})}inp.value='';cAtts();cTouch()}
+const cBody=c=>({to:c.to,cc:c.cc,bcc:c.bcc,subject:c.subject,body:c.body,in_reply_to:c.in_reply_to,references:c.references,draft_uid:c.draft_uid,
+  files:c.files.map(({name,type,data})=>({name,type,data})),carry:c.carry&&c.carry.items.length?{folder:c.carry.folder,uid:c.carry.uid,indexes:c.carry.items.map(a=>a.i)}:null});
+const cSig=c=>JSON.stringify([c.to,c.cc,c.bcc,c.subject,c.body,c.files.map(f=>f.name+f.size),((c.carry||{}).items||[]).map(a=>a.i)]);
+function cSave(c){clearTimeout(c.t);const say=t=>{if(c===C&&$('#cState'))$('#cState').textContent=t};
+  return c.chain=c.chain.then(async()=>{if(c.gone||!MB.on||!c.touched||cSig(c)==c.sig)return;const sig=cSig(c),sent=c.files.slice();say('Saving…');
+    try{const r=await fetch('/api/mailbox/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cBody(c))});if(!r.ok)throw 0;const d=await r.json();
+      c.draft_uid=d.uid;c.draft_folder=d.folder;c.files=c.files.filter(f=>!sent.includes(f));if(d.uid)c.carry=d.attachments.length?{folder:d.folder,uid:d.uid,items:d.attachments}:null;
+      c.sig=cSig(c)==sig||!c.files.length?cSig(c):null;say('Draft saved');if(c===C)cAtts()}catch{say('Draft not saved')}})}
+async function cClose(){const c=C;if(!c)return;cRead();C=null;$('#compose').className='compose hide';if(c.touched&&MB.on&&cSig(c)!=c.sig){await cSave(c);toast('Saved to Drafts')}else await c.chain;if(view=='mail')loadMail()}
+async function cDiscard(){const c=C;if(!c)return;if((c.touched||c.draft_uid)&&!confirmText('Discard this email? The draft will be deleted.'))return;c.gone=true;clearTimeout(c.t);C=null;$('#compose').className='compose hide';await c.chain;
+  if(c.draft_uid&&c.draft_folder)await api('/api/mailbox/move',{method:'POST',body:{folder:c.draft_folder,uids:[c.draft_uid],to:'delete'}});if(view=='mail')loadMail()}
+async function cSend(){const c=C;cRead();if(!(c.to+c.cc+c.bcc).includes('@'))return alertBanner('Add at least one email address',true);if(!c.subject.trim()&&!confirmText('Send without a subject?'))return;
+  const b=$('#cSend');b.disabled=true;b.textContent='Sending…';clearTimeout(c.t);await c.chain;
+  try{const r=await api('/api/mailbox/send',{method:'POST',body:{...cBody(c),answered:c.answered}});c.gone=true;C=null;$('#compose').className='compose hide';toast('Sent to '+r.to.join(', '));refresh()}
+  catch{if($('#cSend')){b.disabled=false;b.textContent='Send'}}}
+
+/* ---- lead conversations ---- */
+async function loadLeadMail(){const r=await api('/api/mail?'+qs({filter:mailF,q:$('#mq').value}));if(MB.mode!='leads')return;
   $('#mlist').innerHTML=r.threads.map(t=>{const m=t.last||{};
    return `<div class="mrow ${t.unread?'unread':''} ${t.id==mailLead?'on':''}" onclick="openThread(${t.id})">${avatar(t.company)}<div class="mx">
     <div class="mt"><b>${esc(t.company)}</b><small>${ago(m.at)}</small></div>
     <div class="ms">${m.dir=='in'?'↩ ':''}${esc(m.subject||'(no subject)')}</div><div class="mp">${esc(m.snippet||'')}</div>
     <div class="mf">${t.sent?`<span class="tag ok">${t.sent} sent</span>`:''}${t.dry_runs?`<span class="tag dry_run">${t.dry_runs} dry run</span>`:''}${t.replies?`<span class="tag replied">${t.replies} ${t.replies==1?'reply':'replies'}</span>`:''}</div></div>${t.unread?'<span class="udot" title="Unread reply"></span>':''}</div>`}).join('')
-   ||`<div class="empty"><h3>No emails here</h3><p class="muted">${mailF=='all'&&!$('#mq').value?'Emails the agent sends, and the replies to them, will appear here.':'Nothing matches this filter.'}</p></div>`;
+   ||`<div class="empty"><h3>No emails here</h3><p class="muted">${mailF=='all'&&!$('#mq').value?'Emails the agent sends to leads, and the replies to them, will appear here.':'Nothing matches this filter.'}</p></div>`;
   const cur=r.threads.find(t=>t.id==mailLead),typing=$('#mbody')&&$('#mbody').value.trim();
   if(mailLead&&!typing&&(!$('#mmsgs')||(cur&&cur.sent+cur.dry_runs+cur.replies!=mailN)))return openThread(mailLead);
-  if(!mailLead)$('#mthread').innerHTML='<div class="empty" style="margin:auto"><h3>Pick a conversation</h3><p class="muted">Every email sent to a lead and every reply from them, in one place.</p></div>'}
+  if(!mailLead)$('#mthread').innerHTML=emptyPane('Pick a conversation','Every email sent to a lead and every reply from them, in one place.')}
 async function openThread(id){mailLead=id;history.replaceState(null,'','#mail/'+id);const l=await api('/api/mail/'+id),M=l.messages;mailN=M.filter(m=>m.status!='error').length;
   document.querySelectorAll('.mrow').forEach(x=>x.classList.remove('on'));
   const lastIn=[...M].reverse().find(m=>m.dir=='in'),lastAny=[...M].reverse().find(m=>m.subject),sj=(lastIn||lastAny||{}).subject||'';
@@ -592,7 +714,7 @@ async function openThread(id){mailLead=id;history.replaceState(null,'','#mail/'+
 async function sendMail(id){const subject=$('#msubj').value.trim(),body=$('#mbody').value.trim();if(!subject||!body)return alertBanner('Write a subject and a message first',true);
   if(!confirmText('Send this email now?'))return;const b=$('#msend');b.disabled=true;b.textContent='Sending…';
   try{await api('/api/mail/'+id+'/send',{method:'POST',body:{subject,body}});$('#mbody').value='';toast('Reply sent');await openThread(id);loadMail()}finally{const x=$('#msend');if(x){x.disabled=false;x.textContent='Send reply'}}}
-async function syncMail(b){b.disabled=true;b.textContent='Checking…';try{const r=await api('/api/inbox/check',{method:'POST'});toast(r.replies?r.replies+' new '+(r.replies==1?'reply':'replies'):'No new replies');await refresh()}finally{b.disabled=false;b.textContent='Check for new replies'}}
+async function syncMail(b){b.disabled=true;b.textContent='Checking…';try{const r=await api('/api/inbox/check',{method:'POST'});toast(r.replies?r.replies+' new '+(r.replies==1?'reply':'replies'):'No new replies');await refresh()}finally{b.disabled=false;b.textContent='Check mail'}}
 const usd=v=>'$'+(+v||0).toFixed((+v||0)<1?4:2);
 async function toggleAgent(){const on=!window.AGENT;if(!on&&!confirmText('Stop the agent? Nothing will run until you start it again.'))return;
   await api('/api/agent/state',{method:'POST',body:{on}});toast(on?'Agent started':'Agent stopped');refresh()}
@@ -675,7 +797,7 @@ async function loadSetup(){if(view!='overview')return;const[s,st]=await Promise.
    <div class="steps">${steps.map(([ok,t,sub,on],i)=>`<div class="step ${ok?'done':''}" onclick="${on}"><span class="n">${ok?'✓':i+1}</span><b>${t}</b><small>${sub}</small></div>`).join('')}</div>`}
 document.addEventListener('keydown',e=>{if(e.key=='Escape'){closeModal();$('#drawer').classList.remove('open')}});
 document.addEventListener('mousedown',e=>{const d=$('#drawer');if(d.classList.contains('open')&&!d.contains(e.target)&&!$('#modal').contains(e.target)&&!e.target.closest('tr.click,.kcard,.fi,.att a'))d.classList.remove('open')});
-loadFacets().then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1}$('#v-'+h)?show(h):refresh()});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings')refresh()},20000);
+loadFacets().then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh()});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings')refresh()},20000);
 </script>
 </body>
 </html>

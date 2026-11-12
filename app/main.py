@@ -11,10 +11,12 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
 from . import agent, compliance, db
-from .providers import channels, inbox, llm, sources
+from urllib.parse import quote
+
+from .providers import channels, inbox, llm, mailbox, sources
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -34,7 +36,17 @@ async def basic_auth(request: Request, call_next):
                 ok = False
         if not ok:
             return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="brn"'})
+    if request.url.path.startswith("/api/mailbox/") and request.url.path != "/api/mailbox/folders" and _mailbox_locked(request):
+        return JSONResponse({"detail": MAILBOX_LOCKED}, status_code=403)
     return await call_next(request)
+
+
+MAILBOX_LOCKED = "The full mailbox is locked because this dashboard has no password. Set BRN_ADMIN_PASSWORD on the server to open it."
+
+
+def _mailbox_locked(request):
+    """Without a dashboard password, anyone with the link could read and send your mail: only allow it on this computer."""
+    return not ADMIN_PW and (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost")
 
 
 @app.get("/")
@@ -129,6 +141,7 @@ def stats(request: Request):
             "blocked": db.one("SELECT COUNT(*) n FROM activities WHERE status='blocked'")["n"],
             "errors": db.one("SELECT COUNT(*) n FROM activities WHERE status='error' AND created_at>=?", (since,))["n"],
             "unread_mail": db.one(f"SELECT COUNT(DISTINCT a.lead_id) n FROM activities a JOIN leads l ON l.id=a.lead_id WHERE {UNREAD}")["n"],
+            "inbox_unread": None if _mailbox_locked(request) else mailbox.inbox_unread(),
         },
         "funnel": [["Leads", total], ["Qualified", qualified], ["Contacted", agg["contacted"] or 0],
                    ["Replied", agg["replies"] or 0], ["Meetings", meetings]],
@@ -448,29 +461,188 @@ def mail_thread(lead_id: int):
 
 @app.post("/api/mail/{lead_id}/send")
 def mail_send(lead_id: int, payload: dict = Body(...)):
-    """A reply typed by a person in the Mailbox. It is sent straight away, as plain text, whatever the send mode."""
+    """A reply typed by a person in a lead's conversation. It is sent straight away, as plain text, whatever the send mode."""
     lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
     if not lead:
         raise HTTPException(404)
-    subject, body = (payload.get("subject") or "").strip(), (payload.get("body") or "").strip()
-    if not subject or not body:
+    if not (payload.get("subject") or "").strip() or not (payload.get("body") or "").strip():
         raise HTTPException(400, "Write a subject and a message first.")
     if not lead.get("email"):
         raise HTTPException(400, "This lead has no email address.")
-    if lead["stage"] == "opted_out" or compliance.is_suppressed(lead):
-        raise HTTPException(400, "This lead is on the do-not-contact list, so the email was not sent.")
-    if not channels.email_provider():
-        raise HTTPException(400, "Email not connected. Set RESEND_API_KEY, or SMTP_HOST, SMTP_USER and SMTP_PASSWORD.")
     prev = db.q("SELECT payload FROM activities WHERE lead_id=? AND kind='email_reply' ORDER BY id DESC LIMIT 1", (lead_id,))
     mid = json.loads(prev[0]["payload"] or "{}").get("message_id") if prev else None
-    try:  # In-Reply-To keeps it in the same thread in the lead's mail app
-        res = channels.deliver(lead, subject, body, headers={"In-Reply-To": mid, "References": mid} if mid else None)
-    except Exception as e:
-        db.log(lead_id, "email_sent", f"Reply failed to send: {e}", channel="email", status="error")
-        raise HTTPException(502, f"The email was not sent: {e}")
-    db.log(lead_id, "email_sent", f"reply by hand: {subject}", channel="email", status="ok", payload={**res, "manual": True})
-    db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=?, mail_seen_at=? WHERE id=?", (db.now(), db.now(), lead_id))
+    return _send_composed({"to": lead["email"], "subject": payload["subject"], "body": payload["body"], "in_reply_to": mid, "references": mid})
+
+
+# ---------- mailbox: the whole mail account (folders, reading, compose, drafts) ----------
+def _mb(fn, *a, **k):
+    try:
+        return fn(*a, **k)
+    except mailbox.MailboxError as e:
+        raise HTTPException(502, str(e))
+
+
+def _lead_map(addresses):
+    addrs = sorted({a.lower() for a in addresses if a})
+    if not addrs:
+        return {}
+    rows = db.q(f"SELECT id, company, lower(email) email FROM leads WHERE lower(email) IN ({','.join('?' * len(addrs))})", addrs)
+    return {r["email"]: {"id": r["id"], "company": r["company"]} for r in rows}
+
+
+@app.get("/api/mailbox/folders")
+def mb_folders(request: Request):
+    out = {"enabled": mailbox.enabled(), "can_send": bool(channels.email_provider()), "me": (channels._sender() or mailbox.address()).lower(),
+           "last_check": db.setting("inbox_checked_at"), "folders": [], "inbox": inbox.enabled(),
+           "lead_unread": db.one(f"SELECT COUNT(DISTINCT a.lead_id) n FROM activities a JOIN leads l ON l.id=a.lead_id WHERE {UNREAD}")["n"]}
+    if out["enabled"] and _mailbox_locked(request):
+        out.update(enabled=False, locked=MAILBOX_LOCKED)
+    elif out["enabled"]:
+        try:
+            out["folders"] = mailbox.folders()
+        except mailbox.MailboxError as e:
+            out["error"] = str(e)
+    return out
+
+
+@app.get("/api/mailbox/messages")
+def mb_messages(folder: str, page: int = 0, q: str = None, filter: str = None):
+    r = _mb(mailbox.messages, folder, max(page, 0), 50, (q or "").strip() or None, filter)
+    leads = _lead_map([x["from"]["email"] for x in r["rows"]] + [t["email"] for x in r["rows"] for t in x["to"]])
+    for x in r["rows"]:
+        x["lead"] = leads.get(x["from"]["email"].lower()) or next((leads[t["email"].lower()] for t in x["to"] if t["email"].lower() in leads), None)
+    return r
+
+
+@app.get("/api/mailbox/message")
+def mb_message(folder: str, uid: int, seen: int = 1):
+    m = _mb(mailbox.message, folder, uid, bool(seen))
+    leads = _lead_map([m["from"]["email"]] + [t["email"] for t in m["to"]])
+    m["lead"] = leads.get(m["from"]["email"].lower()) or next((leads[t["email"].lower()] for t in m["to"] if t["email"].lower() in leads), None)
+    if seen and m["from"]["email"].lower() in leads:  # read here = read in the lead's conversation too
+        db.ex("UPDATE leads SET mail_seen_at=? WHERE id=?", (db.now(), leads[m["from"]["email"].lower()]["id"]))
+    return m
+
+
+SANDBOX = "sandbox allow-popups allow-popups-to-escape-sandbox"
+
+
+@app.get("/api/mailbox/html")
+def mb_html(folder: str, uid: int):
+    """An email's HTML body. Scripts, forms and frames are switched off by the browser; only images, styles and fonts load."""
+    body = _mb(mailbox.html_body, folder, uid)
+    if body is None:
+        raise HTTPException(404)
+    return Response(body, media_type="text/html", headers={
+        "Content-Security-Policy": f"{mailbox.CSP}; {SANDBOX}",
+        "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"})
+
+
+@app.get("/api/mailbox/attachment")
+def mb_attachment(folder: str, uid: int, i: int):
+    name, ctype, data = _mb(mailbox.attachment, folder, uid, i)
+    return Response(data, media_type="application/octet-stream", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox"})
+
+
+@app.post("/api/mailbox/flags")
+def mb_flags(payload: dict = Body(...)):
+    for key, flag in (("seen", "\\Seen"), ("starred", "\\Flagged")):
+        if key in payload:
+            _mb(mailbox.set_flag, payload["folder"], payload.get("uids") or [], flag, bool(payload[key]))
     return {"ok": True}
+
+
+@app.post("/api/mailbox/move")
+def mb_move(payload: dict = Body(...)):
+    """to: trash (from Trash itself: gone for good), spam, archive, inbox, or delete."""
+    folder, uids, to = payload["folder"], payload.get("uids") or [], payload.get("to")
+    if to == "inbox":
+        target = "INBOX"
+    elif to in ("trash", "spam", "archive"):
+        target = _mb(mailbox.folder_for, to, True)
+    elif to == "delete":
+        target = None
+    else:
+        raise HTTPException(400, "unknown destination")
+    if target == folder:
+        if to != "trash":
+            return {"moved": 0}
+        target = None  # deleting from Trash removes it for good
+    _mb(mailbox.move, folder, uids, target)
+    return {"moved": len(uids)}
+
+
+def _compose_parts(c):
+    """Attachments of a composed email: new uploads, plus ones carried over from another message
+    (the email being forwarded, or the earlier version of this draft)."""
+    out = []
+    carry = c.get("carry") or {}
+    for i in (carry.get("indexes") or []) if carry.get("uid") else []:
+        out.append(_mb(mailbox.attachment, carry["folder"], carry["uid"], int(i)))
+    for f in c.get("files") or []:
+        try:
+            out.append((f.get("name") or "attachment", f.get("type") or "application/octet-stream", base64.b64decode(f["data"].split(",")[-1])))
+        except Exception:
+            raise HTTPException(400, f"Could not read the attachment {f.get('name')}.")
+    if sum(len(x[2]) for x in out) > 20_000_000:
+        raise HTTPException(400, "Attachments are over 20 MB in total. Remove some and try again.")
+    return out
+
+
+def _build(c):
+    return mailbox.build(db.setting("sender_name"), channels._sender() or mailbox.address(), c, _compose_parts(c))
+
+
+@app.post("/api/mailbox/draft")
+def mb_draft(c: dict = Body(...)):
+    """Save (or re-save) a draft in the mailbox's Drafts folder. Returns where it now lives."""
+    msg = _build(c)
+    folder = _mb(mailbox.folder_for, "drafts", True)
+    uid = _mb(mailbox.append, folder, msg, "\\Draft \\Seen")
+    if c.get("draft_uid"):  # the old version goes only after the new one is safely stored
+        _mb(mailbox.move, folder, [c["draft_uid"]], None)
+    atts = _mb(mailbox.message, folder, uid, False)["attachments"] if uid else []
+    return {"folder": folder, "uid": uid, "attachments": atts}
+
+
+def _send_composed(c):
+    """Send an email a person wrote. Goes out straight away through the connected mailbox, whatever the send mode."""
+    if not channels.email_provider():
+        raise HTTPException(400, "Email not connected. Set RESEND_API_KEY, or SMTP_HOST, SMTP_USER and SMTP_PASSWORD.")
+    msg = _build(c)
+    rcpts = mailbox.recipients(msg)
+    if not rcpts:
+        raise HTTPException(400, "Add at least one valid email address.")
+    leads = db.q(f"SELECT id, email, stage FROM leads WHERE lower(email) IN ({','.join('?' * len(rcpts))})", rcpts)
+    blocked = sorted({a for a in rcpts if compliance.is_suppressed({"email": a})} | {l["email"] for l in leads if l["stage"] == "opted_out"})
+    if blocked:
+        raise HTTPException(400, f"{', '.join(blocked)} is on the do-not-contact list, so nothing was sent.")
+    subject = str(msg["Subject"] or "")
+    try:
+        res = channels.send_message(msg)
+    except Exception as e:
+        for l in leads:
+            db.log(l["id"], "email_sent", f"Email failed to send: {e}", channel="email", status="error")
+        raise HTTPException(502, f"The email was not sent: {e}")
+    for l in leads:  # shows up in the lead's timeline and conversation
+        db.log(l["id"], "email_sent", f"sent by hand: {subject}", channel="email", status="ok",
+               payload={"status": "ok", **res, "provider_id": str(msg["Message-ID"]), "to": l["email"], "subject": subject,
+                        "body": c.get("body") or "", "manual": True})
+        db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=?, mail_seen_at=? WHERE id=?", (db.now(), db.now(), l["id"]))
+    for cleanup in (lambda: c.get("draft_uid") and mailbox.move(mailbox.folder_for("drafts"), [c["draft_uid"]], None),
+                    lambda: (c.get("answered") or {}).get("uid") and mailbox.set_flag(c["answered"]["folder"], [c["answered"]["uid"]], "\\Answered", True)):
+        try:  # the email is already out: tidying up must not turn that into an error
+            cleanup()
+        except Exception:
+            pass
+    return {"ok": True, "to": rcpts}
+
+
+@app.post("/api/mailbox/send")
+def mb_send(c: dict = Body(...)):
+    return _send_composed(c)
 
 
 # ---------- approvals ----------

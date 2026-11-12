@@ -4,10 +4,9 @@ Every email from a known lead in the last IMAP_LOOKBACK_DAYS (default 14) is rec
 agent (meeting, interested, not now, stop, ...) and shown in the Mailbox. A message counts as a lead's when it
 comes from the lead's address, or when it answers an email the agent sent (In-Reply-To / References), so a
 colleague replying from another address is still caught. Replies someone already opened in webmail are picked
-up too. Messages from anyone else are left untouched and unread."""
+up too. Nothing is marked as read: that only happens when a person opens the message."""
 import email
 import html
-import imaplib
 import json
 import os
 import re
@@ -16,6 +15,7 @@ from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
 from .. import db
+from . import mailbox
 
 MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
 HEADERS = "(BODY.PEEK[HEADER.FIELDS (FROM MESSAGE-ID IN-REPLY-TO REFERENCES)])"
@@ -100,14 +100,11 @@ def poll(handle_reply):
     """Check the inbox once. Returns the number of lead replies recorded."""
     if not enabled():
         return 0
-    user = os.environ.get("IMAP_USER") or os.environ["SMTP_USER"]
-    pw = os.environ.get("IMAP_PASSWORD") or os.environ["SMTP_PASSWORD"]
-    mine = {user.lower(), (db.setting("sender_email") or "").lower()}
-    box = imaplib.IMAP4_SSL(os.environ["IMAP_HOST"], int(os.environ.get("IMAP_PORT", "993")))
+    mine = {mailbox.address(), (db.setting("sender_email") or "").lower()}
+    box = mailbox.connect()  # its own connection, so a long check never blocks the Mailbox page
     done = 0
     try:
-        box.login(user, pw)
-        box.select("INBOX")
+        box.select("INBOX", readonly=True)  # reading a reply here must not mark it as read: a person still has to see it
         d = datetime.now(timezone.utc) - timedelta(days=int(os.environ.get("IMAP_LOOKBACK_DAYS", "14")))
         _, data = box.search(None, "SINCE", f"{d.day:02d}-{MONTHS[d.month - 1]}-{d.year}")
         recent = data[0].split()[-300:]
@@ -134,7 +131,7 @@ def poll(handle_reply):
                     lead = {"id": lid} if lid else None
                 if not lead:
                     continue  # not a lead: leave it unread for a human
-                _, raw = box.fetch(num.decode(), "(RFC822)")  # marks as read in the mailbox
+                _, raw = box.fetch(num.decode(), "(BODY.PEEK[])")
                 msg = email.message_from_bytes(raw[0][1])
                 subject = str(make_header(decode_header(msg.get("Subject", ""))))
                 text = f"Subject: {subject}\n\n{_strip_quoted(_text(msg))}"

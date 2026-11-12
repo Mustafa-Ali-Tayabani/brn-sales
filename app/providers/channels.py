@@ -5,16 +5,18 @@ Email: your own mailbox over SMTP (SMTP_HOST/SMTP_USER/SMTP_PASSWORD, e.g. Googl
 or the Resend API (RESEND_API_KEY). SMTP wins when both are set.
 Voice: Vapi (VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID). Retell or Twilio+ElevenLabs fit the same interface.
 """
+import base64
 import os
 import random
 import smtplib
 import ssl
 from email.message import EmailMessage
-from email.utils import make_msgid
+from email.utils import formataddr, formatdate, getaddresses, make_msgid
 
 import httpx
 
 from .. import db, email_template
+from . import mailbox
 
 
 def _live():
@@ -34,13 +36,13 @@ def _sender():
     return db.setting("sender_email") or os.environ.get("SMTP_USER", "")
 
 
-def _send_smtp(lead, subject, body, html=None, headers=None):
-    user = os.environ["SMTP_USER"]
+def _lead_message(lead, subject, body, html=None, headers=None):
     sender = _sender()
     msg = EmailMessage()
     msg["From"] = f"{db.setting('sender_name')} <{sender}>"
     msg["To"] = lead["email"]
     msg["Subject"] = subject
+    msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=sender.split("@")[-1])
     msg["List-Unsubscribe"] = f"<mailto:{sender}?subject=unsubscribe>"
     for k, v in (headers or {}).items():
@@ -48,6 +50,11 @@ def _send_smtp(lead, subject, body, html=None, headers=None):
     msg.set_content(body)
     if html:
         msg.add_alternative(html, subtype="html")
+    return msg
+
+
+def _smtp(msg):
+    user = os.environ["SMTP_USER"]
     port = int(os.environ.get("SMTP_PORT", "587"))
     ctx = ssl.create_default_context()
     try:
@@ -59,39 +66,52 @@ def _send_smtp(lead, subject, body, html=None, headers=None):
                 s.starttls(context=ctx); s.login(user, os.environ["SMTP_PASSWORD"]); s.send_message(msg)
     except smtplib.SMTPAuthenticationError:
         raise RuntimeError("Mailbox rejected the login: check SMTP_USER and SMTP_PASSWORD")
+    except smtplib.SMTPRecipientsRefused as e:
+        raise RuntimeError(f"The mail server refused the address: {', '.join(e.recipients)}")
     except (TimeoutError, OSError) as e:
         if isinstance(e, smtplib.SMTPException):
             raise
         raise RuntimeError(f"Could not reach {os.environ['SMTP_HOST']}:{port} ({e}). Your host is probably blocking "
                            "email ports (Railway does on Free/Trial/Hobby plans). Use Resend: set RESEND_API_KEY.")
-    return {"status": "ok", "provider": "smtp", "provider_id": msg["Message-ID"], "to": lead["email"], "subject": subject, "body": body}
+    return str(msg["Message-ID"])
 
 
-def _send_resend(lead, subject, body, html=None, headers=None):
+def _resend(msg):
     sender = _sender()
-    r = httpx.post(
-        "https://api.resend.com/emails",
-        headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"},
-        json={
-            "from": f"{db.setting('sender_name')} <{sender}>", "reply_to": sender,
-            "to": [lead["email"]], "subject": subject, "text": body, **({"html": html} if html else {}),
-            "headers": {"List-Unsubscribe": f"<mailto:{sender}?subject=unsubscribe>", **(headers or {})},
-        },
-        timeout=20,
-    )
+    addrs = lambda k: [formataddr(x) for x in getaddresses([str(msg.get(k) or "")]) if x[1]]
+    text, html = msg.get_body(("plain",)), msg.get_body(("html",))
+    payload = {"from": str(msg["From"]), "reply_to": sender, "to": addrs("To"), "subject": str(msg["Subject"] or ""),
+               "text": text.get_content() if text else "",
+               "headers": {k: str(msg[k]) for k in ("List-Unsubscribe", "In-Reply-To", "References") if msg.get(k)}}
+    for k in ("Cc", "Bcc"):
+        if addrs(k):
+            payload[k.lower()] = addrs(k)
+    if html:
+        payload["html"] = html.get_content()
+    files = [{"filename": a.get_filename() or "attachment", "content": base64.b64encode(a.get_payload(decode=True) or b"").decode()}
+             for a in msg.iter_attachments()]
+    if files:
+        payload["attachments"] = files
+    r = httpx.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, json=payload, timeout=30)
     if r.status_code >= 400:
         raise RuntimeError(f"Resend refused the email: {r.text[:300]}")
-    return {"status": "ok", "provider": "resend", "provider_id": r.json().get("id"), "to": lead["email"], "subject": subject, "body": body}
+    return r.json().get("id")
+
+
+def send_message(msg):
+    """Send a finished email through whichever provider is configured, and keep a copy in the mailbox's Sent folder."""
+    provider = email_provider()
+    if not provider:
+        raise RuntimeError("No email provider configured")
+    pid = _resend(msg) if provider == "resend" else _smtp(msg)
+    mailbox.save_sent(msg)
+    return {"provider": provider, "provider_id": pid}
 
 
 def deliver(lead, subject, body, html=None, headers=None):
-    """Send for real through whichever provider is configured (no mode check: callers decide)."""
-    provider = email_provider()
-    if provider == "resend":
-        return _send_resend(lead, subject, body, html, headers)
-    if provider == "smtp":
-        return _send_smtp(lead, subject, body, html, headers)
-    raise RuntimeError("No email provider configured")
+    """Send to a lead for real (no mode check: callers decide)."""
+    res = send_message(_lead_message(lead, subject, body, html, headers))
+    return {"status": "ok", **res, "to": lead["email"], "subject": subject, "body": body}
 
 
 def build_email(lead, subject, body, cta=None, cta_label=None):

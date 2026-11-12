@@ -17,10 +17,21 @@ To connect your mailbox locally, copy `.env.example` to `.env` and fill it in (t
 
 ## Mailbox
 
-The **Mailbox** page shows every email sent to a lead and every reply from them as one conversation, so you don't
-need to open webmail. Replies are pulled from your inbox over IMAP every 5 minutes (or with **Check for new replies**),
-including ones already opened in webmail and ones sent from a different address in answer to the agent's email.
-You can answer from the same page: that reply is sent straight away as a plain email, whatever the send mode.
+The **Mailbox** page is a mail client for the connected account, so you don't need to open webmail:
+
+* **Inbox, Sent, Drafts, Spam, Trash, Archive** and any other folders, read live from the mail server over IMAP.
+  Nothing is copied into the database, so webmail and this page always show the same thing.
+* **Compose, reply, reply all, forward**, with attachments. Drafts save themselves to the Drafts folder as you type.
+  These emails are sent straight away as plain emails, whatever the send mode.
+* Search, unread and starred filters, mark read/unread, star, archive, spam, delete (select several at once).
+* Every email sent from here or by the agent is copied to the Sent folder.
+* **Lead conversations**: every email sent to a lead and every reply from them as one thread. Replies are picked up
+  every 5 minutes (or with **Check mail**), including ones already opened in webmail and ones sent from a different
+  address in answer to the agent's email. The agent reading a reply does not mark it as read.
+
+It needs `IMAP_HOST` (plus `SMTP_USER` / `SMTP_PASSWORD`, or `IMAP_USER` / `IMAP_PASSWORD`). On a public server the
+folders stay locked until `BRN_ADMIN_PASSWORD` is set: without a password, anyone with the link could read and send
+your mail.
 
 ## How the agent works
 
@@ -40,6 +51,7 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/providers/llm.py`: Claude for research, scoring, emails, call briefs, reply triage (templates if no key)
 * `app/providers/channels.py`: email from your own mailbox (SMTP) or Resend, Vapi voice calls
 * `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes, records them once and lets the agent act on them
+* `app/providers/mailbox.py`: the Mailbox page's IMAP client (folders, reading, drafts, moving, Sent copies)
 * `app/providers/sources.py`: CSV import, Google Places search
 * `app/static/index.html`: dashboard (overview, leads, approvals, activity log, settings)
 
