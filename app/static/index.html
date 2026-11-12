@@ -382,7 +382,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
         <div class="row" style="margin-top:12px"><select id="pvProd"></select><button onclick="previewEmail()">Preview branded email</button></div>
       </div>
       <div class="card"><h3>Pipelines (products &amp; services)</h3><p class="muted" style="margin-top:-6px">Each pipeline has its own pitch, ideal customer, optional sequence and lead sources:
-        <code>"sources": {"places": [{"query": "salons in Riyadh", "country": "SA", "limit": 20}], "only_without_website": true, "reddit": ["need a website"]}</code></p>
+        <code>"sources": {"places": [{"query": "salons in Riyadh", "country": "SA", "limit": 20}], "only_without_website": true, "reddit": ["need a website"]}</code><br>Web search (finds businesses and their published emails, needs the Anthropic key): <code>"sources": {"web": [{"query": "dentists in Austin TX", "country": "US", "limit": 15}], "wordpress_only": true}</code></p>
         <textarea id="s-products" style="min-height:220px;font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
       <button class="pri" onclick="saveSettings()">Save settings</button>
     </div>
@@ -751,7 +751,7 @@ const SCOL={new:'#9aa0b4',needs_contact:'#e3a33b',reply_manually:'#6E7BFF',in_se
 let pbKey=null,PIPES=[];
 async function loadPipelines(){const r=await api('/api/pipelines');PIPES=r.pipelines;if(pbKey)return loadBoard();
   const card=p=>{const st=p.stages||{},tot=p.total||0,src=p.sources||{};
-   const srcTxt=[(src.places||[]).length?`${src.places.length} map search${src.places.length>1?'es':''}${src.only_without_website?' (no-website only)':''}`:'',(src.reddit||[]).length?`${src.reddit.length} intent phrase${src.reddit.length>1?'s':''}`:''].filter(Boolean).join(' · ')||'no sources yet';
+   const srcTxt=[(src.web||[]).length?`${src.web.length} web search${src.web.length>1?'es':''}${src.wordpress_only?' (WordPress only)':''}`:'',(src.places||[]).length?`${src.places.length} map search${src.places.length>1?'es':''}${src.only_without_website?' (no-website only)':''}`:'',(src.reddit||[]).length?`${src.reddit.length} intent phrase${src.reddit.length>1?'s':''}`:''].filter(Boolean).join(' · ')||'no sources yet';
    return `<div class="pcard" onclick="openBoard('${p.key}')"><div class="row"><h3 style="flex:1">${esc(p.name)}</h3><span class="tag ${p.type=='service'?'g':'p'}">${p.type}</span></div>
     <div class="row"><span class="n">${tot}</span><span class="muted">leads · ${st.in_sequence||0} active · ${(st.replied||0)+(st.meeting_booked||0)} replied/meeting${st.reply_manually?` · <b style="color:var(--blue)">${st.reply_manually} to reply</b>`:''}</span></div>
     <div class="sbar">${tot?KCOLS.filter(k=>st[k]).map(k=>`<i title="${SL[k]}: ${st[k]}" style="width:${st[k]/tot*100}%;background:${SCOL[k]}"></i>`).join(''):''}</div>
