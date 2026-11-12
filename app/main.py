@@ -796,8 +796,22 @@ def discover_pipeline(key, sources_only=None):
             out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
         except Exception as e:
             out["errors"].append(f"Reddit '{phrase}': {e}")
-    if not places and not src.get("reddit"):
-        out["notes"].append("This pipeline has no sources yet. Add Places searches or Reddit phrases in Settings > Pipelines.")
+    web = src.get("web") or []
+    if web and (sources_only in (None, "web")):
+        if not llm.enabled():
+            out["notes"].append("ANTHROPIC_API_KEY is not set, so web search was skipped.")
+        else:
+            for qd in web:
+                try:
+                    rows = llm.discover_businesses(qd["query"], qd.get("country", "US"), int(qd.get("limit", 15)))
+                    rows = sources.enrich(rows, wordpress_only=bool(src.get("wordpress_only")))
+                    res = _import(rows, f"web: {qd['query']}", {"product": key, "segment": qd.get("segment") or p.get("name"),
+                                                                 "country": qd.get("country", "US")})
+                    out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
+                except Exception as e:
+                    out["errors"].append(f"{qd.get('query')}: {e}")
+    if not places and not web and not src.get("reddit"):
+        out["notes"].append("This pipeline has no sources yet. Add web searches, Places searches or Reddit phrases in Settings > Pipelines.")
     ps = db.setting("pipeline_runs", json.loads) or {}
     ps[key] = {"at": db.now(), "imported": out["imported"], "errors": len(out["errors"])}
     db.set_setting("pipeline_runs", json.dumps(ps))

@@ -180,3 +180,71 @@ def reddit_search(phrase, limit=15, days="week"):
                       "posted_at": d.get("created_utc"), "comments": d.get("num_comments"), "found_by": phrase},
         })
     return out
+
+
+# ---------------------------------------------------------------- web discovery helpers
+import re as _re
+import urllib.parse as _up
+from concurrent.futures import ThreadPoolExecutor as _TPE
+
+_EMAIL = _re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+_JUNK = ("example.", "sentry", "wixpress", "domain.com", "email.com", "yourdomain", "godaddy", "shopify.com",
+         "wordpress.", "schema.org", "w3.org", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js", "@2x")
+_CONTACT_PATHS = ("", "/contact", "/contact-us", "/contact-us/", "/about", "/about-us", "/pages/contact")
+
+
+def _get(url, timeout=6):
+    try:
+        r = httpx.get(url, timeout=timeout, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (compatible; BrnLeadFinder/1.0)"})
+        return r.status_code, r.text[:400000]
+    except Exception:
+        return 0, ""
+
+
+def site_facts(url):
+    """Reads a business's own public pages: the contact email it publishes and whether it runs WordPress.
+    Returns {"email", "wordpress", "wp_version"}. Never raises."""
+    out = {"email": None, "wordpress": False, "wp_version": ""}
+    if not url:
+        return out
+    base = url if url.startswith("http") else "https://" + url
+    base = base.rstrip("/")
+    host = (_up.urlparse(base).hostname or "").lower().removeprefix("www.")
+    found = []
+    for i, path in enumerate(_CONTACT_PATHS):
+        st, html = _get(base + path)
+        if not html:
+            if i == 0:
+                break  # home page unreachable: stop early
+            continue
+        if i == 0:
+            m = _re.search(r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']WordPress\s*([\d.]*)', html, _re.I)
+            out["wordpress"] = bool(m) or "/wp-content/" in html or "/wp-includes/" in html
+            out["wp_version"] = m.group(1) if m else ""
+        for e in _re.findall(r"mailto:([^\"'?>\s]+)", html) + _EMAIL.findall(html):
+            e = e.strip().strip(".,;:").lower()
+            if _EMAIL.fullmatch(e) and not any(j in e for j in _JUNK):
+                found.append(e)
+        if found and i >= 1:
+            break
+    if found:  # prefer an address on the business's own domain
+        own = [e for e in found if e.split("@")[-1].removeprefix("www.").endswith(host)]
+        out["email"] = (own or found)[0]
+    return out
+
+
+def enrich(rows, wordpress_only=False, workers=5):
+    """Adds the published email and a WordPress flag to discovered businesses (in place); optionally drops non-WordPress sites."""
+    with _TPE(workers) as ex:
+        facts = list(ex.map(lambda r: site_facts(r.get("website")), rows))
+    out = []
+    for r, f in zip(rows, facts):
+        if wordpress_only and not f["wordpress"]:
+            continue
+        if f["email"] and not r.get("email"):
+            r["email"] = f["email"]
+        r.setdefault("extra", {})["wordpress"] = f["wordpress"]
+        if f["wp_version"]:
+            r["extra"]["wp_version"] = f["wp_version"]
+        out.append(r)
+    return out

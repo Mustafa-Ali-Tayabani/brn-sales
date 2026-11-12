@@ -333,3 +333,38 @@ Return JSON: {{"summary": str, "reply_draft": str, "score": int 0-100, "score_re
                         "give a free quick opinion, no strings attached."),
         "score": 55, "score_reason": "asks publicly for a service we offer", "_engine": "template",
     }
+
+
+def discover_businesses(query, country="US", limit=15):
+    """Finds real small businesses on the web (Claude web search): e.g. 'lavender farms with online shops'.
+    Returns rows with company, website, city, country. Needs ANTHROPIC_API_KEY."""
+    if _client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY is not set, so web search is unavailable")
+    prompt = (f"Find up to {int(limit)} real, currently operating small businesses for this search: \"{query}\" (country: {country}). "
+              "Use web search. Only include businesses that have their own website. Skip big chains, marketplaces, directories and social pages. "
+              'Reply with ONLY JSON: {"businesses":[{"business":"name","url":"https://their-own-site","city":"city or null"}]}')
+    msgs = [{"role": "user", "content": prompt}]
+    text = ""
+    for _ in range(4):  # a long search can pause: continue it
+        msg = _client.messages.create(model=model(), max_tokens=3000, messages=msgs,
+                                      tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}])
+        if getattr(msg, "usage", None) is not None:
+            _record("discovery", msg.usage)
+        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        if getattr(msg, "stop_reason", None) != "pause_turn":
+            break
+        msgs = [msgs[0], {"role": "assistant", "content": msg.content}]
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        raise RuntimeError("web search returned no list")
+    items = json.loads(m.group(0)).get("businesses") or []
+    rows, seen = [], set()
+    for it in items:
+        url = (it.get("url") or "").strip()
+        key = re.sub(r"^https?://(www\.)?", "", url.lower()).rstrip("/")
+        if not url.startswith("http") or key in seen or not it.get("business"):
+            continue
+        seen.add(key)
+        rows.append({"company": it["business"], "website": url, "city": it.get("city"), "country": country,
+                     "source": "web_search", "consent_basis": "legitimate_interest_b2b"})
+    return rows[:int(limit)]
