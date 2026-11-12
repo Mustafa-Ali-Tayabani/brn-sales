@@ -84,7 +84,11 @@ def _resend(msg):
     if html:
         payload["html"] = html.get_content()
     files = [{"filename": a.get_filename() or "attachment", "content": base64.b64encode(a.get_payload(decode=True) or b"").decode()}
-             for a in msg.iter_attachments()]
+             for a in msg.iter_attachments() if not a.is_multipart()]
+    for p in msg.walk():  # images embedded in the HTML (a forwarded email's own pictures)
+        if not p.is_multipart() and p.get("Content-ID") and p.get_content_disposition() != "attachment" and p.get_content_maintype() == "image":
+            cid = str(p["Content-ID"]).strip("<>")
+            files.append({"filename": p.get_filename() or cid, "content": base64.b64encode(p.get_payload(decode=True) or b"").decode(), "content_id": cid})
     if files:
         payload["attachments"] = files
     r = httpx.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, json=payload, timeout=30)

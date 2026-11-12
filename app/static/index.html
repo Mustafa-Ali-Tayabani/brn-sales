@@ -182,7 +182,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 .mread{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto}.mread iframe{flex:1;width:100%;min-height:240px;border:0;background:#fff}
 .mtext{padding:18px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.6}
 .atts{display:flex;gap:8px;flex-wrap:wrap;padding:10px 18px;border-top:1px solid var(--line2)}
-.compose{position:fixed;right:28px;bottom:0;width:min(580px,calc(100vw - 24px));max-height:88vh;background:#fff;border:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -8px 50px #0b0c1040;z-index:15;display:flex;flex-direction:column}
+.compose{position:fixed;right:96px;bottom:0;width:min(580px,calc(100vw - 24px));max-height:88vh;background:#fff;border:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -8px 50px #0b0c1040;z-index:15;display:flex;flex-direction:column}
 .compose .ch{background:var(--ink);color:#fff;padding:9px 10px 9px 16px;border-radius:13px 13px 0 0;display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
 .compose .ch button{background:transparent;border-color:transparent;color:#fff}.compose .ch button:hover{background:#ffffff22;color:#fff;border-color:transparent;box-shadow:none;transform:none}
 #cState{font-weight:400;font-size:12px;color:#b9bac3}
@@ -260,8 +260,9 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
   <div class="top"><div class="ttl"><h1 id="title">Overview</h1><div class="sub" id="subtitle"></div></div>
     <div class="agentsw" id="agentBtn" onclick="toggleAgent()" title="Turn the automatic agent on or off"><span>Agent</span><span class="st" id="agentTxt"></span><span class="tg"></span></div>
     <button class="icon" id="refreshBtn" onclick="manualRefresh()" title="Refresh"><span class="spin">↻</span></button>
+    <button onclick="openAdd()" title="Type in one lead yourself">+ Add lead</button>
     <button onclick="openFind()" title="Give a name and LinkedIn link, get their email and phone">Find a person</button>
-    <button class="pri" onclick="openImport()">+ Import leads</button>
+    <button class="pri" onclick="openImport()">Import leads</button>
   </div>
   <div id="sysBanner"></div><div id="banner"></div>
 
@@ -395,6 +396,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
         <div class="row"><div><label>Sender name</label><input id="s-sender_name"></div><div><label>Sender email</label><input id="s-sender_email"></div></div>
         <label>Default booking / CTA link</label><input id="s-booking_link" style="width:100%">
         <label>Postal address in email footer (required by US anti-spam law)</label><input id="s-company_address" style="width:100%">
+        <label>Logo image in emails (web address of a PNG; leave empty to use the built-in brn dynamics logo)</label><input id="s-logo_url" style="width:100%" placeholder="https://…/logo.png"><p class="muted" id="logoNote" style="font-size:12px;margin:4px 0 0"></p>
         <div class="row" style="margin-top:12px"><select id="pvProd"></select><button onclick="previewEmail()">Preview branded email</button></div>
       </div>
       <div class="card"><h3>Pipelines (products &amp; services)</h3><p class="muted" style="margin-top:-6px">Each pipeline has its own pitch, ideal customer, optional sequence and lead sources:
@@ -592,6 +594,16 @@ async function doFind(){const b=$('#fpBtn');b.disabled=true;b.textContent='Looki
    $('#fp-text').value='';loadFacets();refresh()}finally{b.disabled=false;b.textContent='Find email & phone'}}
 async function findContact(id,b){b.disabled=true;b.textContent='Looking up…';try{const r=await api(`/api/leads/${id}/find-contact`,{method:'POST'});
   alertBanner(r.status=='pending'?r.detail:r.status=='not_found'?r.detail:r.status=='done'?(r.phone?'Phone number found: '+r.phone:'No phone number on record for this person.'):([r.email&&'email '+r.email,r.phone&&'phone '+r.phone].filter(Boolean).join(', ')||'Nothing new found')+(r.phone_pending?'. A mobile number is being looked up and will be added in a few minutes.':'')+(r.note?' '+r.note:''),r.status=='not_found');openLead(id);refresh()}finally{b.disabled=false;b.textContent='Find email & phone'}}
+function openAdd(){const f=(k,n,ph,t)=>`<div><label>${n}</label><input id="al-${k}" placeholder="${ph||''}" ${t?`type="${t}"`:''} style="width:100%"></div>`;
+  openModal('Add a lead',`<div class="fgrid">${f('company','Company *','Pulse Fitness')}${f('contact_name','Contact name','Sara Ahmed')}${f('title','Job title','Operations Director')}${f('email','Email','sara@pulsefitness.com','email')}
+   ${f('phone','Phone','+966 5x xxx xxxx')}${f('website','Website','https://')}${f('linkedin','LinkedIn profile','linkedin.com/in/…')}${f('city','City','Jeddah')}
+   <div><label>Country</label><select id="al-country" style="width:100%">${['SA','KW','AE','QA','BH','OM','PK','US','GB','CA','AU','DE','FR','CH','IN'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+   <div><label>Pipeline</label><select id="al-product" style="width:100%">${Object.values(PRODUCTS).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('')}</select></div>
+   ${f('segment','Category','gym, clinic, agency…')}<div><label>Lawful basis</label><select id="al-consent_basis" style="width:100%"><option value="legitimate_interest_b2b">B2B legitimate interest</option><option value="opt_in">Opted in</option><option value="existing_customer">Existing customer</option></select></div></div>
+   <label>Notes</label><textarea id="al-notes" style="min-height:70px" placeholder="Anything the agent should know: how you met, what they need…"></textarea>
+   <div class="row" style="margin-top:12px"><button class="pri" id="alBtn" onclick="doAdd()">Add lead</button><button onclick="doAdd(true)">Add and add another</button><span class="muted" style="font-size:12px">With an email or phone, the agent researches the lead and drafts the first email for your approval.</span></div>`);$('#al-company').focus()}
+async function doAdd(more){const b={};['company','contact_name','title','email','phone','website','linkedin','city','country','product','segment','consent_basis','notes'].forEach(k=>{const v=$('#al-'+k).value.trim();if(v)b[k]=v});
+  if(!b.company)return alertBanner('Enter the company name',true);const r=await api('/api/leads',{method:'POST',body:b});toast('Lead added: '+b.company);loadFacets();refresh();if(more)openAdd();else{closeModal();openLead(r.id)}}
 function openImport(){openModal('Import leads',`<p class="muted" style="margin-top:0">Excel (.xlsx) or CSV. Columns are matched automatically (Business/Company, Email, Website, Phone, Segment/Category, City, Country, Status, Notes…). Everything else, like scan scores and issues, is kept for the agent to use. Duplicate emails are skipped.</p>
   <label>File</label><input type="file" id="imp-file" accept=".xlsx,.xlsm,.csv">
   <div class="fgrid" style="margin-top:6px"><div><label>Product for these leads</label><select id="imp-product"></select></div>
@@ -706,27 +718,30 @@ const quoted=m=>`\n\nOn ${fmt(m.at)}, ${m.from.name||m.from.email} wrote:\n`+(m.
 function mbReply(all){const m=MB.msg,me=MB.me,mine=m.from.email.toLowerCase()==me,to=mine?m.to.map(p=>p.email):[(m.reply_to[0]||m.from).email];
   const cc=all?[...(mine?[]:m.to),...m.cc].map(p=>p.email).filter(e=>e.toLowerCase()!=me&&!to.some(t=>t.toLowerCase()==e.toLowerCase())):[];
   compose({to:to.join(', '),cc:cc.join(', '),subject:/^re:/i.test(m.subject)?m.subject:'Re: '+m.subject,body:quoted(m),in_reply_to:m.message_id,references:(m.references+' '+m.message_id).trim(),answered:{folder:m.folder,uid:m.uid},title:'Reply'})}
-function mbForward(){const m=MB.msg;compose({subject:/^fwd?:/i.test(m.subject)?m.subject:'Fwd: '+m.subject,title:'Forward',touched:true,
-  body:`\n\n---------- Forwarded message ----------\nFrom: ${person(m.from)}\nDate: ${fmt(m.at)}\nSubject: ${m.subject}\nTo: ${people(m.to)}\n\n${m.text||''}`,carry:m.attachments.length?{folder:m.folder,uid:m.uid,items:m.attachments}:null})}
-async function openDraft(uid){const m=await api('/api/mailbox/message?'+mbQ({uid,seen:0}));
-  compose({to:people(m.to),cc:people(m.cc),bcc:people(m.bcc),subject:m.subject,body:m.text,in_reply_to:m.in_reply_to,references:m.references,draft_uid:uid,draft_folder:MB.folder,title:'Draft',carry:m.attachments.length?{folder:MB.folder,uid,items:m.attachments}:null})}
+function mbForward(){const m=MB.msg;compose({subject:/^fwd?:/i.test(m.subject)?m.subject:'Fwd: '+m.subject,title:'Forward',touched:true,body:'',
+  forward:{folder:m.folder,uid:m.uid,html:m.has_html,text:m.text},carry:m.attachments.length?{folder:m.folder,uid:m.uid,items:m.attachments}:null})}
+async function openDraft(uid){const m=await api('/api/mailbox/message?'+mbQ({uid,seen:0}));let fwd=null,body=m.text;
+  if(m.forward){try{const o=await api('/api/mailbox/message?'+qs({folder:m.forward.folder,uid:m.forward.uid,seen:0}));fwd={...m.forward,html:o.has_html,text:o.text};body=body.split('---------- Forwarded message ----------')[0].trim()}catch{$('#banner').innerHTML=''}}
+  compose({to:people(m.to),cc:people(m.cc),bcc:people(m.bcc),subject:m.subject,body,in_reply_to:m.in_reply_to,references:m.references,draft_uid:uid,draft_folder:MB.folder,title:'Draft',forward:fwd,carry:m.attachments.length?{folder:MB.folder,uid,items:m.attachments}:null})}
 
 /* ---- compose window ---- */
 async function compose(init={}){if(!MB.canSend)return alertBanner('Email sending is not connected, so you can read here but not write.',true);if(C)await cClose();
-  C={to:'',cc:'',bcc:'',subject:'',body:'',files:[],carry:null,draft_uid:null,draft_folder:null,in_reply_to:'',references:'',answered:null,title:'New message',touched:false,chain:Promise.resolve(),...init};const c=C;
+  C={to:'',cc:'',bcc:'',subject:'',body:'',files:[],carry:null,draft_uid:null,draft_folder:null,in_reply_to:'',references:'',answered:null,title:'New message',forward:null,touched:false,chain:Promise.resolve(),...init};const c=C;
   const el=$('#compose');el.className='compose';el.innerHTML=`<div class="ch" onclick="$('#compose').classList.toggle('min')"><span style="flex:1">${esc(c.title)}</span><span id="cState"></span><button class="sm" onclick="event.stopPropagation();cClose()" title="${MB.on?'Save as draft and close':'Close'}">✕</button></div>
    <div class="cb"><input id="c-to" placeholder="To" value="${esc(c.to)}" autocomplete="off"><div id="cMore" class="${c.cc||c.bcc?'':'hide'}"><input id="c-cc" placeholder="Cc" value="${esc(c.cc)}" autocomplete="off"><input id="c-bcc" placeholder="Bcc" value="${esc(c.bcc)}" autocomplete="off"></div>
-    <input id="c-subject" placeholder="Subject" value="${esc(c.subject)}"><textarea id="c-body" placeholder="Write your email…">${esc(c.body)}</textarea><div class="row" id="cAtts" style="padding-bottom:6px"></div></div>
+    <input id="c-subject" placeholder="Subject" value="${esc(c.subject)}"><textarea id="c-body" ${c.forward?'style="min-height:90px"':''} placeholder="${c.forward?'Add a note above the forwarded email (optional)…':'Write your email…'}">${esc(c.body)}</textarea>
+    ${c.forward?`<div class="muted" style="font-size:12px;margin:2px 0 6px">Forwarded email, sent exactly as it looks here:</div>${c.forward.html?'<iframe id="cFwd" sandbox="" style="width:100%;height:240px;border:1px solid var(--line);border-radius:10px;flex:none"></iframe>':`<pre style="max-height:240px;overflow:auto;margin:0">${esc(c.forward.text||'')}</pre>`}`:''}
+    <div class="row" id="cAtts" style="padding:6px 0"></div></div>
    <div class="cf"><button class="pri" id="cSend" onclick="cSend()">Send</button><button onclick="$('#cFile').click()">📎 Attach</button><input type="file" id="cFile" multiple class="hide" onchange="cAttach(this)"><button class="ghost" onclick="$('#cMore').classList.toggle('hide')">Cc / Bcc</button>
     <span style="flex:1"></span><button class="ghost danger" onclick="cDiscard()" title="Discard this email">🗑 Discard</button></div>`;
-  el.querySelectorAll('.cb input,.cb textarea').forEach(e=>e.oninput=cTouch);cAtts();const b=$('#c-body');if(c.to){b.focus();b.setSelectionRange(0,0);b.scrollTop=0}else $('#c-to').focus()}
+  el.querySelectorAll('.cb input,.cb textarea').forEach(e=>e.oninput=cTouch);cAtts();if(c.forward&&c.forward.html)fetch('/api/mailbox/html?'+qs({folder:c.forward.folder,uid:c.forward.uid})).then(r=>r.ok?r.text():'').then(t=>{if(c===C&&$('#cFwd'))$('#cFwd').srcdoc=t});const b=$('#c-body');if(c.to){b.focus();b.setSelectionRange(0,0);b.scrollTop=0}else $('#c-to').focus()}
 function cRead(){if(C&&$('#c-to'))['to','cc','bcc','subject','body'].forEach(k=>C[k]=$('#c-'+k).value)}
 function cTouch(){if(!C)return;cRead();C.touched=true;$('#cState').textContent='';clearTimeout(C.t);const c=C;if(MB.on)C.t=setTimeout(()=>cSave(c),2500)}
 function cAtts(){const c=C;$('#cAtts').innerHTML=((c.carry||{}).items||[]).map((a,i)=>`<span class="tag g">📎 ${esc(a.name)} · ${fsize(a.size)} <a style="cursor:pointer" onclick="C.carry.items.splice(${i},1);cAtts();cTouch()">✕</a></span>`).join('')
   +c.files.map((a,i)=>`<span class="tag g">📎 ${esc(a.name)} · ${fsize(a.size)} <a style="cursor:pointer" onclick="C.files.splice(${i},1);cAtts();cTouch()">✕</a></span>`).join('')}
 async function cAttach(inp){for(const f of inp.files){if(f.size>15e6){alertBanner(f.name+' is over 15 MB, too large to attach',true);continue}
    C.files.push({name:f.name,type:f.type||'application/octet-stream',size:f.size,data:await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.readAsDataURL(f)})})}inp.value='';cAtts();cTouch()}
-const cBody=c=>({to:c.to,cc:c.cc,bcc:c.bcc,subject:c.subject,body:c.body,in_reply_to:c.in_reply_to,references:c.references,draft_uid:c.draft_uid,
+const cBody=c=>({to:c.to,cc:c.cc,bcc:c.bcc,subject:c.subject,body:c.body,in_reply_to:c.in_reply_to,references:c.references,draft_uid:c.draft_uid,forward:c.forward?{folder:c.forward.folder,uid:c.forward.uid}:null,
   files:c.files.map(({name,type,data})=>({name,type,data})),carry:c.carry&&c.carry.items.length?{folder:c.carry.folder,uid:c.carry.uid,indexes:c.carry.items.map(a=>a.i)}:null});
 const cSig=c=>JSON.stringify([c.to,c.cc,c.bcc,c.subject,c.body,c.files.map(f=>f.name+f.size),((c.carry||{}).items||[]).map(a=>a.i)]);
 function cSave(c){clearTimeout(c.t);const say=t=>{if(c===C&&$('#cState'))$('#cState').textContent=t};
@@ -780,12 +795,12 @@ async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}
 async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content=appContent(id);if(b){b.disabled=true;b.textContent='Sending…'}
   try{await api('/api/approvals/'+id,{method:'POST',body});toast(ok?'Sent':'Skipped')}finally{appSel.delete(id);appsDirty=false;refresh()}}
 
-const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];
+const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product'];
 async function loadSettings(){const s=await api('/api/settings');
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
   SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');$('#s-sequence').value=JSON.stringify(s.sequence,null,1);$('#s-products').value=JSON.stringify(s.products,null,1);
   $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');
-  $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;
+  $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;$('#logoNote').textContent=s.logo_effective?'Emails load the logo from '+s.logo_effective:'No public address for this server is known, so emails show the name as text instead of the logo. Paste a logo address above to fix that.';
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
   $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');

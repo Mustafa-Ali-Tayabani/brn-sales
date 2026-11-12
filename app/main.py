@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
-from . import agent, assistant, compliance, db
+from . import agent, assistant, compliance, db, email_template
 from urllib.parse import quote
 
 from .providers import channels, enrich, inbox, llm, mailbox, sources
@@ -26,7 +26,7 @@ ADMIN_PW = os.environ.get("BRN_ADMIN_PASSWORD")
 
 @app.middleware("http")
 async def basic_auth(request: Request, call_next):
-    if ADMIN_PW and not request.url.path.startswith("/webhooks/"):
+    if ADMIN_PW and not request.url.path.startswith(("/webhooks/", "/brand/")):
         h = request.headers.get("authorization", "")
         ok = False
         if h.startswith("Basic "):
@@ -53,6 +53,15 @@ def _mailbox_locked(request):
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"))
+
+
+@app.get("/brand/{name}")
+def brand(name: str):
+    """Public brand images (the logo in emails is loaded from here, so it needs no login)."""
+    path = os.path.join(STATIC, "brand", os.path.basename(name))
+    if not name.endswith(".png") or not os.path.isfile(path):
+        raise HTTPException(404)
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 
 # ---------- dashboard data ----------
@@ -238,9 +247,11 @@ def _import(rows, source, payload):
 def add_lead(row: dict = Body(...)):
     if not row.get("company"):
         raise HTTPException(400, "company is required")
+    if row.get("linkedin"):
+        row["extra"] = {**(row.get("extra") or {}), "linkedin": enrich.linkedin_url(row["linkedin"]) or row["linkedin"]}
     lid = _insert(row)
     if not lid:
-        raise HTTPException(409, "a lead with this email already exists")
+        raise HTTPException(409, "This lead is already in the system (same email, or the same website or phone with no email).")
     return {"id": lid}
 
 
@@ -523,7 +534,7 @@ def _email_preview(product=None, lead_id=None, activity_id=None):
             body = body.rsplit("\n\n", 1)[0]
         prod = db.products().get(a.get("product") or "")
         return Response(render(p.get("subject", ""), body, agent._settings(a)["booking_link"], p.get("cta"),
-                               prod["name"] if prod else None), media_type="text/html")
+                               prod["name"] if prod else None, preview=True), media_type="text/html")
     lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,)) if lead_id else None
     lead = lead or {"company": "Acme Lavender Farm", "contact_name": "Sarah Miller", "city": "Hood River", "country": "US",
                     "product": product or db.setting("default_product"), "research": None,
@@ -534,7 +545,7 @@ def _email_preview(product=None, lead_id=None, activity_id=None):
     r = json.loads(lead.get("research") or "null") or llm.research(lead, s["offer"], s["icp"], s["product_key"])
     content = llm.write_email(lead, r or {}, "intro", s)
     prod = db.products().get(lead.get("product") or "")
-    return Response(render(content["subject"], content["body"], s["booking_link"], content.get("cta"), prod["name"] if prod else None),
+    return Response(render(content["subject"], content["body"], s["booking_link"], content.get("cta"), prod["name"] if prod else None, preview=True),
                     media_type="text/html")
 
 
@@ -729,14 +740,16 @@ def _compose_parts(c):
     return out
 
 
-def _build(c):
-    return mailbox.build(db.setting("sender_name"), channels._sender() or mailbox.address(), c, _compose_parts(c))
+def _build(c, draft=False):
+    fwd = c.get("forward") or {}
+    parts = _mb(mailbox.forward_parts, fwd["folder"], int(fwd["uid"])) if fwd.get("uid") else None
+    return mailbox.build(db.setting("sender_name"), channels._sender() or mailbox.address(), c, _compose_parts(c), parts, draft)
 
 
 @app.post("/api/mailbox/draft")
 def mb_draft(c: dict = Body(...)):
     """Save (or re-save) a draft in the mailbox's Drafts folder. Returns where it now lives."""
-    msg = _build(c)
+    msg = _build(c, draft=True)
     folder = _mb(mailbox.folder_for, "drafts", True)
     uid = _mb(mailbox.append, folder, msg, "\\Draft \\Seen")
     if c.get("draft_uid"):  # the old version goes only after the new one is safely stored
@@ -855,6 +868,7 @@ def get_settings():
             pass
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
     s["email_via"] = channels.email_provider()
+    s["logo_effective"] = email_template.logo_url()
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
                       "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s

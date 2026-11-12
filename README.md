@@ -22,6 +22,7 @@ The **Mailbox** page is a mail client for the connected account, so you don't ne
   Nothing is copied into the database, so webmail and this page always show the same thing.
 * **Compose, reply, reply all, forward**, with attachments. Drafts save themselves to the Drafts folder as you type.
   These emails are sent straight away as plain emails, whatever the send mode.
+* A forwarded email keeps its original look (the branded template, pictures and all); your note goes above it.
 * Search, unread and starred filters, mark read/unread, star, archive, spam, delete (select several at once).
 * Every email sent from here or by the agent is copied to the Sent folder.
 * **Lead conversations**: every email sent to a lead and every reply from them as one thread. Replies are picked up
@@ -36,6 +37,12 @@ sequence that was still waiting for approval.
 It needs `IMAP_HOST` (plus `SMTP_USER` / `SMTP_PASSWORD`, or `IMAP_USER` / `IMAP_PASSWORD`). On a public server the
 folders stay locked until `BRN_ADMIN_PASSWORD` is set: without a password, anyone with the link could read and send
 your mail.
+
+## Logo in emails
+
+Branded emails carry the brn dynamics logo, loaded from this server at `/brand/logo-light.png` (public, no login). The
+server's address comes from `RAILWAY_PUBLIC_DOMAIN` (set by Railway) or `BRN_PUBLIC_URL`; Settings shows which address is
+used, and takes a different logo address if you host the image elsewhere. With no public address, the name is written as text.
 
 ## Find a person (name + LinkedIn -> email and phone)
 
@@ -66,6 +73,7 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/providers/mailbox.py`: the Mailbox page's IMAP client (folders, reading, drafts, moving, Sent copies)
 * `app/providers/enrich.py`: contact finder (Apollo): name + LinkedIn profile to work email and phone
 * `app/providers/sources.py`: CSV import, Google Places search
+* **+ Add lead** (top bar) adds one lead by hand; **Import leads** takes a file; **Find a person** looks one up
 * `app/static/index.html`: dashboard (overview, leads, approvals, activity log, settings)
 
 ## Send modes

@@ -411,10 +411,18 @@ def message(folder, uid, seen=True):
             "to": _addrs(msg.get("To")), "cc": _addrs(msg.get("Cc")), "bcc": _addrs(msg.get("Bcc")), "reply_to": _addrs(msg.get("Reply-To")),
             "at": at, "seen": "\\seen" in flags, "starred": "\\flagged" in flags,
             "text": (text if text is not None else _plain(htm or "")).strip(), "has_html": htm is not None,
-            "message_id": str(msg.get("Message-ID") or "").strip(), "in_reply_to": str(msg.get("In-Reply-To") or "").strip(),
+            "forward": _fwd_ref(msg), "message_id": str(msg.get("Message-ID") or "").strip(), "in_reply_to": str(msg.get("In-Reply-To") or "").strip(),
             "references": " ".join(str(msg.get("References") or "").split()),
             "attachments": [{"i": i, "name": _hdr(p.get_filename()) or f"attachment-{i + 1}", "type": p.get_content_type(),
                              "size": len(p.get_payload(decode=True) or b"")} for i, p in enumerate(atts) if not inline(p)]}
+
+
+def _fwd_ref(msg):
+    try:
+        uid, folder = str(msg.get("X-Brn-Forward") or "").split(" ", 1)
+        return {"uid": int(uid), "folder": base64.b64decode(folder).decode()}
+    except Exception:
+        return None
 
 
 def html_body(folder, uid):
@@ -514,9 +522,36 @@ def save_sent(msg):
             db.log(None, "system", f"Sent, but could not save a copy to the Sent folder: {e}", channel="email", status="error")
 
 
-def build(sender_name, sender_email, c, attachments=()):
+FWD_MARK = "---------- Forwarded message ----------"
+
+
+def forward_parts(folder, uid):
+    """What a forward needs from the original: its header lines, its text, its HTML (None if it has none) and the
+    images embedded in that HTML as (content id, content type, bytes)."""
+    m = message(folder, uid, seen=False)
+    _, htm, atts = parts(parse(raw(folder, uid)[0]))
+    who = lambda p: formataddr((p["name"], p["email"])) if p["name"] else p["email"]
+    try:
+        when = datetime.fromisoformat(m["at"]).strftime("%a, %d %b %Y, %H:%M UTC")
+    except Exception:
+        when = ""
+    head = [FWD_MARK, f"From: {who(m['from'])}", f"Date: {when}", f"Subject: {m['subject']}", f"To: {', '.join(who(p) for p in m['to'])}"]
+    related = []
+    if htm is not None:
+        for p in atts:
+            cid = str(p.get("Content-ID") or "").strip("<>")
+            if cid and f"cid:{cid}" in htm:
+                related.append((cid, p.get_content_type(), p.get_payload(decode=True) or b""))
+        styles = "".join(re.findall(r"(?is)<style\b.*?</style>", htm))
+        body = re.search(r"(?is)<body[^>]*>(.*)</body>", htm)
+        htm = styles + (body[1] if body else re.sub(r"(?is)</?(html|head|body|!doctype)[^>]*>", "", htm))
+    return head, m["text"], htm, related
+
+
+def build(sender_name, sender_email, c, attachments=(), forward=None, draft=False):
     """An email from a compose form. c: to, cc, bcc, subject, body, in_reply_to, references.
-    attachments: (filename, content_type, bytes)."""
+    attachments: (filename, content_type, bytes). forward: forward_parts() of the email being forwarded, so it
+    travels with its original formatting; c["body"] is then only the note written above it."""
     msg = EmailMessage()
     msg["From"] = formataddr((sender_name or "", sender_email))
     for k in ("To", "Cc", "Bcc"):
@@ -529,7 +564,23 @@ def build(sender_name, sender_email, c, attachments=()):
     for k, key in (("In-Reply-To", "in_reply_to"), ("References", "references")):
         if c.get(key):
             msg[k] = " ".join(re.findall(r"<[^<>\s]+>", c[key]))
-    msg.set_content(c.get("body") or "")
+    note = c.get("body") or ""
+    if forward:
+        head, text, htm, related = forward
+        msg.set_content((note.rstrip() + "\n\n" if note.strip() else "") + "\n".join(head) + "\n\n" + text)
+        if htm is not None:
+            esc = htmllib.escape
+            note_html = "".join(f'<p style="margin:0 0 12px 0">{esc(p).replace(chr(10), "<br>")}</p>' for p in re.split(r"\n\s*\n", note.strip()) if p)
+            msg.add_alternative(f'<div style="font:14px/1.5 Arial,Helvetica,sans-serif;color:#1a1b20">{note_html}</div>'
+                                f'<div style="font:13px/1.6 Arial,Helvetica,sans-serif;color:#555;margin:14px 0">{"<br>".join(esc(h) for h in head)}</div>' + htm, subtype="html")
+            part = msg.get_body(("html",))
+            for cid, ctype, data in related:
+                main, _, sub = ctype.partition("/")
+                part.add_related(data, maintype=main or "image", subtype=sub or "png", cid=f"<{cid}>")
+        if draft and c.get("forward"):  # lets a reopened draft find the original again
+            msg["X-Brn-Forward"] = f"{int(c['forward']['uid'])} {base64.b64encode(c['forward']['folder'].encode()).decode()}"
+    else:
+        msg.set_content(note)
     for name, ctype, data in attachments:
         main, _, sub = (ctype or "application/octet-stream").partition("/")
         msg.add_attachment(data, maintype=main or "application", subtype=sub or "octet-stream", filename=name)

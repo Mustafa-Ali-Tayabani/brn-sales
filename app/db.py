@@ -149,6 +149,7 @@ DEFAULT_SETTINGS = {
     "sender_name": "brn dynamics",
     "sender_email": "sales@brndynamics.com",
     "booking_link": "https://brndynamics.com/contact",
+    "logo_url": "",   # logo image in emails; empty = the copy this server hosts at /brand/logo-light.png
     "daily_email_cap": "40",
     "daily_call_cap": "20",
     "min_score": "55",

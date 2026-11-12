@@ -4,6 +4,7 @@ Built for inboxes, not browsers: table layout, inline styles, no images (images 
 layouts push cold email into spam), web font with safe fallbacks, plain-text twin always sent.
 """
 import html
+import os
 import re
 
 from . import db
@@ -24,7 +25,20 @@ def _paragraphs(body):
     return "\n".join(out)
 
 
-def render(subject, body, cta_url=None, cta_label=None, product_name=None):
+def logo_url():
+    """Where the logo image in emails is loaded from: the address set in Settings, else this server's own copy.
+    Email apps can only load images from a public https address, so without one the name is written as text."""
+    custom = (db.setting("logo_url") or "").strip()
+    if custom:
+        return custom
+    base = os.environ.get("BRN_PUBLIC_URL") or os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+    if not base:
+        return None
+    return (base if base.startswith("http") else f"https://{base}").rstrip("/") + "/brand/logo-light.png"
+
+
+def render(subject, body, cta_url=None, cta_label=None, product_name=None, preview=False):
+    logo = logo_url() or ("/brand/logo-light.png" if preview else None)
     sender_name = db.setting("sender_name") or "brn dynamics"
     sender_email = db.setting("sender_email") or ""
     address = db.setting("company_address") or "brn dynamics"
@@ -41,6 +55,9 @@ def render(subject, body, cta_url=None, cta_label=None, product_name=None):
 <td style="border-radius:10px;background:{BLUE}">
 <a href="{html.escape(cta_url)}" style="display:inline-block;padding:14px 26px;font:600 15px {font};color:#ffffff;text-decoration:none;border-radius:10px">{label} &rarr;</a>
 </td></tr></table>"""
+    brand = (f'<img src="{html.escape(logo)}" width="104" height="48" alt="brn dynamics" '
+             f'style="display:block;border:0;outline:none;font:700 22px {font};color:#ffffff">') if logo else (
+             f'brn<span style="color:{BLUE_LIGHT}">.</span> <span style="font-weight:500;color:#C9CAD1">dynamics</span>')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light only"><title>{html.escape(subject)}</title>
@@ -53,7 +70,7 @@ def render(subject, body, cta_url=None, cta_label=None, product_name=None):
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #E3E3DD">
     <tr><td style="background:{INK};padding:22px 32px">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td style="font:700 22px {font};color:#ffffff;letter-spacing:-.01em">brn<span style="color:{BLUE_LIGHT}">.</span> <span style="font-weight:500;color:#C9CAD1">dynamics</span></td>
+        <td style="font:700 22px {font};color:#ffffff;letter-spacing:-.01em">{brand}</td>
         <td align="right">{pill}</td>
       </tr></table>
     </td></tr>
