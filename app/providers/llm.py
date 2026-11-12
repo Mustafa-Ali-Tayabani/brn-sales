@@ -309,6 +309,43 @@ Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsu
     return {"intent": "interested", "summary": "positive reply"}
 
 
+def write_reply(lead, research_, settings, their_text, intent, last_sent=None):
+    """Draft an answer to a lead's reply. A person approves it before it goes out, so it must be safe to send as is."""
+    name = (lead.get("contact_name") or "").split(" ")[0]
+    link, sender = settings.get("booking_link") or "", settings.get("sender_name") or "brn dynamics"
+    if _usable("reply"):
+        try:
+            out = _ask_json(SYSTEM, f"""A prospect replied to our outreach email. Write our answer.
+Their reply: {their_text!r}
+How we read it: {intent}
+Our last email to them: {json.dumps(last_sent or {}, ensure_ascii=False)}
+Product: {settings.get('product_name', '')}. Offer: {settings['offer']}
+Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
+Research: {json.dumps(research_, ensure_ascii=False)}
+Booking link (use it only when proposing a call): {link}
+Rules: under 90 words, plain text, paragraphs separated by blank lines, warm and direct, no hype. Answer what they actually asked.
+Never invent prices, timelines, features, clients or facts that are not stated above: if you can't answer from what is given,
+say you will confirm and offer a short call. If they want to meet, give the booking link and offer to send an invite for a time they name.
+If the timing is wrong for them, be gracious and say you will check back later. If they are the wrong person, ask who the right person is.
+Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}. Write in the language of their reply.
+Return JSON: {{"body": str}}""", 700, "reply")
+            if out.get("body"):
+                return {"body": out["body"]}
+        except Exception as e:
+            _note_error(e)
+    hi = f"Hi {name or 'there'},\n\n"
+    bye = f"\n\nBest regards,\n{sender}"
+    book = f" You can pick a time that suits you here: {link}" if link else ""
+    body = {
+        "meeting": f"Thanks for getting back to me, happy to set that up.{book}\n\nOr tell me a couple of times that work for you and I'll send an invite.",
+        "interested": f"Thanks for getting back to me, glad this is of interest. The quickest way to show you is a 15-minute call.{book}\n\nIf you'd rather see details by email first, tell me what matters most to you and I'll send them over.",
+        "question": f"Thanks for the question. I want to give you an accurate answer rather than a rushed one, so I'll confirm the details and come back to you shortly.\n\nIf it's easier, we can also go through it on a short call.{book}",
+        "not_now": "Understood, and thanks for letting me know. I'll check back in a few months. If the timing changes before then, just reply to this email.",
+        "wrong_person": f"Thanks for letting me know. Could you point me to the right person at {lead.get('company') or 'your company'} for this? I'm happy to take it from there.",
+    }.get(intent, "Thanks for getting back to me. Happy to help with whatever you need: just let me know.")
+    return {"body": hi + body + bye}
+
+
 def intent_reply(lead, settings):
     """A public post where someone asks for a service (e.g. "need a website for my salon").
     Drafts a helpful, non-salesy reply that a person posts by hand. Nothing is sent automatically."""

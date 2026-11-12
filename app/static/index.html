@@ -193,7 +193,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 .compose.min .cb,.compose.min .cf{display:none}
 .mailwrap{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:16px;flex:1;min-height:0}
 .mailwrap>.card{margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column;min-width:0}
-.mlist{overflow-y:auto}
+.mailwrap>.card.mlist{display:block;overflow-y:auto;overscroll-behavior:contain}
 .mrow{display:flex;gap:11px;padding:13px 14px;border-bottom:1px solid var(--line2);cursor:pointer;transition:background .12s;border-left:3px solid transparent}
 .mrow:hover{background:var(--soft)}.mrow.on{background:#eef0ff;border-left-color:var(--blue)}
 .mrow .mx{flex:1;min-width:0}.mrow .mt{display:flex;gap:8px;align-items:baseline}.mrow .mt b{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
@@ -610,22 +610,34 @@ async function doImport(){const f=$('#imp-file').files[0];const body={product:$(
   finally{const b=$('#impBtn');if(b){b.disabled=false;b.textContent='Import'}}}
 async function importPlaces(){const r=await api('/api/leads/places',{method:'POST',body:{query:$('#pq').value,country:$('#imp-country').value,product:$('#imp-product').value}});closeModal();alertBanner(`Imported ${r.imported.length} businesses`);loadFacets();show('leads')}
 
-let appSel=new Set(),appsDirty=false,APPS=[];
-async function loadApps(){const r=await api('/api/approvals');APPS=r;appsDirty=false;[...appSel].forEach(i=>r.some(a=>a.id==i)||appSel.delete(i));
-  $('#apps').innerHTML=r.length?`<div class="bulk on" id="appBar" style="top:8px"></div>`+r.map(a=>`<div class="card"><div class="row"><input type="checkbox" class="apck" data-id="${a.id}" ${appSel.has(a.id)?'checked':''} onchange="this.checked?appSel.add(${a.id}):appSel.delete(${a.id});appBar()" title="Select">
-   <h3 style="flex:1;margin:0">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
-  ${a.channel=='email'?`<label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(a.content.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(a.content.body)}</textarea><label>Button label</label><input id="ac${a.id}" value="${esc(a.content.cta||'Book a 15-min call')}">`
-   :`<label>Call brief</label><pre>${esc(JSON.stringify(a.content,null,2))}</pre>`}
-  <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="previewLead(${a.lead_id})">Preview</button></div></div>`).join('')
-  :`<div class="card empty"><h3>Nothing waiting for approval</h3><p class="muted">${MODE=='live'?'Send mode is <b>live</b>, so the agent sends every email by itself without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.'
+let appSel=new Set(),appsDirty=false,APPS=[],ALLAPPS=[],appTab=null;
+const isReply=a=>a.action=='reply';
+function setAppTab(t){appTab=t;appSel.clear();appsDirty=false;renderApps()}
+async function loadApps(){ALLAPPS=await api('/api/approvals');appsDirty=false;[...appSel].forEach(i=>ALLAPPS.some(a=>a.id==i)||appSel.delete(i));
+  const nr=ALLAPPS.filter(isReply).length;if(!appTab)appTab=nr&&nr==ALLAPPS.length?'replies':'outreach';renderApps()}
+function renderApps(){const nr=ALLAPPS.filter(isReply).length,no=ALLAPPS.length-nr,rep=appTab=='replies';APPS=ALLAPPS.filter(a=>isReply(a)==rep);
+  const tabs=`<div class="chips" style="margin-bottom:14px"><span class="chip ${rep?'':'on'}" onclick="setAppTab('outreach')">Outreach<small>${no}</small></span><span class="chip ${rep?'on':''}" onclick="setAppTab('replies')">Replies to leads<small>${nr}</small></span></div>`;
+  const card=a=>{const c=a.content,head=`<div class="row"><input type="checkbox" class="apck" data-id="${a.id}" ${appSel.has(a.id)?'checked':''} onchange="this.checked?appSel.add(${a.id}):appSel.delete(${a.id});appBar()" title="Select">`;
+   if(isReply(a))return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · reply</h3>${c.intent?`<span class="tag replied" title="${esc(c.summary||'')}">${esc(c.intent.replace(/_/g,' '))}</span>`:''}<span class="muted">to ${esc(c.to||a.email||'')}</span></div>
+    <label>They wrote</label><pre style="max-height:180px;overflow:auto">${esc(c.their_text||'')}</pre>
+    <label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Your answer (sent as a plain email in the same thread)</label><textarea id="ab${a.id}" style="min-height:170px">${esc(c.body)}</textarea>
+    <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'email',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="openMail(${a.lead_id})">Open conversation</button></div></div>`;
+   return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
+  ${a.channel=='email'?`<label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(c.body)}</textarea><label>Button label</label><input id="ac${a.id}" value="${esc(c.cta||'Book a 15-min call')}">`
+   :`<label>Call brief</label><pre>${esc(JSON.stringify(c,null,2))}</pre>`}
+  <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="previewLead(${a.lead_id})">Preview</button></div></div>`};
+  $('#apps').innerHTML=tabs+(APPS.length?`<div class="bulk on" id="appBar" style="top:8px"></div>`+APPS.map(card).join('')
+  :`<div class="card empty"><h3>${rep?'No replies waiting for an answer':'Nothing waiting for approval'}</h3><p class="muted">${rep?'When a lead replies, the agent drafts an answer and leaves it here. Nothing is sent until you approve it. Replies asking to stop, or saying no, get no answer.'
+   :MODE=='live'?'Send mode is <b>live</b>, so the agent sends every outreach email by itself without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.'
    :'New drafts show up here as leads reach their next step (only during local business hours). Nothing is sent until you approve it.'}</p>
-   ${MODE=='live'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`;
-  if(r.length){$('#apps').oninput=e=>{if(e.target.matches('input:not([type=checkbox]),textarea'))appsDirty=true};appBar()}}
+   ${!rep&&MODE=='live'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`);
+  if(APPS.length){$('#apps').oninput=e=>{if(e.target.matches('input:not([type=checkbox]),textarea'))appsDirty=true};appBar()}}
+const appContent=id=>{const c={subject:$('#as'+id).value,body:$('#ab'+id).value};if($('#ac'+id))c.cta=$('#ac'+id).value;return c};
 function appBar(){const n=appSel.size,all=APPS.length&&n==APPS.length;$('#appBar').innerHTML=`<label style="color:#fff;margin:0;display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" ${all?'checked':''} onchange="APPS.forEach(a=>this.checked?appSel.add(a.id):appSel.delete(a.id));document.querySelectorAll('.apck').forEach(c=>c.checked=this.checked);appBar()"> ${n?n+' of '+APPS.length+' selected':'Select all '+APPS.length}</label>
   <span style="flex:1"></span><button id="appGo" ${n?'':'disabled'} onclick="decideBulk(true)">Approve and send ${n||''}</button><button ${n?'':'disabled'} onclick="decideBulk(false)">Skip ${n||''}</button>`}
 async function decideBulk(ok){const picked=APPS.filter(a=>appSel.has(a.id));if(!picked.length)return;
-  if(!confirmText(ok?`Send ${picked.length} ${picked.length==1?'item':'items'} now? Emails go out for real, with any edits you made on this page.`:`Skip ${picked.length} ${picked.length==1?'draft':'drafts'}? Those steps will not be sent.`))return;
-  const items=picked.map(a=>ok&&a.channel=='email'&&$('#as'+a.id)?{id:a.id,content:{subject:$('#as'+a.id).value,body:$('#ab'+a.id).value,cta:$('#ac'+a.id).value}}:{id:a.id});
+  if(!confirmText(ok?`Send ${picked.length} ${picked.length==1?'item':'items'} now? Emails go out for real, with any edits you made on this page.`:`Skip ${picked.length} ${picked.length==1?'draft':'drafts'}? ${appTab=='replies'?'No answer will be sent.':'Those steps will not be sent.'}`))return;
+  const items=picked.map(a=>ok&&a.channel=='email'&&$('#as'+a.id)?{id:a.id,content:appContent(a.id)}:{id:a.id});
   document.querySelectorAll('#appBar button').forEach(b=>b.disabled=true);$('#appGo').textContent=ok?'Sending…':'Skipping…';
   try{const r=await api('/api/approvals/bulk',{method:'POST',body:{approve:ok,items}});appSel.clear();
    alertBanner([r.sent&&r.sent+' sent',r.skipped&&r.skipped+' skipped',r.left&&`${r.left} left waiting: today's limit of ${r.cap} emails is reached (change it in Settings)`,r.failed.length&&`${r.failed.length} failed: ${r.failed.slice(0,3).join(' · ')}`].filter(Boolean).join('. ')||'Nothing to do',r.failed.length>0)}
@@ -765,7 +777,7 @@ const usd=v=>'$'+(+v||0).toFixed((+v||0)<1?4:2);
 async function toggleAgent(){const on=!window.AGENT;if(!on&&!confirmText('Stop the agent? Nothing will run until you start it again.'))return;
   await api('/api/agent/state',{method:'POST',body:{on}});toast(on?'Agent started':'Agent stopped');refresh()}
 async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}});toast('Send mode: '+m);refresh()}
-async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content={subject:$('#as'+id).value,body:$('#ab'+id).value,cta:$('#ac'+id).value};if(b){b.disabled=true;b.textContent='Sending…'}
+async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content=appContent(id);if(b){b.disabled=true;b.textContent='Sending…'}
   try{await api('/api/approvals/'+id,{method:'POST',body});toast(ok?'Sent':'Skipped')}finally{appSel.delete(id);appsDirty=false;refresh()}}
 
 const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];

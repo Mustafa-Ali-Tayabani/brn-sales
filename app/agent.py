@@ -196,11 +196,15 @@ def decide(approval_id, approve, edited=None):
     if not a or a["state"] != "pending":
         return False
     lead = db.one("SELECT * FROM leads WHERE id=?", (a["lead_id"],))
-    content = edited or json.loads(a["content"])
+    content = {**json.loads(a["content"]), **(edited or {})}  # edits change the text; where it goes and what it answers stay
     db.ex("UPDATE approvals SET state=?, decided_at=?, content=? WHERE id=?",
           ("approved" if approve else "rejected", db.now(), json.dumps(content, ensure_ascii=False), approval_id))
     db.log(lead["id"], "approval", f"{'Approved' if approve else 'Rejected'} {a['channel']} '{a['action']}'", channel=a["channel"])
     now = datetime.now(timezone.utc)
+    if a["action"] == "reply":  # an answer to a lead's reply: not a step of the sequence, so the lead's status is left alone
+        if approve:
+            send_reply(lead, content)
+        return True
     lead["stage"] = "in_sequence"
     if approve:
         step = db.sequence_for(lead)[lead["step"]]
@@ -208,6 +212,47 @@ def decide(approval_id, approve, edited=None):
     else:
         _advance(lead, db.sequence_for(lead), now)
     return True
+
+
+REPLY_DRAFT_INTENTS = ("meeting", "interested", "question", "not_now", "wrong_person")  # never to "stop" or "not interested"
+
+
+def draft_reply(lead_id, text, intent, meta):
+    """Write an answer to a lead's reply and leave it in Approvals > Replies. It is only sent when a person approves it."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    to = (meta.get("from") or lead.get("email") or "").lower()
+    if not to or compliance.is_suppressed({"email": to}):
+        return
+    s = _settings(lead)
+    sent = db.q("SELECT payload FROM activities WHERE lead_id=? AND kind='email_sent' AND status='ok' ORDER BY id DESC LIMIT 1", (lead_id,))
+    last = json.loads(sent[0]["payload"] or "{}") if sent else {}
+    subject, _, their = text.partition("\n\n") if text.startswith("Subject: ") else ("", "", text)
+    subject = meta.get("subject") or subject[9:].strip() or last.get("subject") or f"{lead['company']}"
+    draft = llm.write_reply(lead, json.loads(lead.get("research") or "{}"), s, their.strip(), intent.get("intent"),
+                            {"subject": last.get("subject"), "body": (last.get("body") or "").split("\n\n--\n")[0]})
+    content = {"subject": subject if subject.lower().startswith("re:") else f"Re: {subject}", "body": draft["body"], "to": to,
+               "in_reply_to": meta.get("message_id"), "their_text": their.strip(), "intent": intent.get("intent"), "summary": intent.get("summary")}
+    db.ex("DELETE FROM approvals WHERE lead_id=? AND state='pending' AND action='reply'", (lead_id,))  # a newer reply replaces an unanswered draft
+    db.ex("INSERT INTO approvals(lead_id, channel, action, content, created_at) VALUES (?,?,?,?,?)",
+          (lead_id, "email", "reply", json.dumps(content, ensure_ascii=False), db.now()))
+    db.log(lead_id, "approval", "Drafted an answer to their reply, waiting in Approvals > Replies", channel="email", status="pending_approval", payload=content)
+
+
+def send_reply(lead, content):
+    """Send an approved answer as a plain email in the same thread."""
+    target = {**lead, "email": content.get("to") or lead.get("email")}
+    try:
+        if not target["email"]:
+            raise RuntimeError("this lead has no email address")
+        if lead["stage"] == "opted_out" or compliance.is_suppressed(target):
+            raise RuntimeError("this lead is on the do-not-contact list")
+        mid = content.get("in_reply_to")
+        res = channels.deliver(target, content["subject"], content["body"], headers={"In-Reply-To": mid, "References": mid} if mid else None)
+    except Exception as e:
+        db.log(lead["id"], "email_sent", f"Send failed: {e}", channel="email", status="error")
+        return
+    db.log(lead["id"], "email_sent", f"reply: {content['subject']}", channel="email", status="ok", payload={**res, "manual": True, "reply": True})
+    db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=?, mail_seen_at=? WHERE id=?", (db.now(), db.now(), lead["id"]))
 
 
 AGENT_STAGES = ("new", "researched", "in_sequence", "awaiting_approval", "completed", "paused", "nurture")
@@ -224,7 +269,13 @@ def handle_reply(lead_id, text, meta=None):
     lead = db.one("SELECT stage FROM leads WHERE id=?", (lead_id,)) or {}
     db.update_lead(lead_id, replied_at=meta.get("received_at") or db.now())
     if not already_read or lead.get("stage") in AGENT_STAGES or intent.get("intent") == "unsubscribe":
-        apply_outcome(lead_id, intent.get("intent"))
+        if apply_outcome(lead_id, intent.get("intent")):  # they answered: a follow-up still waiting for approval no longer makes sense
+            db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action<>'reply'", (db.now(), lead_id))
+    if not already_read and intent.get("intent") in REPLY_DRAFT_INTENTS:
+        try:
+            draft_reply(lead_id, text, intent, meta)
+        except Exception as e:
+            db.log(lead_id, "system", f"Could not draft an answer to their reply: {e}", status="error")
     return intent
 
 

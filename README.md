@@ -28,6 +28,11 @@ The **Mailbox** page is a mail client for the connected account, so you don't ne
   every 5 minutes (or with **Check mail**), including ones already opened in webmail and ones sent from a different
   address in answer to the agent's email. The agent reading a reply does not mark it as read.
 
+**Answers to replies.** When a lead replies, the agent drafts an answer (Claude, or a template without a key) and leaves
+it under **Approvals > Replies to leads**. It is sent, as a plain email in the same thread, only when you approve it,
+in either send mode. Replies asking to stop, or saying no, get no answer. A reply also cancels any follow-up of the
+sequence that was still waiting for approval.
+
 It needs `IMAP_HOST` (plus `SMTP_USER` / `SMTP_PASSWORD`, or `IMAP_USER` / `IMAP_PASSWORD`). On a public server the
 folders stay locked until `BRN_ADMIN_PASSWORD` is set: without a password, anyone with the link could read and send
 your mail.

@@ -794,7 +794,7 @@ def approvals(state: str = "pending"):
 
 def _decide(approval_id, approve, content=None):
     """Approve (and really send) or skip one draft. Returns "sent", "skipped", "gone", or the reason the send failed."""
-    a = db.one("SELECT lead_id FROM approvals WHERE id=? AND state='pending'", (approval_id,))
+    a = db.one("SELECT lead_id, action FROM approvals WHERE id=? AND state='pending'", (approval_id,))
     if not a:
         return "gone"
     mark = db.one("SELECT COALESCE(MAX(id),0) n FROM activities")["n"]
@@ -806,7 +806,8 @@ def _decide(approval_id, approve, content=None):
         return "sent"
     # it did not go out: put the draft (with any edits) back in Approvals instead of quietly re-drafting later
     db.ex("UPDATE approvals SET state='pending', decided_at=NULL WHERE id=?", (approval_id,))
-    db.update_lead(a["lead_id"], stage="awaiting_approval", next_action="approval", next_action_at=None)
+    if a["action"] != "reply":
+        db.update_lead(a["lead_id"], stage="awaiting_approval", next_action="approval", next_action_at=None)
     return err["summary"].replace(", retrying in 1 hour", "").replace(", retrying in 2 hours", "")
 
 
@@ -816,10 +817,11 @@ def decide_bulk(payload: dict = Body(...)):
     approve, out = bool(payload.get("approve")), {"sent": 0, "skipped": 0, "failed": [], "left": 0}
     cap = int(db.setting("daily_email_cap"))
     for it in payload.get("items") or []:
-        a = db.one("SELECT a.channel, l.company FROM approvals a JOIN leads l ON l.id=a.lead_id WHERE a.id=? AND a.state='pending'", (int(it["id"]),))
+        a = db.one("SELECT a.channel, a.action, l.company FROM approvals a JOIN leads l ON l.id=a.lead_id WHERE a.id=? AND a.state='pending'", (int(it["id"]),))
         if not a:
             continue
-        if approve and a["channel"] == "email" and compliance.sent_today("email_sent") >= cap:
+        # the daily cap is for cold outreach: an answer to someone who wrote to us is never held back
+        if approve and a["channel"] == "email" and a["action"] != "reply" and compliance.sent_today("email_sent") >= cap:
             out["left"] += 1
             continue
         res = _decide(int(it["id"]), approve, it.get("content"))
