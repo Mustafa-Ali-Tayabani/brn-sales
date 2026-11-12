@@ -223,6 +223,21 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 .empty{text-align:center;padding:40px 20px}.empty h3{margin-bottom:8px;justify-content:center}
 @media(max-width:1100px){.stages{grid-template-columns:repeat(3,1fr);row-gap:14px}.grid2,.grid2e{grid-template-columns:1fr}}
 @media(max-width:900px){.side{position:static;width:auto;flex-direction:row;flex-wrap:wrap}.navlbl,.sublogo{display:none}.mode{display:none}main{margin:0;padding:16px}.stages{grid-template-columns:repeat(2,1fr)}.dlist{grid-template-columns:1fr}}
+
+/* assistant chat */
+#ai-fab{position:fixed;right:22px;bottom:22px;width:56px;height:56px;border-radius:50%;background:var(--blue);color:#fff;border:0;box-shadow:0 8px 24px #010ecf66;z-index:30;font-size:24px;padding:0;justify-content:center}
+#ai-fab:not(:disabled):hover{background:#000bb0;color:#fff;transform:translateY(-2px)}
+#ai-box{position:fixed;right:22px;bottom:90px;width:392px;max-width:calc(100vw - 32px);height:min(580px,calc(100vh - 120px));background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 50px #0b0c1a40;z-index:30;display:none;flex-direction:column;overflow:hidden}
+#ai-box.open{display:flex}
+#ai-head{background:var(--ink);color:#fff;padding:13px 16px;display:flex;align-items:center;gap:10px}#ai-head b{font:700 15px "Space Grotesk"}#ai-head span{flex:1;font-size:11px;color:#b9bac3}
+#ai-head button{background:transparent;border:0;color:#b9bac3;padding:4px 8px;font-size:12px}#ai-head button:not(:disabled):hover{color:#fff;box-shadow:none;transform:none;background:#ffffff14}
+#ai-msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--paper)}
+.ai-m{max-width:88%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5;white-space:normal;word-wrap:break-word}
+.ai-m.u{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:4px}
+.ai-m.a{align-self:flex-start;background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px}
+.ai-m.a ul{margin:4px 0;padding-left:18px}.ai-m.a a{cursor:pointer;font-weight:600}.ai-m.t{color:var(--mut);font-style:italic}
+#ai-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;background:var(--paper)}#ai-chips button{font-size:12px;padding:5px 10px;border-radius:99px}
+#ai-form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#fff}#ai-form textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;max-height:90px;height:38px!important;min-height:0!important}
 </style>
 </head>
 <body>
@@ -798,6 +813,38 @@ async function loadSetup(){if(view!='overview')return;const[s,st]=await Promise.
 document.addEventListener('keydown',e=>{if(e.key=='Escape'){closeModal();$('#drawer').classList.remove('open')}});
 document.addEventListener('mousedown',e=>{const d=$('#drawer');if(d.classList.contains('open')&&!d.contains(e.target)&&!$('#modal').contains(e.target)&&!e.target.closest('tr.click,.kcard,.fi,.att a'))d.classList.remove('open')});
 loadFacets().then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh()});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings')refresh()},20000);
+
+/* ---- assistant chat (bottom corner) ---- */
+(function(){
+ const AI={h:[],busy:false};try{AI.h=JSON.parse(sessionStorage.getItem('brnAi')||'[]')}catch{}
+ const wrap=document.createElement('div');
+ wrap.innerHTML=`<button id="ai-fab" title="Ask the assistant">&#128172;</button>
+ <div id="ai-box"><div id="ai-head"><b>brn assistant</b><span>leads, replies, outreach</span><button id="ai-clear" title="Clear chat">Clear</button><button id="ai-x" title="Close">&#10005;</button></div>
+ <div id="ai-msgs"></div><div id="ai-chips"></div>
+ <form id="ai-form"><textarea id="ai-in" placeholder="Ask about your pipeline or leads..." rows="1"></textarea><button class="pri" id="ai-send" type="submit">Send</button></form></div>`;
+ document.body.appendChild(wrap);
+ const q=s=>document.querySelector(s),box=q('#ai-box'),msgs=q('#ai-msgs'),inp=q('#ai-in');
+ const fmt=t=>{let h=String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  h=h.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/#(\d+)/g,'<a onclick="openLead($1)">#$1</a>');
+  const lines=h.split('\n'),out=[];let ul=false;
+  for(const l of lines){const m=l.match(/^\s*[-*\u2022]\s+(.*)/);if(m){if(!ul){out.push('<ul>');ul=true}out.push('<li>'+m[1]+'</li>')}else{if(ul){out.push('</ul>');ul=false}out.push(l?l+'<br>':'<br>')}}
+  if(ul)out.push('</ul>');return out.join('').replace(/(<br>)+$/,'')};
+ const draw=()=>{msgs.innerHTML=AI.h.length?AI.h.map(m=>`<div class="ai-m ${m.role=='user'?'u':'a'}">${m.role=='user'?String(m.content).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])):fmt(m.content)}</div>`).join(''):`<div class="ai-m a">Hi! I can summarise your pipeline, review and triage leads, write or edit outreach, and find or add leads. I can't send emails or approve drafts: that stays with you.</div>`;msgs.scrollTop=msgs.scrollHeight;
+  q('#ai-chips').innerHTML=AI.h.length?'':['What needs my attention today?','Show my best leads','Any replies waiting?','Find new leads for Fixify'].map(t=>`<button type="button">${t}</button>`).join('');
+  q('#ai-chips').querySelectorAll('button').forEach(b=>b.onclick=()=>send(b.textContent))};
+ const save=()=>{try{sessionStorage.setItem('brnAi',JSON.stringify(AI.h.slice(-30)))}catch{}};
+ async function send(text){text=(text||'').trim();if(!text||AI.busy)return;AI.busy=true;q('#ai-send').disabled=true;AI.h.push({role:'user',content:text});inp.value='';draw();
+  const t=document.createElement('div');t.className='ai-m a t';t.textContent='Working on it...';msgs.appendChild(t);msgs.scrollTop=msgs.scrollHeight;
+  try{const r=await fetch('/api/assistant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:AI.h.slice(-14)})});
+   if(!r.ok)throw new Error((await r.text()).slice(0,200));const j=await r.json();AI.h.push({role:'assistant',content:j.reply});if(j.changed&&typeof refresh=='function')refresh().catch(()=>{})}
+  catch(e){AI.h.push({role:'assistant',content:'Sorry, that failed: '+e.message})}
+  AI.busy=false;q('#ai-send').disabled=false;save();draw()}
+ q('#ai-fab').onclick=()=>{box.classList.toggle('open');if(box.classList.contains('open')){draw();inp.focus()}};
+ q('#ai-x').onclick=()=>box.classList.remove('open');
+ q('#ai-clear').onclick=()=>{AI.h=[];save();draw()};
+ q('#ai-form').onsubmit=e=>{e.preventDefault();send(inp.value)};
+ inp.addEventListener('keydown',e=>{if(e.key=='Enter'&&!e.shiftKey){e.preventDefault();send(inp.value)}});
+})();
 </script>
 </body>
 </html>

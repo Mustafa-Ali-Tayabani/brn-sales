@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 
-from . import agent, compliance, db
+from . import agent, assistant, compliance, db
 from urllib.parse import quote
 
 from .providers import channels, inbox, llm, mailbox, sources
@@ -819,6 +819,12 @@ def discover_pipeline(key, sources_only=None):
            + (f", {len(out['errors'])} errors ({out['errors'][0][:120]})" if out["errors"] else ""),
            channel="system", status="error" if out["errors"] and not out["imported"] else "ok")
     return out
+
+
+@app.post("/api/assistant")
+def assistant_chat(payload: dict = Body(...)):
+    """Chat assistant for the dashboard. It can read and edit leads but never sends or approves anything."""
+    return assistant.chat(payload.get("messages") or [])
 
 
 @app.post("/api/pipelines/{key}/discover")
