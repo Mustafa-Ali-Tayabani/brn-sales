@@ -1,5 +1,5 @@
-"""Outbound channels. Each one only sends for real when mode == live AND its keys are configured.
-Otherwise it returns a dry-run result so the pipeline and logs behave identically.
+"""Outbound channels. Everything here really goes out: there is no dry run. Whether a step waits for a person's
+approval first is decided by the caller (the agent), from the send mode.
 
 Email: your own mailbox over SMTP (SMTP_HOST/SMTP_USER/SMTP_PASSWORD, e.g. Google Workspace or Outlook),
 or the Resend API (RESEND_API_KEY). SMTP wins when both are set.
@@ -7,7 +7,6 @@ Voice: Vapi (VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID). Retell or T
 """
 import base64
 import os
-import random
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -17,10 +16,6 @@ import httpx
 
 from .. import db, email_template
 from . import mailbox
-
-
-def _live():
-    return db.setting("mode") == "live"
 
 
 def email_provider():
@@ -123,8 +118,8 @@ def build_email(lead, subject, body, cta=None, cta_label=None):
 
 def send_email(lead, subject, body, cta=None, cta_label=None):
     text, html = build_email(lead, subject, body, cta, cta_label)
-    if not (_live() and email_provider()):
-        return {"status": "dry_run", "to": lead["email"], "subject": subject, "body": text, "cta": cta_label}
+    if not email_provider():
+        raise RuntimeError("email sending is not connected (set RESEND_API_KEY, or SMTP_HOST, SMTP_USER and SMTP_PASSWORD)")
     res = deliver(lead, subject, text, html)
     res["body"], res["cta"] = text, cta_label
     return res
@@ -132,11 +127,8 @@ def send_email(lead, subject, body, cta=None, cta_label=None):
 
 def place_call(lead, script):
     key = os.environ.get("VAPI_API_KEY")
-    if not (_live() and key):
-        # Simulated outcome so the dashboard and follow-up logic can be exercised.
-        outcome = random.Random(lead["id"]).choice(["no_answer", "voicemail", "interested", "not_now", "meeting"])
-        return {"status": "dry_run", "outcome": outcome, "duration_s": 0 if outcome == "no_answer" else 74,
-                "transcript": f"[simulated] {script.get('opening', '')} ... outcome: {outcome}"}
+    if not key:
+        return {"status": "skipped"}  # no AI calling connected: the agent leaves the brief for a person to call
     r = httpx.post(
         "https://api.vapi.ai/call",
         headers={"Authorization": f"Bearer {key}"},
@@ -144,7 +136,8 @@ def place_call(lead, script):
             "phoneNumberId": os.environ["VAPI_PHONE_NUMBER_ID"],
             "assistantId": os.environ["VAPI_ASSISTANT_ID"],
             "customer": {"number": lead["phone"], "name": lead.get("contact_name") or lead["company"]},
-            "assistantOverrides": {"variableValues": {"company": lead["company"], "opening": script.get("opening", ""),
+            "assistantOverrides": {"metadata": {"lead_id": lead["id"]},
+                                   "variableValues": {"company": lead["company"], "contact_name": lead.get("contact_name") or "", "opening": script.get("opening", ""),
                                                       "talking_points": "; ".join(script.get("talking_points", []))}},
         },
         timeout=20,

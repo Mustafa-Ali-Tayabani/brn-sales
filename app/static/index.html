@@ -253,13 +253,14 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
   <button class="nav" data-v="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>Activity log</button>
   <button class="nav" data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
   <div class="mode"><div id="agentState"></div>
-    <div><div class="lbl">Send mode</div><b id="mode">dry run</b></div>
+    <div><div class="lbl">Send mode</div><b id="mode">approval</b></div>
     <div><div class="lbl">Claude</div><span id="eng"></span><div id="spend"></div></div></div>
 </aside>
 <main>
   <div class="top"><div class="ttl"><h1 id="title">Overview</h1><div class="sub" id="subtitle"></div></div>
     <div class="agentsw" id="agentBtn" onclick="toggleAgent()" title="Turn the automatic agent on or off"><span>Agent</span><span class="st" id="agentTxt"></span><span class="tg"></span></div>
     <button class="icon" id="refreshBtn" onclick="manualRefresh()" title="Refresh"><span class="spin">↻</span></button>
+    <button onclick="openFind()" title="Give a name and LinkedIn link, get their email and phone">Find a person</button>
     <button class="pri" onclick="openImport()">+ Import leads</button>
   </div>
   <div id="sysBanner"></div><div id="banner"></div>
@@ -370,7 +371,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
       <div class="card"><h3>Automation</h3>
         <label>Agent</label><select id="s-agent_enabled"><option value="1">On: runs every minute (research, emails, follow-ups, calls, replies)</option><option value="0">Paused: nothing runs</option></select>
         <div class="row" style="margin-top:8px"><button class="sm" onclick="runTick()">Run one pass now</button><span class="muted" style="font-size:12px">The agent runs by itself every minute while it's on. This just runs it once immediately.</span></div>
-        <label>Send mode</label><select id="s-mode"><option value="dry_run">Dry run: everything is drafted and logged, nothing is sent</option><option value="approval">Approval: each email/call waits for your click</option><option value="live">Live: fully automatic within daily caps</option></select>
+        <label>Send mode</label><select id="s-mode"><option value="approval">Approval: each email/call waits for your click, then is sent</option><option value="live">Live: fully automatic within daily caps</option></select>
         <p class="muted" id="liveNote" style="font-size:12px"></p>
         <div class="row"><div><label>Emails / day</label><input id="s-daily_email_cap" type="number"></div><div><label>Calls / day</label><input id="s-daily_call_cap" type="number"></div><div><label>Min fit score</label><input id="s-min_score" type="number"></div></div>
         <label>Product for leads without one</label><select id="s-default_product"></select>
@@ -384,7 +385,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
           <option value="economy">Economy (recommended): Claude only for emails that really go out, replies, and posts asking online</option>
           <option value="full">Full: Claude for research, every draft and call notes (costs more)</option>
           <option value="off">Off: free templates only, no Claude costs</option></select>
-        <p class="muted" style="font-size:12px;margin:4px 0 0">In Economy, research, dry runs and call notes use free templates.</p>
+        <p class="muted" style="font-size:12px;margin:4px 0 0">In Economy, research and call notes use free templates.</p>
         <div class="row"><div style="flex:1"><label>Model</label><select id="s-ai_model" style="width:100%"><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest, $0.10 / $0.50 per million tokens)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 ($2 / $10)</option><option value="claude-opus-5-5">Claude Opus 5.5 (best, $4 / $20)</option></select></div>
           <div><label>Daily budget, USD</label><input id="s-ai_daily_budget" type="number" step="0.05" min="0" style="width:110px"></div></div>
         <label>Your current Anthropic credit balance, USD (copy it from the billing page; the agent's spend is subtracted from it)</label>
@@ -460,7 +461,7 @@ function setLProd(p){lProduct=p;loadFacets();loadLeads(0)}function setOvProd(p){
 async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='+ovProduct:''));
   window.AGENT=s.agent_enabled;const ab=$('#agentBtn');ab.classList.toggle('on',s.agent_enabled);$('#agentTxt').textContent=s.agent_enabled?'Running':'Stopped';
   window.MODE=s.mode;$('#mode').textContent=s.mode.replace('_',' ');const L=s.llm_status||{};
-  $('#subtitle').textContent=new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+' · '+(s.mode=='dry_run'?'Dry run: nothing is sent':s.mode=='approval'?'Approval mode: you approve every send':'Live sending');
+  $('#subtitle').textContent=new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+' · '+(s.mode=='live'?'Live: emails are sent automatically':'Approval mode: emails are sent when you approve them');
   $('#eng').innerHTML=!s.llm?'Templates only (no key)':L.error?'<span style="color:#f0b400">Problem, using templates</span>':`${esc((L.model||'').replace('claude-','').replace(/-(\d)-(\d)$/,' $1.$2'))} · ${esc(L.ai_mode||'')}`;
   const pct=L.budget?Math.min(100,(L.today||0)/L.budget*100):0;
   $('#spend').innerHTML=s.llm?`<div style="margin-top:4px">${usd(L.today)} today${L.budget?' of $'+L.budget.toFixed(2):''}</div>${L.budget?`<div class="meter"><i style="width:${pct}%"></i></div>`:''}${L.balance_left!=null?`<div style="margin-top:6px">≈ $${L.balance_left.toFixed(2)} credit left</div>`:''}`:'';
@@ -476,7 +477,7 @@ async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='
   const days=[...Array(14)].map((_,i)=>{const d=new Date(Date.now()-(13-i)*864e5).toISOString().slice(0,10);return s.daily.find(x=>x.d==d)||{d,emails:0,calls:0,replies:0}});
   const m=Math.max(4,...days.map(d=>d.emails+d.calls+d.replies)),step=Math.ceil(m/4);const top=step*4;
   const sum=f=>days.reduce((a,d)=>a+(+d[f]||0),0);
-  $('#chartTot').innerHTML=`<div><b>${sum('emails')}</b>emails${s.mode=='dry_run'?' (dry run)':''}</div><div><b>${sum('calls')}</b>calls</div><div><b>${sum('replies')}</b>replies</div>`;
+  $('#chartTot').innerHTML=`<div><b>${sum('emails')}</b>emails</div><div><b>${sum('calls')}</b>calls</div><div><b>${sum('replies')}</b>replies</div>`;
   $('#chart').innerHTML=[0,1,2,3,4].map(i=>`<div class="grid" style="bottom:${22+i*(178/4)}px"><span>${i*step}</span></div>`).join('')+days.map(d=>{const dt=new Date(d.d+'T12:00:00');
     return `<div class="c"><div class="tip">${dt.toLocaleDateString([], {month:'short',day:'numeric'})}: ${d.emails} emails · ${d.calls} calls · ${d.replies} replies</div>
     <div class="stack" style="height:${(d.emails+d.calls+d.replies)/top*100}%"><div class="seg" style="flex:${d.emails};background:var(--blue)"></div><div class="seg" style="flex:${d.calls};background:var(--blue2)"></div><div class="seg" style="flex:${d.replies};background:var(--ink)"></div></div>
@@ -547,7 +548,7 @@ async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=
    <div class="row" style="margin-top:8px">${l.website?`<a class="btn" href="${esc(l.website)}" target="_blank" rel="noopener">Open the post ↗</a>`:''}<button onclick="navigator.clipboard.writeText($('#rdraft').value);toast('Reply copied')">Copy reply</button>
    <button class="pri" onclick="markReplied(${l.id})">I replied</button></div></div>`:''}
   ${r.summary&&!r.reply_draft?`<div class="card"><h3>Agent research</h3><p>${esc(r.summary)}</p><p class="muted"><b>Pain points:</b> ${esc((r.pain_points||[]).join('; '))}<br><b>Hooks:</b> ${esc((r.hooks||[]).join('; '))}<br><b>Why this score:</b> ${esc(r.score_reason)}</p></div>`:''}
-  ${xr.length||issues.length?`<div class="card"><h3>Imported data</h3><div class="kv">${xr.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))}</span><div>${esc(typeof v=='object'?JSON.stringify(v):v)}</div>`).join('')}</div>
+  ${xr.length||issues.length?`<div class="card"><h3>Imported data</h3><div class="kv">${xr.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))}</span><div>${/^https?:\/\//.test(v)?`<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`:esc(typeof v=='object'?JSON.stringify(v):v)}</div>`).join('')}</div>
     ${issues.length?`<table style="margin-top:10px"><tr><th>Severity</th><th>Problem</th><th>Fix</th></tr>${issues.map(i=>`<tr><td class="sev-${esc(i.severity)}">${esc(i.severity||'')}</td><td>${esc(i.problem||'')}</td><td class="muted">${esc(i.suggested_fix||'')}</td></tr>`).join('')}</table>`:''}</div>`:''}
   <div class="card"><h3>Log a reply from this lead</h3><textarea id="rtext" placeholder="Paste their reply, e.g. 'Sounds good, can we talk Tuesday?'"></textarea><button class="pri" style="margin-top:8px" onclick="sendReply(${l.id})">Classify and update</button></div>
   <h3 style="margin:16px 0 10px">Timeline</h3><div class="tl">${l.activities.map(a=>{const p=JSON.parse(a.payload||'{}');
@@ -561,7 +562,7 @@ function quickActions(l){const A=[];const st=l.stage;
   if(st=='meeting_booked')A.push(['🏆 Won','won','']);
   if(!['lost','won'].includes(st))A.push(['Lost','lost','']);
   if(st!='opted_out')A.push(['Do not contact','opted_out','danger']);
-  return A.map(([t,s,c])=>`<button class="sm ${c}" onclick="quickStage(${l.id},'${s}')">${t}</button>`).join('')+`<button class="sm" onclick="previewLead(${l.id})">✉ Preview next email</button>`+(l.emails_sent||l.replied_at?`<button class="sm" onclick="openMail(${l.id})">Open conversation</button>`:'')}
+  return A.map(([t,s,c])=>`<button class="sm ${c}" onclick="quickStage(${l.id},'${s}')">${t}</button>`).join('')+`<button class="sm" onclick="previewLead(${l.id})">✉ Preview next email</button>`+(l.emails_sent||l.replied_at?`<button class="sm" onclick="openMail(${l.id})">Open conversation</button>`:'')+((!l.email||!l.phone)&&l.contact_name?`<button class="sm" onclick="findContact(${l.id},this)">Find email & phone</button>`:'')}
 async function quickStage(id,stage){if(stage=='opted_out'&&!confirmText('Never contact this lead again?'))return;
   await api('/api/leads/'+id,{method:'PATCH',body:{stage}});toast('Status: '+SL[stage]);openLead(id);refresh()}
 async function markReplied(id){await api('/api/leads/'+id,{method:'PATCH',body:{stage:'replied'}});toast('Marked as replied');openLead(id);refresh()}
@@ -573,6 +574,24 @@ function previewAct(id){openModal('Email as sent',frame('/api/email/preview?acti
 function previewLead(id){openModal('Next email (draft preview)',frame('/api/email/preview?lead_id='+id))}
 function previewEmail(){openModal('Branded email preview',frame('/api/email/preview?product='+$('#pvProd').value))}
 
+function openFind(){openModal('Find a person',`<p class="muted" style="margin-top:0">Give a name and their LinkedIn profile link. The contact finder looks up their work email and phone number and adds them as a lead. One person per line; the company is optional but helps when there's no link.</p>
+  <textarea id="fp-text" style="min-height:120px" placeholder="Sara Ahmed, https://www.linkedin.com/in/sara-ahmed, Pulse Fitness&#10;Omar Khalid, linkedin.com/in/omarkhalid"></textarea>
+  <div class="fgrid" style="margin-top:6px"><div><label>Pipeline for these leads</label><select id="fp-product">${Object.values(PRODUCTS).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('')}</select></div>
+   <div><label>Country (if not found)</label><select id="fp-country">${['SA','KW','AE','QA','BH','OM','PK','US','GB','CA','AU'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+   <div><label>Phone numbers</label><select id="fp-phone"><option value="1">Look for a phone number too</option><option value="">Email only (uses fewer credits)</option></select></div></div>
+  <div class="row" style="margin-top:12px"><button class="pri" id="fpBtn" onclick="doFind()">Find email &amp; phone</button><span class="muted" style="font-size:12px">Uses your Apollo credits: about 1 per person found, about 8 more when a mobile number comes back.</span></div><div id="fp-out" style="margin-top:14px"></div>`)}
+async function doFind(){const b=$('#fpBtn');b.disabled=true;b.textContent='Looking up…';
+  try{const r=await api('/api/leads/find',{method:'POST',body:{text:$('#fp-text').value,product:$('#fp-product').value,country:$('#fp-country').value,phone:!!$('#fp-phone').value}});
+   const st={found:['ok','found'],exists:['g','already a lead'],not_found:['needs_contact','not found'],error:['error','error']};
+   $('#fp-out').innerHTML='<table><tr><th>Person</th><th>Email</th><th>Phone</th><th></th></tr>'+r.results.map(x=>`<tr><td class="cell2"><b>${esc(x.name||x.linkedin||'')}</b><small>${esc([x.title,x.company].filter(Boolean).join(' · '))}</small></td>
+     <td>${x.status=='error'?`<span class="muted">${esc(x.detail)}</span>`:esc(x.email||'–')}</td><td>${esc(x.phone||'')}${x.company_line?' <span class="muted">(company line)</span>':''}${x.phone_pending?`${x.phone?'<br>':''}<span class="tag pending_approval">mobile on its way</span>`:x.phone?'':'–'}</td>
+     <td style="white-space:nowrap"><span class="tag ${st[x.status][0]}">${st[x.status][1]}</span> ${x.lead_id?`<button class="sm" onclick="closeModal();openLead(${x.lead_id})">Open</button>`:''}</td></tr>`).join('')+'</table>'
+    +(r.results.some(x=>x.phone_pending)?'<p class="muted" style="font-size:12px">Mobile numbers take Apollo a few minutes. They are added to the lead by themselves when they arrive.</p>':'')
+    +(r.results.some(x=>x.status=='not_found')?'<p class="muted" style="font-size:12px">People who were not found are saved under "Needs contact", so you can add their details by hand.</p>':'')
+    +[...new Set(r.results.map(x=>x.note).filter(Boolean))].map(n=>`<p class="muted" style="font-size:12px">${esc(n)}</p>`).join('');
+   $('#fp-text').value='';loadFacets();refresh()}finally{b.disabled=false;b.textContent='Find email & phone'}}
+async function findContact(id,b){b.disabled=true;b.textContent='Looking up…';try{const r=await api(`/api/leads/${id}/find-contact`,{method:'POST'});
+  alertBanner(r.status=='pending'?r.detail:r.status=='not_found'?r.detail:r.status=='done'?(r.phone?'Phone number found: '+r.phone:'No phone number on record for this person.'):([r.email&&'email '+r.email,r.phone&&'phone '+r.phone].filter(Boolean).join(', ')||'Nothing new found')+(r.phone_pending?'. A mobile number is being looked up and will be added in a few minutes.':'')+(r.note?' '+r.note:''),r.status=='not_found');openLead(id);refresh()}finally{b.disabled=false;b.textContent='Find email & phone'}}
 function openImport(){openModal('Import leads',`<p class="muted" style="margin-top:0">Excel (.xlsx) or CSV. Columns are matched automatically (Business/Company, Email, Website, Phone, Segment/Category, City, Country, Status, Notes…). Everything else, like scan scores and issues, is kept for the agent to use. Duplicate emails are skipped.</p>
   <label>File</label><input type="file" id="imp-file" accept=".xlsx,.xlsm,.csv">
   <div class="fgrid" style="margin-top:6px"><div><label>Product for these leads</label><select id="imp-product"></select></div>
@@ -591,14 +610,26 @@ async function doImport(){const f=$('#imp-file').files[0];const body={product:$(
   finally{const b=$('#impBtn');if(b){b.disabled=false;b.textContent='Import'}}}
 async function importPlaces(){const r=await api('/api/leads/places',{method:'POST',body:{query:$('#pq').value,country:$('#imp-country').value,product:$('#imp-product').value}});closeModal();alertBanner(`Imported ${r.imported.length} businesses`);loadFacets();show('leads')}
 
-async function loadApps(){const r=await api('/api/approvals');
-  $('#apps').innerHTML=r.length?r.map(a=>`<div class="card"><div class="row"><h3 style="flex:1">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
+let appSel=new Set(),appsDirty=false,APPS=[];
+async function loadApps(){const r=await api('/api/approvals');APPS=r;appsDirty=false;[...appSel].forEach(i=>r.some(a=>a.id==i)||appSel.delete(i));
+  $('#apps').innerHTML=r.length?`<div class="bulk on" id="appBar" style="top:8px"></div>`+r.map(a=>`<div class="card"><div class="row"><input type="checkbox" class="apck" data-id="${a.id}" ${appSel.has(a.id)?'checked':''} onchange="this.checked?appSel.add(${a.id}):appSel.delete(${a.id});appBar()" title="Select">
+   <h3 style="flex:1;margin:0">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
   ${a.channel=='email'?`<label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(a.content.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(a.content.body)}</textarea><label>Button label</label><input id="ac${a.id}" value="${esc(a.content.cta||'Book a 15-min call')}">`
    :`<label>Call brief</label><pre>${esc(JSON.stringify(a.content,null,2))}</pre>`}
-  <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}')">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="previewLead(${a.lead_id})">Preview</button></div></div>`).join('')
-  :`<div class="card empty"><h3>Nothing waiting for approval</h3><p class="muted">${MODE=='approval'?'The agent is in Approval mode. New drafts show up here as leads reach their next step (only during local business hours).':
-   `Send mode is <b>${(MODE||'dry run').replace('_',' ')}</b>, so the agent drafts and logs every email without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.`}</p>
-   ${MODE!='approval'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`}
+  <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="previewLead(${a.lead_id})">Preview</button></div></div>`).join('')
+  :`<div class="card empty"><h3>Nothing waiting for approval</h3><p class="muted">${MODE=='live'?'Send mode is <b>live</b>, so the agent sends every email by itself without asking (see Activity log). Switch to Approval mode to review each email here before it goes out.'
+   :'New drafts show up here as leads reach their next step (only during local business hours). Nothing is sent until you approve it.'}</p>
+   ${MODE=='live'?'<button class="pri" onclick="setMode(\'approval\')">Switch to Approval mode</button>':''} <button onclick="show(\'log\')">Open activity log</button></div>`;
+  if(r.length){$('#apps').oninput=e=>{if(e.target.matches('input:not([type=checkbox]),textarea'))appsDirty=true};appBar()}}
+function appBar(){const n=appSel.size,all=APPS.length&&n==APPS.length;$('#appBar').innerHTML=`<label style="color:#fff;margin:0;display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" ${all?'checked':''} onchange="APPS.forEach(a=>this.checked?appSel.add(a.id):appSel.delete(a.id));document.querySelectorAll('.apck').forEach(c=>c.checked=this.checked);appBar()"> ${n?n+' of '+APPS.length+' selected':'Select all '+APPS.length}</label>
+  <span style="flex:1"></span><button id="appGo" ${n?'':'disabled'} onclick="decideBulk(true)">Approve and send ${n||''}</button><button ${n?'':'disabled'} onclick="decideBulk(false)">Skip ${n||''}</button>`}
+async function decideBulk(ok){const picked=APPS.filter(a=>appSel.has(a.id));if(!picked.length)return;
+  if(!confirmText(ok?`Send ${picked.length} ${picked.length==1?'item':'items'} now? Emails go out for real, with any edits you made on this page.`:`Skip ${picked.length} ${picked.length==1?'draft':'drafts'}? Those steps will not be sent.`))return;
+  const items=picked.map(a=>ok&&a.channel=='email'&&$('#as'+a.id)?{id:a.id,content:{subject:$('#as'+a.id).value,body:$('#ab'+a.id).value,cta:$('#ac'+a.id).value}}:{id:a.id});
+  document.querySelectorAll('#appBar button').forEach(b=>b.disabled=true);$('#appGo').textContent=ok?'Sending…':'Skipping…';
+  try{const r=await api('/api/approvals/bulk',{method:'POST',body:{approve:ok,items}});appSel.clear();
+   alertBanner([r.sent&&r.sent+' sent',r.skipped&&r.skipped+' skipped',r.left&&`${r.left} left waiting: today's limit of ${r.cap} emails is reached (change it in Settings)`,r.failed.length&&`${r.failed.length} failed: ${r.failed.slice(0,3).join(' · ')}`].filter(Boolean).join('. ')||'Nothing to do',r.failed.length>0)}
+  finally{appsDirty=false;refresh()}}
 let mailF='all',mailLead=null,mailN=0,C=null;
 const MB={on:false,inbox:false,canSend:false,me:'',folders:[],folder:null,mode:'folder',page:0,filter:'all',sel:new Set(),rows:[],total:0,size:50,open:null,msg:null};
 const MF=[['all','All'],['unread','Unread'],['replied','Replied'],['waiting','Waiting for a reply']],MBF=[['all','All'],['unread','Unread'],['starred','Starred']];
@@ -734,7 +765,8 @@ const usd=v=>'$'+(+v||0).toFixed((+v||0)<1?4:2);
 async function toggleAgent(){const on=!window.AGENT;if(!on&&!confirmText('Stop the agent? Nothing will run until you start it again.'))return;
   await api('/api/agent/state',{method:'POST',body:{on}});toast(on?'Agent started':'Agent stopped');refresh()}
 async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}});toast('Send mode: '+m);refresh()}
-async function decide(id,ok,ch){const body={approve:ok};if(ok&&ch=='email')body.content={subject:$('#as'+id).value,body:$('#ab'+id).value,cta:$('#ac'+id).value};await api('/api/approvals/'+id,{method:'POST',body});refresh()}
+async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content={subject:$('#as'+id).value,body:$('#ab'+id).value,cta:$('#ac'+id).value};if(b){b.disabled=true;b.textContent='Sending…'}
+  try{await api('/api/approvals/'+id,{method:'POST',body});toast(ok?'Sent':'Skipped')}finally{appSel.delete(id);appsDirty=false;refresh()}}
 
 const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','daily_email_cap','daily_call_cap','min_score','default_product'];
 async function loadSettings(){const s=await api('/api/settings');
@@ -743,7 +775,7 @@ async function loadSettings(){const s=await api('/api/settings');
   $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');
   $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
-  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
+  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
   const u=await api('/api/ai/usage');
   $('#usage').innerHTML=`<div class="kpis" style="margin-bottom:8px"><div class="kpi"><span>Today</span><b>${usd(u.today)}</b></div><div class="kpi"><span>This month</span><b>${usd(u.month)}</b></div>
@@ -812,7 +844,7 @@ async function loadSetup(){if(view!='overview')return;const[s,st]=await Promise.
    <div class="steps">${steps.map(([ok,t,sub,on],i)=>`<div class="step ${ok?'done':''}" onclick="${on}"><span class="n">${ok?'✓':i+1}</span><b>${t}</b><small>${sub}</small></div>`).join('')}</div>`}
 document.addEventListener('keydown',e=>{if(e.key=='Escape'){closeModal();$('#drawer').classList.remove('open')}});
 document.addEventListener('mousedown',e=>{const d=$('#drawer');if(d.classList.contains('open')&&!d.contains(e.target)&&!$('#modal').contains(e.target)&&!e.target.closest('tr.click,.kcard,.fi,.att a'))d.classList.remove('open')});
-loadFacets().then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh()});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings')refresh()},20000);
+loadFacets().then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh()});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings'&&!(view=='approvals'&&(appsDirty||appSel.size)))refresh()},20000);
 
 /* ---- assistant chat (bottom corner) ---- */
 (function(){

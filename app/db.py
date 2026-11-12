@@ -142,8 +142,8 @@ PRODUCTS = [
 ]
 
 DEFAULT_SETTINGS = {
-    # dry_run: nothing leaves the system. approval: every send waits for a human click. live: auto-send within caps.
-    "mode": "dry_run",
+    # approval: every email and call waits for a human click, then really goes out. live: sent automatically within caps.
+    "mode": "approval",
     "offer": "BRN Gym Club: gym and club management software (memberships, billing, access control, classes, Arabic/English app)",
     "icp": "Gyms, fitness studios and sports clubs in Saudi Arabia and Kuwait with 1 to 20 branches",
     "sender_name": "brn dynamics",
@@ -231,6 +231,8 @@ def db() -> sqlite3.Connection:
             if col not in cols:
                 _conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {typ}")
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_product ON leads(product)")
+        # dry-run mode is gone: anything that was on it now waits for approval (never auto-sends by surprise)
+        _conn.execute("UPDATE settings SET value='approval' WHERE key='mode' AND value NOT IN ('approval','live')")
         for k, v in DEFAULT_SETTINGS.items():
             _conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
         _conn.commit()

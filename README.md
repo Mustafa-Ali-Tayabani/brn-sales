@@ -2,7 +2,7 @@
 
 An AI sales agent for brn dynamics. It finds leads, researches and scores them, runs a multi-channel
 sequence (email + AI phone calls + follow-ups), reads replies, books meetings, and logs every action
-to a dashboard. Starts in **dry-run**: nothing is sent until you switch modes.
+to a dashboard. Starts in **approval** mode: nothing is sent until you approve it.
 
 ## Run it
 
@@ -11,7 +11,6 @@ pip install -r requirements.txt
 python seed.py                       # optional: 13 fictional sample leads
 uvicorn app.main:app --port 8000     # open http://localhost:8000
 ```
-Click **Simulate 14 days** to watch a full sequence play out on sample data.
 
 To connect your mailbox locally, copy `.env.example` to `.env` and fill it in (the app loads it on start).
 
@@ -33,6 +32,14 @@ It needs `IMAP_HOST` (plus `SMTP_USER` / `SMTP_PASSWORD`, or `IMAP_USER` / `IMAP
 folders stay locked until `BRN_ADMIN_PASSWORD` is set: without a password, anyone with the link could read and send
 your mail.
 
+## Find a person (name + LinkedIn -> email and phone)
+
+**Find a person** (top bar) takes a name and a LinkedIn profile link, one person per line, and adds each as a lead with
+their work email and phone number. It uses Apollo's People Enrichment API (`APOLLO_API_KEY`); LinkedIn itself is never
+opened or scraped. Emails come back at once; mobile numbers take Apollo a few minutes and are added to the lead when
+they arrive. People already in the system are not looked up again. A lead with a name but no email or phone also gets
+a **Find email & phone** button. Costs Apollo credits (about 1 per person found, about 8 more per mobile number).
+
 ## How the agent works
 
 ```
@@ -52,6 +59,7 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/providers/channels.py`: email from your own mailbox (SMTP) or Resend, Vapi voice calls
 * `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes, records them once and lets the agent act on them
 * `app/providers/mailbox.py`: the Mailbox page's IMAP client (folders, reading, drafts, moving, Sent copies)
+* `app/providers/enrich.py`: contact finder (Apollo): name + LinkedIn profile to work email and phone
 * `app/providers/sources.py`: CSV import, Google Places search
 * `app/static/index.html`: dashboard (overview, leads, approvals, activity log, settings)
 
@@ -59,8 +67,7 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 
 | Mode | What happens |
 |---|---|
-| dry_run | Everything is drafted and logged; nothing leaves the system |
-| approval | Every email and call waits in **Approvals** for a human click (edit before sending) |
+| approval | Every email and call waits in **Approvals** for a human click (edit first, approve one by one or in bulk), then really goes out |
 | live | Sends automatically within daily caps. Locked until the server sets `BRN_ALLOW_LIVE=1` |
 
 ## Going live checklist

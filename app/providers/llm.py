@@ -47,8 +47,6 @@ def _usable(task="research"):
     if mode == "economy":
         if task not in ECONOMY_TASKS:
             return False
-        if task == "email" and db.setting("mode") == "dry_run":
-            return False  # dry runs never leave the system, so free templates are enough
     budget = float(db.setting("ai_daily_budget") or 0)
     if budget > 0 and spent()["c"] >= budget:
         return False

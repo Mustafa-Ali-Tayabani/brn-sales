@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -16,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from . import agent, assistant, compliance, db
 from urllib.parse import quote
 
-from .providers import channels, inbox, llm, mailbox, sources
+from .providers import channels, enrich, inbox, llm, mailbox, sources
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -264,6 +265,143 @@ def import_places(payload: dict = Body(...)):
     except RuntimeError as e:
         raise HTTPException(400, str(e))
     return _import(rows, "google_places", payload)
+
+
+# ---------- contact finder: name + LinkedIn profile -> email and phone ----------
+def _fill_phone(lead_id, numbers):
+    """A mobile number arrived for a lead: keep it (replacing a company switchboard number, never one a person typed in)."""
+    lead = db.one("SELECT phone, stage, extra FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        return
+    extra = json.loads(lead["extra"] or "{}")
+    extra.pop("phone_request", None)
+    fields = {"extra": json.dumps(extra, ensure_ascii=False)}
+    if numbers and (not lead["phone"] or extra.pop("company_line", None)):
+        fields["phone"] = numbers[0]
+        fields["extra"] = json.dumps({**extra, **({"other_phones": numbers[1:4]} if numbers[1:] else {})}, ensure_ascii=False)
+        if lead["stage"] == "needs_contact":
+            fields["stage"] = "new"
+        db.log(lead_id, "system", f"Contact finder: phone number found ({numbers[0]})", channel="system")
+    elif not numbers:
+        db.log(lead_id, "system", "Contact finder: no phone number on record for this person", channel="system")
+    db.update_lead(lead_id, **fields)
+
+
+def _await_phone(lead_id, request_id):
+    """Apollo takes a few minutes to return mobile numbers: check back until it has, for up to 20 minutes."""
+    deadline, wait = time.time() + 1200, 20
+    while time.time() < deadline:
+        time.sleep(min(max(wait, 10), 120))
+        try:
+            state, value = enrich.phone_result(request_id)
+        except Exception:
+            continue
+        if state == "pending":
+            wait = value
+            continue
+        if state == "done":
+            _fill_phone(lead_id, value)
+        return
+
+
+def _known_profile(url):
+    handle = url.rsplit("/", 1)[-1].lower()
+    return db.one("SELECT id, company, contact_name, email, phone FROM leads WHERE lower(extra) LIKE ?", (f'%linkedin.com/in/{handle}"%',))
+
+
+def _find_one(name, linkedin, company, defaults, want_phone):
+    """Look one person up and save them as a lead. Returns a result row for the page."""
+    out = {"name": name, "linkedin": linkedin}
+    known = _known_profile(linkedin) if linkedin else None
+    if known:  # no credits spent on someone already here
+        return {**out, "status": "exists", "lead_id": known["id"], "email": known["email"], "phone": known["phone"], "company": known["company"]}
+    try:
+        p = enrich.find_person(name, linkedin, company, want_phone=want_phone)
+    except RuntimeError as e:
+        return {**out, "status": "error", "detail": str(e)}
+    p = p or {}
+    extra = {k: v for k, v in {"linkedin": p.get("linkedin") or linkedin, "email_status": p.get("email_status"), "match_confidence": p.get("confidence"),
+                               "phone_request": p.get("phone_request"), "company_line": p.get("company_line") or None, "found_by": "contact finder"}.items() if v}
+    row = {"company": p.get("company") or company or name or (linkedin or "").rsplit("/", 1)[-1] or "Unknown", "contact_name": p.get("contact_name") or name, "title": p.get("title"),
+           "email": p.get("email"), "phone": p.get("phone"), "website": p.get("website"), "city": p.get("city"), "industry": p.get("industry"),
+           "country": p.get("country"), "extra": extra, "source": "linkedin"}
+    lid = _insert(row, "linkedin", defaults)
+    if not lid and not row["email"]:
+        # no email, so the only match was the company's website or switchboard: a colleague is already a lead.
+        # This is a different person, so keep them, with the shared details set aside.
+        row["extra"].update({k: v for k, v in {"company_phone": row["phone"] if p.get("company_line") else None, "company_website": row["website"]}.items() if v})
+        row["website"] = None
+        if p.get("company_line"):
+            row["phone"] = None; row["extra"].pop("company_line", None)
+        lid = _insert(row, "linkedin", defaults)
+    if not lid:
+        dup = db.one("SELECT id FROM leads WHERE lower(email)=?", (row["email"] or "",)) or {}
+        return {**out, "status": "exists", "lead_id": dup.get("id"), "email": row["email"], "phone": row["phone"], "company": row["company"]}
+    if p.get("phone_request"):
+        threading.Thread(target=_await_phone, args=(lid, p["phone_request"]), daemon=True).start()
+    return {**out, "status": "found" if p else "not_found", "lead_id": lid, "name": row["contact_name"], "title": row["title"], "company": row["company"],
+            "email": row["email"], "phone": row["phone"], "phone_pending": bool(p.get("phone_request")), "company_line": bool(row["phone"] and p.get("company_line")), "note": p.get("note")}
+
+
+@app.post("/api/leads/find")
+def find_people(payload: dict = Body(...)):
+    """`text`: one person per line, as "Name, LinkedIn link, Company (optional)". Each becomes a lead with whatever was found."""
+    if not enrich.enabled():
+        raise HTTPException(400, "The contact finder is not connected. Add APOLLO_API_KEY (an Apollo.io API key) to the server's variables.")
+    people = []
+    for line in (payload.get("text") or "").splitlines():
+        link = enrich.linkedin_url(line)
+        rest = [x.strip() for x in re.split(r"[,\t;|]", re.sub(r"\S*linkedin\.com/\S*", "", line, flags=re.I)) if x.strip()]
+        if link or len(rest) >= 2:
+            people.append((rest[0] if rest else None, link, rest[1] if len(rest) > 1 else None))
+    if not people:
+        raise HTTPException(400, "Nothing to look up. Write one person per line: name, LinkedIn link, and optionally the company.")
+    if len(people) > 25:
+        raise HTTPException(400, "That's more than 25 people. Send them in smaller batches.")
+    defaults = {k: payload.get(k) for k in ("product", "country", "consent_basis", "segment") if payload.get(k)}
+    results = [_find_one(n, l, c, defaults, payload.get("phone", True)) for n, l, c in people]
+    found = sum(r["status"] == "found" for r in results)
+    db.log(None, "system", f"Contact finder: looked up {len(results)} people, {found} found", channel="system")
+    return {"results": results}
+
+
+@app.post("/api/leads/{lead_id}/find-contact")
+def find_contact(lead_id: int):
+    """Fill in a missing email or phone for an existing lead, from its LinkedIn profile or its name and company."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        raise HTTPException(404)
+    if not enrich.enabled():
+        raise HTTPException(400, "The contact finder is not connected. Add APOLLO_API_KEY (an Apollo.io API key) to the server's variables.")
+    extra = json.loads(lead["extra"] or "{}")
+    try:
+        if extra.get("phone_request"):  # a lookup is already under way: just collect it
+            state, value = enrich.phone_result(extra["phone_request"])
+            if state == "pending":
+                return {"status": "pending", "detail": "Apollo is still looking for the phone number. Try again in a few minutes."}
+            _fill_phone(lead_id, value or [])
+            return {"status": "done", "phone": (value or [None])[0]}
+        domain = re.sub(r"^https?://(www\.)?", "", lead.get("website") or "").split("/")[0] or None
+        p = enrich.find_person(lead.get("contact_name"), enrich.linkedin_url(extra.get("linkedin") or lead.get("notes") or ""),
+                               lead.get("company"), domain, want_phone=not lead.get("phone"))
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    if not p:
+        db.log(lead_id, "system", "Contact finder: this person was not found", channel="system")
+        return {"status": "not_found", "detail": "Apollo has no record of this person."}
+    fields = {k: p[k] for k in ("email", "phone", "title", "contact_name", "city") if p.get(k) and not lead.get(k)}
+    if fields.get("email") and db.one("SELECT 1 x FROM leads WHERE lower(email)=? AND id<>?", (fields["email"], lead_id)):
+        fields.pop("email")
+    extra.update({k: v for k, v in {"linkedin": p.get("linkedin"), "email_status": p.get("email_status"), "phone_request": p.get("phone_request"),
+                                    "company_line": (p.get("company_line") and "phone" in fields) or None}.items() if v})
+    if lead["stage"] == "needs_contact" and (fields.get("email") or fields.get("phone")):
+        fields["stage"] = "new"
+    db.update_lead(lead_id, extra=json.dumps(extra, ensure_ascii=False), **fields)
+    db.log(lead_id, "system", "Contact finder: " + (", ".join(f"{k} found" for k in fields if k in ("email", "phone", "title")) or "nothing new found")
+           + (", phone number still being looked up" if p.get("phone_request") else ""), channel="system")
+    if p.get("phone_request"):
+        threading.Thread(target=_await_phone, args=(lead_id, p["phone_request"]), daemon=True).start()
+    return {"status": "found", "email": fields.get("email"), "phone": fields.get("phone"), "phone_pending": bool(p.get("phone_request")), "note": p.get("note")}
 
 
 EDITABLE = ("stage", "notes", "consent_basis", "email", "phone", "contact_name", "title", "product", "segment", "country", "city", "website")
@@ -654,10 +792,53 @@ def approvals(state: str = "pending"):
     return rows
 
 
+def _decide(approval_id, approve, content=None):
+    """Approve (and really send) or skip one draft. Returns "sent", "skipped", "gone", or the reason the send failed."""
+    a = db.one("SELECT lead_id FROM approvals WHERE id=? AND state='pending'", (approval_id,))
+    if not a:
+        return "gone"
+    mark = db.one("SELECT COALESCE(MAX(id),0) n FROM activities")["n"]
+    agent.decide(approval_id, approve, content)
+    if not approve:
+        return "skipped"
+    err = db.one("SELECT summary FROM activities WHERE id>? AND lead_id=? AND status='error' ORDER BY id LIMIT 1", (mark, a["lead_id"]))
+    if not err:
+        return "sent"
+    # it did not go out: put the draft (with any edits) back in Approvals instead of quietly re-drafting later
+    db.ex("UPDATE approvals SET state='pending', decided_at=NULL WHERE id=?", (approval_id,))
+    db.update_lead(a["lead_id"], stage="awaiting_approval", next_action="approval", next_action_at=None)
+    return err["summary"].replace(", retrying in 1 hour", "").replace(", retrying in 2 hours", "")
+
+
+@app.post("/api/approvals/bulk")
+def decide_bulk(payload: dict = Body(...)):
+    """items: [{id, content?}] with approve true/false. Emails stop at today's cap; the rest stay waiting."""
+    approve, out = bool(payload.get("approve")), {"sent": 0, "skipped": 0, "failed": [], "left": 0}
+    cap = int(db.setting("daily_email_cap"))
+    for it in payload.get("items") or []:
+        a = db.one("SELECT a.channel, l.company FROM approvals a JOIN leads l ON l.id=a.lead_id WHERE a.id=? AND a.state='pending'", (int(it["id"]),))
+        if not a:
+            continue
+        if approve and a["channel"] == "email" and compliance.sent_today("email_sent") >= cap:
+            out["left"] += 1
+            continue
+        res = _decide(int(it["id"]), approve, it.get("content"))
+        if res in ("sent", "skipped"):
+            out[res] += 1
+        elif res != "gone":
+            out["failed"].append(f"{a['company']}: {res}")
+    db.log(None, "system", f"Bulk {'approve' if approve else 'skip'}: {out['sent']} sent, {out['skipped']} skipped, {len(out['failed'])} failed"
+           + (f", {out['left']} left waiting (daily cap of {cap} reached)" if out["left"] else ""), channel="system")
+    return {**out, "cap": cap}
+
+
 @app.post("/api/approvals/{approval_id}")
 def decide(approval_id: int, payload: dict = Body(...)):
-    if not agent.decide(approval_id, bool(payload.get("approve")), payload.get("content")):
+    res = _decide(approval_id, bool(payload.get("approve")), payload.get("content"))
+    if res == "gone":
         raise HTTPException(409, "already decided")
+    if res not in ("sent", "skipped"):
+        raise HTTPException(502, res)
     return {"ok": True}
 
 
@@ -673,12 +854,14 @@ def get_settings():
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
     s["email_via"] = channels.email_provider()
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
-                      "voice": bool(os.environ.get("VAPI_API_KEY")), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
+                      "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
 
 
 @app.post("/api/settings")
 def save_settings(payload: dict = Body(...)):
+    if "mode" in payload and payload["mode"] not in ("approval", "live"):
+        raise HTTPException(400, "Send mode must be approval or live.")
     if payload.get("mode") == "live" and os.environ.get("BRN_ALLOW_LIVE") != "1":
         raise HTTPException(403, "Live sending is locked. Set BRN_ALLOW_LIVE=1 on the server once outreach is approved.")
     if "ai_balance" in payload and str(payload["ai_balance"]) != str(db.setting("ai_balance") or ""):
@@ -721,23 +904,27 @@ def tick():
     return {"processed": agent.tick()}
 
 
-@app.post("/api/agent/simulate")
-def simulate(payload: dict = Body(default={})):
-    if db.setting("mode") == "live":
-        raise HTTPException(400, "simulation is disabled in live mode")
-    return {"processed": agent.simulate(int(payload.get("days", 14)))}
-
-
 @app.post("/webhooks/voice")
 def voice_webhook(payload: dict = Body(...)):
-    """Vapi end-of-call report. Put lead_id in the call's metadata."""
+    """Vapi's end-of-call report. The lead is found from the call id saved when the call was placed
+    (or from lead_id in the call's metadata)."""
     msg = payload.get("message", payload)
-    lead_id = (msg.get("call", {}).get("metadata") or {}).get("lead_id")
-    if not lead_id:
+    if msg.get("type") not in (None, "end-of-call-report"):
+        return {"ignored": True}  # status updates, transcripts while the call is running, ...
+    call = msg.get("call") or {}
+    meta = {**(call.get("metadata") or {}), **((call.get("assistantOverrides") or {}).get("metadata") or {}), **((msg.get("assistant") or {}).get("metadata") or {})}
+    lead_id = meta.get("lead_id")
+    if not lead_id and call.get("id"):
+        row = db.one("SELECT lead_id FROM activities WHERE kind='call_completed' AND payload LIKE ? ORDER BY id DESC LIMIT 1", (f'%"provider_id": "{call["id"]}"%',))
+        lead_id = row and row["lead_id"]
+    if not lead_id or not db.one("SELECT 1 x FROM leads WHERE id=?", (int(lead_id),)):
         return {"ignored": True}
-    outcome = (msg.get("analysis") or {}).get("structuredData", {}).get("outcome") or msg.get("endedReason")
-    db.log(int(lead_id), "call_completed", f"Call report: {outcome}", channel="phone", status="ok",
-           payload={"transcript": msg.get("transcript"), "recording": msg.get("recordingUrl"), "outcome": outcome})
+    analysis = msg.get("analysis") or call.get("analysis") or {}
+    outcome = (analysis.get("structuredData") or {}).get("outcome") or msg.get("endedReason")
+    artifact = msg.get("artifact") or {}
+    db.log(int(lead_id), "call_completed", f"Call report: {outcome}" + (f". {analysis['summary']}" if analysis.get("summary") else ""), channel="phone", status="ok",
+           payload={"transcript": msg.get("transcript") or artifact.get("transcript"), "recording": msg.get("recordingUrl") or artifact.get("recordingUrl"),
+                    "outcome": outcome, "summary": analysis.get("summary")})
     agent.apply_outcome(int(lead_id), outcome)
     return {"ok": True}
 

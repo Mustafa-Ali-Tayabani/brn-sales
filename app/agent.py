@@ -107,7 +107,7 @@ def _advance(lead, seq, at):
 
 
 def deliver(lead, step, content, at):
-    """Actually send (or dry-run) one step, log it, apply outcomes, and advance."""
+    """Send one step for real, log it, apply outcomes, and advance."""
     if step["channel"] == "email":
         try:
             res = channels.send_email(lead, content["subject"], content["body"], cta=_settings(lead)["booking_link"], cta_label=content.get("cta"))
@@ -117,7 +117,7 @@ def deliver(lead, step, content, at):
             return
         res.pop("html", None)
         db.log(lead["id"], "email_sent", f"{step['action']}: {content['subject']}", channel="email", status=res["status"], payload=res)
-        if res["status"] == "ok":  # dry runs don't count as contact
+        if res["status"] == "ok":
             db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
     else:
         try:
@@ -126,11 +126,14 @@ def deliver(lead, step, content, at):
             db.log(lead["id"], "call_completed", f"Call failed, retrying in 2 hours: {e}", channel="phone", status="error")
             db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=2)))
             return
-        if res["status"] == "ok":
+        if res["status"] == "skipped":
+            db.log(lead["id"], "call_scheduled", f"Call not placed: AI calling isn't connected. Call {lead.get('phone') or 'them'} yourself (brief below), then set the status.",
+                   channel="phone", status="ok", payload={"transcript": "Call brief\n" + json.dumps(content, ensure_ascii=False, indent=2), "script": content})
+        else:
             db.ex("UPDATE leads SET last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
-        db.log(lead["id"], "call_completed", f"Call outcome: {res.get('outcome')}", channel="phone", status=res["status"], payload={**res, "script": content})
-        if apply_outcome(lead["id"], res.get("outcome")):
-            return
+            db.log(lead["id"], "call_completed", f"Call outcome: {res.get('outcome')}", channel="phone", status=res["status"], payload={**res, "script": content})
+            if apply_outcome(lead["id"], res.get("outcome")):
+                return
     fresh = db.one("SELECT * FROM leads WHERE id=?", (lead["id"],))
     _advance(fresh, db.sequence_for(fresh), at)
 
@@ -179,7 +182,7 @@ def run_step(lead, at):
         db.update_lead(lead["id"], next_action_at=_iso(at + timedelta(hours=1)))
         return
 
-    if db.setting("mode") == "approval":
+    if db.setting("mode") != "live":  # anything but live waits for a person
         db.ex("INSERT INTO approvals(lead_id, channel, action, content, created_at) VALUES (?,?,?,?,?)",
               (lead["id"], step["channel"], step["action"], json.dumps(content, ensure_ascii=False), db.now()))
         db.update_lead(lead["id"], stage="awaiting_approval", next_action="approval", next_action_at=None)
@@ -239,12 +242,3 @@ def tick(at=None):
         run_step(lead, at)
         done += 1
     return done
-
-
-def simulate(days=14):
-    """Demo helper: replays the agent loop over a virtual clock (in hours) so you can watch a full sequence."""
-    start = datetime.now(timezone.utc)
-    total = 0
-    for h in range(days * 24):
-        total += tick(start + timedelta(hours=h))
-    return total
