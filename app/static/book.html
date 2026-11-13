@@ -37,6 +37,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 
 .muted{color:var(--mut);font-size:13px}.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .done{text-align:center;padding:26px 6px}.tick{width:56px;height:56px;border-radius:50%;background:#e7f6ee;color:#127a4a;display:grid;place-items:center;font-size:28px;margin:0 auto 14px}
 @media(max-width:760px){.wrap{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
+/* shown inside a page of your own website */
+.embed body{padding:2px;background:transparent;display:block;min-height:0}.embed .wrap{width:100%;box-shadow:none}
 </style>
 </head>
 <body>
@@ -47,7 +49,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 
 </div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const TZ=Intl.DateTimeFormat().resolvedOptions().timeZone,L=new URLSearchParams(location.search).get('l');
+const TZ=Intl.DateTimeFormat().resolvedOptions().timeZone,QP=new URLSearchParams(location.search),L=QP.get('l');
+if(QP.get('embed')){document.documentElement.classList.add('embed');const say=()=>parent.postMessage({brnBookHeight:Math.ceil(document.querySelector('.wrap').getBoundingClientRect().height)+6},'*');new ResizeObserver(say).observe(document.querySelector('.wrap'));addEventListener('load',say)}
 const dkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const hm=t=>new Date(t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}),long=t=>new Date(t).toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});
 let INFO=null,DAYS={},day=null,slot=null;
@@ -70,7 +73,7 @@ async function send(e){e.preventDefault();const b=$('#go'),err=$('#err');b.disab
   try{const r=await fetch('/api/book',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot,name:$('#name').value,email:$('#email').value,company:$('#company').value,note:$('#note').value,website:$('#website').value,tz:TZ,l:L})});
     const d=await r.json().catch(()=>({}));
     if(r.ok){$('#main').innerHTML=`<div class="done"><div class="tick">✓</div><h2>You're booked</h2><p><b>${long(slot)}, ${hm(slot)}</b><br><span class="muted">${INFO.minutes} minutes · ${esc(TZ)}</span></p>
-      <p class="muted">${d.invited?'A calendar invitation with the Google Meet link is on its way to '+esc($('#email')?.value||'your inbox')+'.':'We have your booking and will email you the call details.'}</p>${d.meet_link?`<p><a href="${esc(d.meet_link)}">${esc(d.meet_link)}</a></p>`:''}</div>`;return}
+      <p class="muted">${d.invited&&d.invited.length?'An invitation'+(d.meet_link?' with the Google Meet link':'')+' is on its way to '+esc(d.invited[0])+'.':'We have your booking and will email you the call details.'}</p>${d.meet_link?`<p><a href="${esc(d.meet_link)}">${esc(d.meet_link)}</a></p>`:''}</div>`;return}
     err.textContent=d.detail||'Something went wrong. Please try again.';err.style.display='block';if(r.status==409){await load(true);return}}
   catch{err.textContent='Could not reach the server. Check your connection and try again.';err.style.display='block'}
   b.disabled=false;b.textContent='Confirm '+hm(slot)}

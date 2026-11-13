@@ -83,7 +83,8 @@ def _resend(msg):
             payload[k.lower()] = addrs(k)
     if html:
         payload["html"] = html.get_content()
-    files = [{"filename": a.get_filename() or "attachment", "content": base64.b64encode(a.get_payload(decode=True) or b"").decode()}
+    files = [{"filename": a.get_filename() or "attachment", "content": base64.b64encode(a.get_payload(decode=True) or b"").decode(),
+              **({"content_type": f"text/calendar; charset=utf-8; method={a.get_param('method') or 'REQUEST'}"} if a.get_content_type() == "text/calendar" else {})}
              for a in msg.iter_attachments() if not a.is_multipart()]
     for p in msg.walk():  # images embedded in the HTML (a forwarded email's own pictures)
         if not p.is_multipart() and p.get("Content-ID") and p.get_content_disposition() != "attachment" and p.get_content_maintype() == "image":

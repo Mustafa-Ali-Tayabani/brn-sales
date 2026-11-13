@@ -8,8 +8,9 @@ import hmac
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-from . import compliance, db
+from . import compliance, db, rules
 from .providers import channels, llm, site_scan
 
 TERMINAL_BLOCKS = ("on suppression list", "no lawful basis", "GDPR", "calls need opt-in", "lead is ")
@@ -25,8 +26,9 @@ def _settings(lead=None):
         if p.get("booking_link"):
             s["booking_link"] = p["booking_link"]
     s["product_key"] = key
-    link = s.get("booking_link") or ""
-    if (lead or {}).get("id") and link.split("?")[0].rstrip("/").endswith("/book"):  # our own booking page: let it recognise this lead
+    link, own = s.get("booking_link") or "", (db.setting("booking_page_url") or "").strip().rstrip("/")
+    # a link to our booking page (here, or embedded on the website): let the page recognise this lead
+    if (lead or {}).get("id") and (link.split("?")[0].rstrip("/").endswith("/book") or (own and link.split("?")[0].rstrip("/") == own)):
         s["booking_link"] = link + ("&" if "?" in link else "?") + "l=" + lead_token(lead["id"])
     return s
 
@@ -87,6 +89,10 @@ def research_lead(lead):
         db.update_lead(lead["id"], stage="reply_manually", score=draft.get("score", 70),
                        research=json.dumps(draft, ensure_ascii=False), next_action="reply on the post", next_action_at=None)
         db.log(lead["id"], "research", f"Someone asked for this online. Drafted a reply for you to post: {draft.get('summary', '')}", payload=draft)
+        return
+    hit = rules.check(lead)
+    if hit:  # a rule from Settings > Rules stops this lead before any research is spent on it
+        rules.apply(lead, hit)
         return
     if not (lead.get("email") or lead.get("phone")):
         db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
@@ -189,6 +195,10 @@ def apply_outcome(lead_id, outcome):
 def run_step(lead, at):
     seq = db.sequence_for(lead)
     step = seq[lead["step"]]
+    hit = rules.check(lead) if step["channel"] == "email" else None
+    if hit:  # rules are checked again before every email, so one switched on today also stops leads already in a sequence
+        rules.apply(lead, hit)
+        return
     ok, reason = compliance.check(lead, step["channel"], at)
     if not ok:
         if reason == "outside local business hours":
@@ -336,11 +346,56 @@ def handle_reply(lead_id, text, meta=None):
     return intent
 
 
-def tick(at=None):
-    """One pass of the agent loop. Called every minute by the scheduler, or manually."""
+def _clock(text, default):
+    try:
+        h, m = (text or default).split(":")
+        return int(h) * 60 + int(m)
+    except ValueError:
+        h, m = default.split(":")
+        return int(h) * 60 + int(m)
+
+
+def schedule_state(at=None):
+    """Is the agent working right now, and when does that change?
+    on: the master switch. scheduled: it only works inside set hours. active: it is working this minute."""
+    at = at or datetime.now(timezone.utc)
+    on, scheduled = db.setting("agent_enabled") == "1", db.setting("agent_schedule") == "1"
+    out = {"on": on, "scheduled": scheduled, "active": on, "next_start": None, "until": None, "timezone": db.setting("agent_timezone") or "UTC"}
+    if not scheduled:
+        return out
+    try:
+        tz = ZoneInfo(out["timezone"])
+    except Exception:
+        tz, out["timezone"] = timezone.utc, "UTC"
+    days = {int(d) for d in (db.setting("agent_days") or "").split(",") if d.strip().isdigit()}
+    start, end = _clock(db.setting("agent_start"), "09:00"), _clock(db.setting("agent_end"), "18:00")
+    if end <= start:
+        end += 24 * 60  # a window that runs past midnight
+    local = at.astimezone(tz)
+    windows = []
+    for i in range(-1, 9):
+        day = (local + timedelta(days=i)).date()
+        if day.weekday() in days:
+            base = datetime(day.year, day.month, day.day, tzinfo=tz)
+            windows.append((base + timedelta(minutes=start), base + timedelta(minutes=end)))
+    now_in = next((w for w in windows if w[0] <= local < w[1]), None)
+    out["active"] = on and now_in is not None
+    if now_in:
+        out["until"] = _iso(now_in[1].astimezone(timezone.utc))
+    nxt = next((w for w in windows if w[0] > local), None)
+    out["next_start"] = _iso(nxt[0].astimezone(timezone.utc)) if nxt else None
+    return out
+
+
+def active():
+    return schedule_state()["active"]
+
+
+def tick(at=None, force=False):
+    """One pass of the agent loop. Called every minute by the scheduler, or by hand (force: ignore the schedule)."""
     at = at or datetime.now(timezone.utc)
     done = 0
-    if db.setting("agent_enabled") != "1":
+    if db.setting("agent_enabled") != "1" or not (force or active()):
         return 0
     for lead in db.q("SELECT * FROM leads WHERE stage='new' LIMIT 25"):
         research_lead(lead)

@@ -53,14 +53,43 @@ Once you add yourself as the first admin, everyone signs in at `/login` with the
 Every request is checked on the server (`app/auth.py`), the activity log records who did what, and passwords are stored
 only as salted hashes. `BRN_ADMIN_PASSWORD` keeps working as a recovery password for admin accounts.
 
-## Calendar and Google Meet
+## Calendar and meetings
 
-The **Calendar** page shows every meeting; book one there, from a lead (**Schedule meeting**) or from a reply waiting in
-Approvals. Booking for a lead moves it to "Meeting booked". With Google connected (Settings > Google Calendar & Meet),
-the meeting is created in that Google calendar with a Meet link, Google emails the invitations, the page also shows the
-calendar's other events, and changes made in Google (moved, cancelled, who accepted) are picked up. One Google account
-is shared by the team. Setup: enable Google Calendar API, create a Web application OAuth client with the redirect
-address shown in Settings, set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, then click Connect.
+The calendar lives in this app, not in Google. The **Calendar** page shows every meeting; book one there, from a lead
+(**Schedule meeting**), from a reply waiting in Approvals, or by asking the assistant. Booking for a lead moves it to
+"Meeting booked".
+
+**Google Meet without signing in to Google.** Google only lets an app create Meet links after an account is connected, so
+instead you paste one or more permanent links in Settings > Meetings & booking (meet.google.com > New meeting > Create a
+meeting for later). Each meeting gets one that no other meeting is using at that time. With a single link, meetings at
+the same time share a room.
+
+**Invitations** are emailed from your own mailbox with a calendar file (.ics), which Gmail, Outlook and Apple Mail show as
+an invitation to add to the calendar. Moving or cancelling a meeting emails an update. Replies to an invitation arrive in
+the mailbox like any other email; acceptances are not tracked.
+
+## Rules
+
+Settings > **Rules** decides which leads the agent may work on. Ready-made rules are switched on and off: wrong email
+addresses (including typos like gmial.com), domains that cannot receive email, no-reply addresses, throwaway inboxes,
+shared mailboxes, free providers, one person per company, missing contact name, blocked countries, blocked words, and a
+cap on emails without a reply. You can add your own ("when job title contains student, skip the lead"). Rules are checked
+before a lead is researched and before every email. A lead that breaks one waits for a fix, is skipped, or is paused, and
+its timeline says why. "Check current leads" shows what the rules would stop right now. Set `BRN_DNS_CHECK=0` to switch
+off the domain lookup.
+
+## When the agent runs
+
+Settings > Agent & sending. The agent is on or off, and can be limited to working days and hours in a time zone you pick.
+Outside those hours it rests (no research, drafting, follow-ups, inbox reading or lead searches); meeting and task
+reminders still go out. "Run one pass now" always runs.
+
+## The assistant
+
+The chat assistant answers questions and acts on what it is asked: move or edit leads, set deal values, add and tick off
+tasks, book, move and cancel meetings, add notes, stop contacting someone, start or stop the agent, and report results.
+It cannot send outreach emails or approve drafts, only emails a meeting invitation when asked to, and can do nothing the
+signed-in person's role does not allow.
 
 ## Reports, forecast and deals
 
@@ -81,9 +110,14 @@ a follow-up email that waits under Approvals > Replies & follow-ups. These run e
 
 ## Booking page
 
-`/book` is a public page where a lead picks a free time. It offers only times inside the hours set in Settings > Booking
-page that are free in the calendar (Google included), books the meeting with a Meet link, and creates or updates the lead.
-Use it as the button link in emails and each lead gets a personal link that already knows who they are.
+A page where a lead picks a free time. It offers only times inside the hours set in Settings > Meetings & booking that are
+free in the calendar, books the meeting, emails the invitation, and creates or updates the lead.
+
+**On your own website.** Paste the two lines shown in Settings into a page of your site (for example
+`brndynamics.com/book`); the booking page appears inside it and sizes itself. Enter that page's address in Settings and
+emails link to it, each with a personal link that already knows the lead. The same page is also available directly at
+`/book` on this app, and its API (`/api/book/info`, `/api/book`) may be called from another site if you prefer to build
+the page yourself.
 
 ## Bounces
 
@@ -138,7 +172,8 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes, records them once and lets the agent act on them
 * `app/providers/mailbox.py`: the Mailbox page's IMAP client (folders, reading, drafts, moving, Sent copies)
 * `app/auth.py`: accounts, sign-in sessions, roles and what each may do
-* `app/providers/gcal.py`: Google Calendar and Meet (OAuth connection, events)
+* `app/invites.py`: Meet links and emailed meeting invitations (.ics)
+* `app/rules.py`: lead rules
 * `app/more.py`: reports and forecast, tasks, templates, the booking page, the Resend webhook
 * `app/jobs.py`: meeting briefs, follow-up drafts and task reminders (run every minute)
 * `app/providers/enrich.py`: contact finder (Apollo): name + LinkedIn profile to work email and phone

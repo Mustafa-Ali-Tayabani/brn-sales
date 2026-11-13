@@ -10,11 +10,11 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from . import agent, auth, compliance, db
 from . import main as M
-from .providers import gcal
+from . import invites, rules
 
 router = APIRouter()
 
@@ -129,6 +129,30 @@ def forecast(product=None):
             "by_month": [{**m, "weighted": round(m["weighted"], 2)} for _, m in sorted(months.items(), key=lambda x: (x[0] == "no date", x[0]))],
             "top": [{**d, "chance": STAGE_CHANCE.get(d["stage"], 0)} for d in sorted(open_, key=lambda d: -d["deal_value"])[:8]],
             "chances": STAGE_CHANCE, "no_value": db.one(f"SELECT COUNT(*) n FROM leads WHERE stage IN ('replied','meeting_booked') AND (deal_value IS NULL OR deal_value=0) {lw}", largs)["n"]}
+
+
+# ---------- rules ----------
+@router.get("/api/rules")
+def get_rules():
+    st = rules.state()
+    return {"builtin": [{**r, **st["builtin"][r["key"]]} for r in rules.BUILTIN], "custom": st["custom"],
+            "fields": rules.FIELDS, "tests": rules.TESTS, "outcomes": rules.OUTCOMES}
+
+
+@router.post("/api/rules")
+def save_rules(p: dict = Body(...)):
+    rules.save(p)
+    db.log(None, "system", "Lead rules changed", channel="system")
+    return {"ok": True}
+
+
+@router.post("/api/rules/preview")
+def preview_rules(p: dict = Body(default={})):
+    """Which leads the agent is working on break a rule now. With apply: move them accordingly."""
+    out = rules.preview(bool(p.get("apply")))
+    if out["moved"]:
+        db.log(None, "system", f"Rules applied to current leads: {out['moved']} moved", channel="system")
+    return out
 
 
 # ---------- tasks ----------
@@ -274,13 +298,6 @@ def open_slots():
     end_range = now + timedelta(days=ahead + 1)
     busy = [(datetime.fromisoformat(m["starts_at"]), datetime.fromisoformat(m["ends_at"]))
             for m in db.q("SELECT starts_at, ends_at FROM meetings WHERE status='scheduled' AND ends_at>? AND starts_at<?", (_iso(now), _iso(end_range)))]
-    if gcal.connected():
-        try:
-            for e in gcal.list_events(_iso(now), _iso(end_range)):
-                if not e["all_day"] and e["status"] != "cancelled":
-                    busy.append((datetime.fromisoformat(M._utc(e["starts_at"])), datetime.fromisoformat(M._utc(e["ends_at"]))))
-        except gcal.CalendarError:
-            pass   # the page still works from our own meetings
     out, today = [], now.astimezone(tz).date()
     for i in range(ahead + 1):
         day = today + timedelta(days=i)
@@ -301,6 +318,24 @@ def book_page():
     return FileResponse(os.path.join(M.STATIC, "book.html"))
 
 
+EMBED_JS = r"""(function(){
+  var me=document.currentScript, base=new URL(me.src).origin, lead=new URLSearchParams(location.search).get('l');
+  var box=document.getElementById('brn-booking')||me.parentNode.insertBefore(document.createElement('div'),me);
+  var f=document.createElement('iframe');
+  f.src=base+'/book?embed=1'+(lead?'&l='+encodeURIComponent(lead):'');
+  f.title='Book a call'; f.loading='lazy';
+  f.style.cssText='width:100%;border:0;display:block;height:560px;background:transparent';
+  box.appendChild(f);
+  addEventListener('message',function(e){ if(e.origin===base&&e.data&&e.data.brnBookHeight) f.style.height=e.data.brnBookHeight+'px'; });
+})();"""
+
+
+@router.get("/book/embed.js")
+def book_embed():
+    """Put the booking page on your own website: <div id="brn-booking"></div><script src=".../book/embed.js" async></script>"""
+    return Response(EMBED_JS, media_type="application/javascript", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @router.get("/api/book/info")
 def book_info(l: str = None):
     if db.setting("booking_enabled") != "1":
@@ -308,7 +343,7 @@ def book_info(l: str = None):
     slots, length = open_slots()
     lead = agent.lead_from_token(l) if l else None
     return {"enabled": True, "title": db.setting("booking_title"), "company": db.setting("sender_name"), "minutes": length, "slots": slots,
-            "meet": gcal.connected(), "lead": {"name": lead.get("contact_name") or "", "email": lead.get("email") or "", "company": lead["company"]} if lead else None}
+            "meet": bool(invites.meet_links()), "lead": {"name": lead.get("contact_name") or "", "email": lead.get("email") or "", "company": lead["company"]} if lead else None}
 
 
 @router.post("/api/book")

@@ -14,10 +14,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import agent, assistant, auth, compliance, db, email_template
+from . import agent, assistant, auth, compliance, db, email_template, invites
 from urllib.parse import quote
 
-from .providers import channels, enrich, gcal, inbox, llm, mailbox, sources
+from .providers import channels, enrich, inbox, llm, mailbox, sources
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -32,6 +32,13 @@ OWN = ("/", "/api/me", "/api/password", "/api/logout")           # anyone signed
 async def gate(request: Request, call_next):
     """Who is asking, and are they allowed to? See auth.py for the three sign-in states and the roles."""
     path, user = request.url.path, None
+    if path.startswith("/api/book"):  # public, and callable from a page on your own website
+        cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS"}
+        if request.method == "OPTIONS":
+            return Response(status_code=204, headers=cors)
+        response = await call_next(request)
+        response.headers.update(cors)
+        return response
     if not path.startswith(PUBLIC):
         mode = auth.mode()
         if mode == "users":
@@ -274,7 +281,7 @@ def stats(request: Request):
     for r in by_product:
         r["name"] = prods.get(r["product"], {}).get("name", "No product")
     return {
-        "mode": db.setting("mode"), "llm": llm.enabled(), "llm_status": llm.status(), "agent_enabled": db.setting("agent_enabled") == "1",
+        "mode": db.setting("mode"), "llm": llm.enabled(), "llm_status": llm.status(), "agent_enabled": db.setting("agent_enabled") == "1", "agent": agent.schedule_state(),
         "stages": stages, "daily": daily, "by_product": by_product,
         "kpis": {
             "leads": total, "qualified": qualified, "contacted": agg["contacted"] or 0, "emails": agg["emails"] or 0, "calls": calls,
@@ -635,9 +642,12 @@ def export_leads(request: Request):
 def activities(limit: int = 200, kind: str = None, status: str = None, channel: str = None, product: str = None,
                date_from: str = None, date_to: str = None, q: str = None, lead_id: int = None):
     sql, args = "SELECT a.*, l.company, l.product FROM activities a LEFT JOIN leads l ON l.id=a.lead_id WHERE 1=1", []
-    for val, col in ((kind, "a.kind"), (status, "a.status"), (channel, "a.channel"), (product, "l.product")):
+    for val, col in ((kind, "a.kind"), (status, "a.status"), (channel, "a.channel")):
         if val:
             sql += f" AND {col}=?"; args.append(val)
+    picked = [x for x in (product or "").split(",") if x]
+    if picked:
+        sql += f" AND l.product IN ({','.join('?' * len(picked))})"; args += picked
     if lead_id:
         sql += " AND a.lead_id=?"; args.append(lead_id)
     if date_from:
@@ -944,9 +954,6 @@ def mb_send(c: dict = Body(...)):
 
 
 # ---------- calendar: meetings, with Google Calendar and Meet when connected ----------
-_gcache = {}
-
-
 def _utc(value):
     """Any ISO time (with or without offset) as a UTC ISO string."""
     d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -968,44 +975,14 @@ def _attendees(value):
     return out
 
 
-def _google_events(start, end):
-    key = (start, end)
-    hit = _gcache.get(key)
-    if hit and time.time() - hit[0] < 45:
-        return hit[1]
-    events = gcal.list_events(start, end)
-    _gcache.clear(); _gcache[key] = (time.time(), events)
-    return events
-
-
 @app.get("/api/calendar")
-def calendar(request: Request, start: str, end: str):
-    """Meetings between two moments. With Google connected, also that calendar's other events, and any change
-    made to our meetings in Google (moved, cancelled, who accepted) is picked up."""
+def calendar(start: str, end: str):
+    """Meetings between two moments, and the next ones coming up."""
     start, end = _utc(start), _utc(end)
-    out = {"google": [], "connected": gcal.connected(), "configured": gcal.configured(), "account": gcal.account(), "can_connect": auth.can("settings")}
-    if out["connected"]:
-        try:
-            events = _google_events(start, end)
-            by_id = {e["id"]: e for e in events}
-            ours = {m["google_event_id"]: m for m in db.q("SELECT * FROM meetings WHERE google_event_id IS NOT NULL")}
-            for m in db.q("SELECT * FROM meetings WHERE google_event_id IS NOT NULL AND status='scheduled' AND starts_at<? AND ends_at>?", (end, start)):
-                e = by_id.get(m["google_event_id"])
-                if not e or e["status"] == "cancelled":
-                    db.ex("UPDATE meetings SET status='cancelled' WHERE id=?", (m["id"],))
-                    db.log(m["lead_id"], "meeting", f"Meeting cancelled in Google Calendar: {m['title']}", channel="calendar")
-                elif not e["all_day"]:
-                    db.ex("UPDATE meetings SET starts_at=?, ends_at=?, title=?, attendees=?, meet_link=COALESCE(?, meet_link) WHERE id=?",
-                          (_utc(e["starts_at"]), _utc(e["ends_at"]), e["title"], json.dumps(e["attendees"]), e["meet_link"], m["id"]))
-            out["google"] = [e for e in events if e["id"] not in ours and e["status"] != "cancelled"]
-        except gcal.CalendarError as e:
-            out["error"] = str(e)
-            out["connected"] = gcal.connected()
-    out["meetings"] = [_meeting(m) for m in db.q("""SELECT m.*, l.company, l.contact_name FROM meetings m LEFT JOIN leads l ON l.id=m.lead_id
-                                                    WHERE m.starts_at<? AND m.ends_at>? ORDER BY m.starts_at""", (end, start))]
-    out["upcoming"] = [_meeting(m) for m in db.q("""SELECT m.*, l.company, l.contact_name FROM meetings m LEFT JOIN leads l ON l.id=m.lead_id
-                                                    WHERE m.status='scheduled' AND m.ends_at>=? ORDER BY m.starts_at LIMIT 12""", (db.now(),))]
-    return out
+    sql = "SELECT m.*, l.company, l.contact_name FROM meetings m LEFT JOIN leads l ON l.id=m.lead_id"
+    return {"meetings": [_meeting(m) for m in db.q(f"{sql} WHERE m.starts_at<? AND m.ends_at>? ORDER BY m.starts_at", (end, start))],
+            "upcoming": [_meeting(m) for m in db.q(f"{sql} WHERE m.status='scheduled' AND m.ends_at>=? ORDER BY m.starts_at LIMIT 12", (db.now(),))],
+            "meet_links": len(invites.meet_links()), "can_email": bool(channels.email_provider()), "can_settings": auth.can("settings")}
 
 
 def _meeting_fields(p, old=None):
@@ -1026,30 +1003,29 @@ def _meeting_fields(p, old=None):
             "description": p.get("description", old.get("description") or ""), "location": p.get("location", old.get("location") or "")}
 
 
-def book_meeting(f, lead=None, meet=True, meet_link=None, by=None):
-    """Create a meeting (in Google too, with a Meet link, when connected) and update the lead it belongs to."""
-    google = {}
-    if meet and gcal.connected():
-        try:
-            google = gcal.create_event(f)
-        except gcal.CalendarError as e:
-            raise HTTPException(502, str(e))
-        _gcache.clear()
+def book_meeting(f, lead=None, meet=True, meet_link=None, by=None, invite=True):
+    """Create a meeting, give it a Google Meet link from the ones saved in Settings, email the invitation, and
+    update the lead it belongs to."""
+    shared = False
+    if not meet_link and meet:
+        meet_link, shared = invites.pick_link(f["starts_at"], f["ends_at"])
     who = db.actor.get() or {}
-    mid = db.ex("""INSERT INTO meetings(lead_id, title, starts_at, ends_at, timezone, attendees, description, location, meet_link, google_event_id,
-                   google_link, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+    mid = db.ex("""INSERT INTO meetings(lead_id, title, starts_at, ends_at, timezone, attendees, description, location, meet_link, created_by, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (lead and lead["id"], f["title"], f["starts_at"], f["ends_at"], f["timezone"], json.dumps([{"email": a} for a in f["attendees"]]),
-                 f["description"], f["location"], google.get("meet_link") or meet_link or None, google.get("id"), google.get("link"),
-                 by or (None if who.get("implicit") else who.get("name")), db.now()))
+                 f["description"], f["location"], meet_link or None, by or (None if who.get("implicit") else who.get("name")), db.now()))
+    m = {**f, "id": mid, "meet_link": meet_link, "lead_id": lead and lead["id"], "ics_seq": 0}
+    invited = invites.send(m, "invite") if invite else []
+    note = (" (invitation emailed)" if invited else "") + (f", by {by}" if by else "")
     if lead:
-        db.log(lead["id"], "meeting", f"Meeting booked: {f['title']}" + (" (Google Meet, invitation sent)" if google else "") + (f", by {by}" if by else ""), channel="calendar",
-               payload={"meeting_id": mid, "starts_at": f["starts_at"], "meet_link": google.get("meet_link"), "attendees": f["attendees"]})
+        db.log(lead["id"], "meeting", f"Meeting booked: {f['title']}{note}", channel="calendar",
+               payload={"meeting_id": mid, "starts_at": f["starts_at"], "meet_link": meet_link, "attendees": f["attendees"], "invited": invited})
         if lead["stage"] not in ("won", "opted_out"):
             db.update_lead(lead["id"], stage="meeting_booked", next_action="meeting", next_action_at=f["starts_at"])
             db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action NOT IN ('reply','followup')", (db.now(), lead["id"]))
     else:
-        db.log(None, "meeting", f"Meeting booked: {f['title']}", channel="calendar", payload={"meeting_id": mid})
-    return {"id": mid, "meet_link": google.get("meet_link"), "invited": bool(google) and bool(f["attendees"]), "google": bool(google)}
+        db.log(None, "meeting", f"Meeting booked: {f['title']}{note}", channel="calendar", payload={"meeting_id": mid})
+    return {"id": mid, "meet_link": meet_link, "invited": invited, "shared_link": shared, "can_email": bool(channels.email_provider())}
 
 
 @app.post("/api/calendar")
@@ -1057,12 +1033,12 @@ def schedule_meeting(p: dict = Body(...)):
     """Book a meeting. With Google connected (and unless meet is false), it is created in Google Calendar with a
     Meet link and Google emails the invitation to every attendee."""
     lead = db.one("SELECT * FROM leads WHERE id=?", (int(p["lead_id"]),)) if p.get("lead_id") else None
-    return book_meeting(_meeting_fields(p), lead, p.get("meet", True), p.get("meet_link"))
+    return book_meeting(_meeting_fields(p), lead, p.get("meet", True), (p.get("meet_link") or "").strip() or None, invite=p.get("invite", True))
 
 
 @app.patch("/api/calendar/{meeting_id}")
 def change_meeting(meeting_id: int, p: dict = Body(...)):
-    """Move or edit a meeting, or mark it done. Changes go to Google Calendar too, which tells the attendees."""
+    """Move or edit a meeting, or mark it done. The people invited get an updated invitation."""
     m = db.one("SELECT * FROM meetings WHERE id=?", (meeting_id,))
     if not m:
         raise HTTPException(404)
@@ -1070,70 +1046,31 @@ def change_meeting(meeting_id: int, p: dict = Body(...)):
         db.ex("UPDATE meetings SET status=? WHERE id=?", (p["status"], meeting_id))
         return {"ok": True}
     f = _meeting_fields(p, m)
-    if m["google_event_id"] and gcal.connected():
-        try:
-            gcal.update_event(m["google_event_id"], f)
-        except gcal.CalendarError as e:
-            raise HTTPException(502, str(e))
-        _gcache.clear()
-    db.ex("UPDATE meetings SET title=?, starts_at=?, ends_at=?, timezone=?, attendees=?, description=?, location=?, meet_link=COALESCE(?, meet_link), status='scheduled' WHERE id=?",
-          (f["title"], f["starts_at"], f["ends_at"], f["timezone"], json.dumps([{"email": a} for a in f["attendees"]]), f["description"], f["location"],
-           p.get("meet_link") or None, meeting_id))
+    link = (p.get("meet_link") or "").strip() or m["meet_link"]
+    if not link or (f["starts_at"], f["ends_at"]) != (m["starts_at"], m["ends_at"]) and link in invites.meet_links():
+        link = invites.pick_link(f["starts_at"], f["ends_at"], except_id=meeting_id)[0] or link  # keep it clear of other meetings at the new time
+    seq = int(m.get("ics_seq") or 0) + 1
+    db.ex("UPDATE meetings SET title=?, starts_at=?, ends_at=?, timezone=?, attendees=?, description=?, location=?, meet_link=?, ics_seq=?, status='scheduled', reminded_at=NULL WHERE id=?",
+          (f["title"], f["starts_at"], f["ends_at"], f["timezone"], json.dumps([{"email": a} for a in f["attendees"]]), f["description"], f["location"], link, seq, meeting_id))
+    told = invites.send({**f, "id": meeting_id, "meet_link": link, "lead_id": m["lead_id"], "ics_seq": seq}, "update") if p.get("invite", True) else []
     if m["lead_id"]:
         moved = f["starts_at"] != m["starts_at"]
         db.log(m["lead_id"], "meeting", f"Meeting {'moved' if moved else 'changed'}: {f['title']}", channel="calendar", payload={"meeting_id": meeting_id, "starts_at": f["starts_at"]})
         if moved:
             db.ex("UPDATE leads SET next_action_at=? WHERE id=? AND next_action='meeting'", (f["starts_at"], m["lead_id"]))
-    return {"ok": True}
+    return {"ok": True, "told": told}
 
 
 @app.delete("/api/calendar/{meeting_id}")
 def cancel_meeting(meeting_id: int):
-    """Cancel a meeting. It stays on record as cancelled; Google removes the event and tells the attendees."""
+    """Cancel a meeting. It stays on record as cancelled, and the people invited are told."""
     m = db.one("SELECT * FROM meetings WHERE id=?", (meeting_id,))
     if not m:
         raise HTTPException(404)
-    if m["google_event_id"] and gcal.connected():
-        try:
-            gcal.delete_event(m["google_event_id"])
-        except gcal.CalendarError as e:
-            raise HTTPException(502, str(e))
-        _gcache.clear()
+    told = invites.send({**_meeting(m), "ics_seq": int(m.get("ics_seq") or 0) + 1}, "cancel") if m["status"] == "scheduled" else []
     db.ex("UPDATE meetings SET status='cancelled' WHERE id=?", (meeting_id,))
     db.log(m["lead_id"], "meeting", f"Meeting cancelled: {m['title']}", channel="calendar", payload={"meeting_id": meeting_id})
-    return {"ok": True}
-
-
-@app.get("/oauth/google/start")
-def google_start(request: Request):
-    if not gcal.configured():
-        raise HTTPException(400, "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server first.")
-    return RedirectResponse(gcal.auth_url(_public_base(request) + "/oauth/google/callback"))
-
-
-@app.get("/oauth/google/callback")
-def google_callback(request: Request, code: str = None, state: str = None, error: str = None):
-    if error or not code:
-        return RedirectResponse("/?google=" + quote(error or "cancelled") + "#settings", status_code=303)
-    try:
-        email = gcal.finish(code, state, _public_base(request) + "/oauth/google/callback")
-    except gcal.CalendarError as e:
-        return RedirectResponse("/?google=" + quote(str(e)) + "#settings", status_code=303)
-    db.log(None, "system", f"Google Calendar connected ({email or 'account'})", channel="system")
-    return RedirectResponse("/?google=ok#settings", status_code=303)
-
-
-@app.post("/api/settings/google/disconnect")
-def google_disconnect():
-    gcal.disconnect()
-    db.log(None, "system", "Google Calendar disconnected", channel="system")
-    return {"ok": True}
-
-
-@app.get("/api/settings/google")
-def google_status(request: Request):
-    return {"configured": gcal.configured(), "connected": gcal.connected(), "account": gcal.account(),
-            "redirect_uri": _public_base(request) + "/oauth/google/callback"}
+    return {"ok": True, "told": told}
 
 
 # ---------- approvals ----------
@@ -1210,9 +1147,9 @@ def get_settings(request: Request):
     s["email_via"] = channels.email_provider()
     s["logo_effective"] = email_template.logo_url()
     s["booking_url"] = _public_base(request) + "/book"
-    s["google"] = {"configured": gcal.configured(), "connected": gcal.connected(), "account": gcal.account()}
+    s["app_url"] = _public_base(request)
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
-                      "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "calendar": gcal.connected(), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
+                      "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "meet": bool(invites.meet_links()), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
 
 
@@ -1259,7 +1196,7 @@ def ai_usage():
 
 @app.post("/api/agent/tick")
 def tick():
-    return {"processed": agent.tick()}
+    return {"processed": agent.tick(force=True)}  # asked for by hand: run now, whatever the schedule says
 
 
 @app.post("/webhooks/voice")
@@ -1423,7 +1360,7 @@ def _loop():
         except Exception as e:
             db.log(None, "system", f"Reminder error: {e}", channel="system", status="error")
         try:
-            if db.setting("agent_enabled") != "1":  # stopped: no research, outreach, inbox reading or lead searches
+            if not agent.active():  # switched off, or outside its scheduled hours: no research, outreach, inbox reading or lead searches
                 n += 1
                 time.sleep(60)
                 continue

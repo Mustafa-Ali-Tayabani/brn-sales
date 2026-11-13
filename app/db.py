@@ -216,6 +216,15 @@ DEFAULT_SETTINGS = {
     "logo_url": "",   # logo image in emails; empty = the copy this server hosts at /brand/logo-light.png
     "currency": "USD",            # deal values and the forecast are shown in this currency
     "ab_subjects": "1",           # try two subject lines per outreach step and compare reply rates in Reports
+    "rules": "{}",                # which leads the agent may work on: see rules.py
+    "meet_links": "",             # permanent Google Meet links, one per line; each meeting gets one that is free at that time
+    # when the agent runs: always while it is on, or only inside these hours
+    "agent_schedule": "0",
+    "agent_days": "6,0,1,2,3",    # Python weekdays, Monday = 0: Sunday to Thursday
+    "agent_start": "09:00",
+    "agent_end": "18:00",
+    "agent_timezone": "Asia/Riyadh",
+    "booking_page_url": "",       # where your booking page lives on your own website, if it is embedded there
     "meeting_reminder_min": "60", # email a brief to whoever booked a meeting this many minutes before it (0 = off)
     "meeting_followup": "1",      # after a meeting, draft a follow-up email for approval
     # public booking page (/book): which slots a lead may pick
@@ -266,6 +275,7 @@ MIGRATIONS = [
     ("leads", "closed_at", "TEXT"),         # when it was marked won or lost
     ("activities", "actor", "TEXT"),        # who did it, when a person did
     ("meetings", "reminded_at", "TEXT"), ("meetings", "followup_at", "TEXT"),
+    ("meetings", "ics_seq", "INTEGER NOT NULL DEFAULT 0"),   # version of the invitation, raised on every change
 ]
 ID_TABLES = ("leads", "activities", "approvals", "users", "meetings", "tasks", "templates")  # tables whose INSERT returns a new id
 

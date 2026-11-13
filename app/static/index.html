@@ -59,8 +59,7 @@ button:disabled{opacity:.5;cursor:default}button.sm{padding:5px 10px;font-size:1
 .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}.grid2>*{min-width:0}
 .grid2e{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid2e>*{min-width:0}
 /* hero funnel */
-.hero{background:var(--ink);color:#fff;border-radius:18px;padding:22px 24px;margin-bottom:16px;position:relative;overflow:hidden;box-shadow:var(--sh2)}
-.hero:before{content:"";position:absolute;right:-80px;top:-120px;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,#010ecf88,transparent 65%)}
+.hero{background:radial-gradient(circle at calc(100% - 100px) 60px,#010ecf88,transparent 280px),var(--ink);color:#fff;border-radius:18px;padding:22px 24px;margin-bottom:16px;position:relative;box-shadow:var(--sh2)}
 .hero .hd{display:flex;align-items:center;gap:12px;margin-bottom:18px;position:relative}.hero .hd h2{font-size:17px;flex:1}
 .hero .hd .chips .chip{background:#ffffff10;border-color:#ffffff22;color:#d9dae0}.hero .hd .chips .chip.on{background:#fff;color:var(--ink)}
 .hero .hd .chips .chip:hover{border-color:#fff;color:#fff}.hero .hd .chips .chip.on:hover{color:var(--ink)}
@@ -225,6 +224,31 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 @media(max-width:1100px){.calwrap{grid-template-columns:1fr}.cday{min-height:76px}}
 .trow{display:flex;gap:12px;align-items:flex-start;padding:11px 2px;border-bottom:1px solid var(--line2)}.trow:last-of-type{border-bottom:0}.trow input[type=checkbox]{margin-top:3px;width:17px;height:17px;flex:none}
 .trow .tt{font-weight:500}.trow.done .tt{text-decoration:line-through;color:var(--mut)}
+/* multi-select dropdown */
+.ms{position:relative;display:inline-block}.msb{min-width:190px;justify-content:space-between;gap:10px}.msb .car{color:var(--mut2);font-size:11px}
+.msp{position:absolute;z-index:8;top:calc(100% + 6px);right:0;width:320px;max-width:86vw;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh2);padding:10px}
+.msp>input{width:100%;margin-bottom:8px}.msl{max-height:300px;overflow-y:auto}
+.msi{display:flex;align-items:center;gap:10px;margin:0;padding:7px 8px;border-radius:8px;font-size:14px;color:var(--ink);font-weight:400;cursor:pointer}.msi:hover{background:var(--soft)}
+.msi span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.msi small{color:var(--mut2)}.msi input{flex:none;width:16px;height:16px}
+.msf{display:flex;padding:8px 6px 0;border-top:1px solid var(--line2);margin-top:6px;font-size:13px}.msf a{cursor:pointer;color:var(--blue)}
+.hero .msb{background:#ffffff14;border-color:#ffffff2e;color:#fff}.hero .msb:hover{background:#ffffff22;color:#fff;border-color:#fff;box-shadow:none}
+#prodChips .msp{right:auto;left:0}
+/* settings */
+.setwrap{display:grid;grid-template-columns:200px minmax(0,1fr);gap:26px;align-items:start}
+.settabs{position:sticky;top:16px;display:flex;flex-direction:column;gap:2px}
+.settab{padding:9px 13px;border-radius:10px;cursor:pointer;color:#4a4b52;font-size:14px;transition:background .12s}.settab:hover{background:#e9e9e3}.settab.on{background:var(--ink);color:#fff;font-weight:500}
+.setbody{max-width:880px;min-width:0}.setpane>h2{font-size:21px;margin-bottom:4px}.setpane>.lead{color:var(--mut);margin:0 0 16px}
+.frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0 16px}.frow input,.frow select{width:100%}
+.hint{font-size:12px;color:var(--mut);margin:5px 0 0;line-height:1.45}.code{font:12px/1.5 ui-monospace,monospace}
+details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[open]>summary{margin-bottom:8px}
+.seqrow{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line2);flex-wrap:wrap}.seqrow .n{width:24px;height:24px;border-radius:50%;background:var(--bluebg);color:var(--blue);display:grid;place-items:center;font:700 12px "Space Grotesk";flex:none}
+.rule{display:flex;gap:14px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--line2)}.rule:last-child{border-bottom:0}.rule .tt{font-weight:500}
+.sw{appearance:none;-webkit-appearance:none;width:40px;height:23px;border-radius:99px;background:#d0d0ca;position:relative;cursor:pointer;border:0;padding:0;flex:none;margin-top:1px;transition:background .15s}
+.sw:after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0003;transition:left .15s}.sw:checked{background:var(--ok)}.sw:checked:after{left:20px}.sw:focus{box-shadow:0 0 0 3px #010ecf1a}
+.savebar{position:sticky;bottom:14px;margin:18px 76px 0 226px;max-width:880px;display:flex;align-items:center;gap:14px;justify-content:flex-end;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px 10px 18px;box-shadow:var(--sh2);z-index:3}
+.savebar #saveState{color:var(--mut);font-size:13px;margin-right:auto}.savebar.dirty{border-color:#f5d9a8;background:var(--warnbg)}.savebar.dirty #saveState{color:#6b3d00;font-weight:500}
+.dot.rest{background:#f0b400;box-shadow:0 0 0 3px #f0b40033}.agentsw.rest .tg{background:#e0a800}.agentsw.rest .st{color:var(--warn)}
+@media(max-width:1000px){.setwrap{grid-template-columns:1fr}.settabs{position:static;flex-direction:row;flex-wrap:wrap}.savebar{margin-left:0}}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;z-index:30;font-size:13px;box-shadow:0 10px 30px #0005;animation:tin .2s ease-out}
 @keyframes tin{from{opacity:0;transform:translate(-50%,8px)}}
 .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px}
@@ -289,7 +313,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
   <!-- OVERVIEW -->
   <section id="v-overview">
     <div class="card hide" id="setup"></div>
-    <div class="hero"><div class="hd"><h2>Pipeline health</h2><div class="chips" id="ovProducts"></div></div><div class="stages" id="kpis"></div></div>
+    <div class="hero"><div class="hd"><h2>Pipeline health</h2><div class="ms" id="ovProducts"></div></div><div class="stages" id="kpis"></div></div>
     <div class="grid2">
       <div class="card"><h3>Outreach, last 14 days<span class="r" id="chartRange"></span></h3><div class="tot" id="chartTot"></div><div class="chart2" id="chart"></div>
         <div class="legend"><span><i style="background:var(--blue)"></i>Emails</span><span><i style="background:var(--blue2)"></i>Calls</span><span><i style="background:var(--ink)"></i>Replies</span></div></div>
@@ -306,7 +330,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
   <section id="v-leads" class="hide">
     <div class="filters">
       <input id="lq" placeholder="Search company, email, website, notes" style="flex:1;min-width:220px" oninput="debounce(loadLeads)">
-      <div class="chips" id="prodChips"></div>
+      <div class="ms" id="prodChips"></div>
     </div>
     <div class="fbox">
       <div class="fgrid">
@@ -335,7 +359,7 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
       <select id="bulkStage"><option value="">Set status…</option></select><button onclick="bulkDo('set_stage',$('#bulkStage').value)">Apply</button>
       <select id="bulkProd"><option value="">Set product…</option></select><button onclick="bulkDo('set_product',$('#bulkProd').value)">Apply</button>
       <button onclick="bulkDo('resume')">Start / resume sequence</button><button onclick="bulkDo('pause')">Pause</button>
-      <button onclick="bulkDo('restart')">Re-research</button><button class="danger" data-perm="leads.delete" onclick="if(confirmText('Delete selected leads?'))bulkDo('delete')">Delete</button>
+      <button onclick="bulkDo('restart')">Re-research</button><button class="danger" data-perm="leads.delete" onclick="ask('Delete the selected leads? This cannot be undone.').then(ok=>ok&&bulkDo('delete'))">Delete</button>
       <span style="flex:1"></span><label style="color:#c9cad1;margin:0"><input type="checkbox" id="bulkAll"> all <span id="bulkAllN"></span> matching</label>
       <button onclick="clearSel()">✕</button>
     </div>
@@ -407,69 +431,107 @@ code{font:12px ui-monospace,monospace;background:var(--paper);padding:1px 5px;bo
 
   <!-- SETTINGS -->
   <section id="v-settings" class="hide">
-    <div class="card" data-perm="users"><h3>People &amp; roles</h3><div id="people"></div></div>
-    <div class="grid2">
-    <div>
-      <div class="card"><h3>Automation</h3>
-        <label>Agent</label><select id="s-agent_enabled"><option value="1">On: runs every minute (research, emails, follow-ups, calls, replies)</option><option value="0">Paused: nothing runs</option></select>
-        <div class="row" style="margin-top:8px"><button class="sm" onclick="runTick()">Run one pass now</button><span class="muted" style="font-size:12px">The agent runs by itself every minute while it's on. This just runs it once immediately.</span></div>
-        <label>Send mode</label><select id="s-mode"><option value="approval">Approval: each email/call waits for your click, then is sent</option><option value="live">Live: fully automatic within daily caps</option></select>
-        <p class="muted" id="liveNote" style="font-size:12px"></p>
-        <div class="row"><div><label>Emails / day</label><input id="s-daily_email_cap" type="number"></div><div><label>Calls / day</label><input id="s-daily_call_cap" type="number"></div><div><label>Min fit score</label><input id="s-min_score" type="number"></div></div>
-        <label>Product for leads without one</label><select id="s-default_product"></select>
-        <label>Automatic lead discovery for every pipeline</label><select id="s-auto_discovery"><option value="1">On: once a day, each pipeline searches its own sources</option><option value="0">Off: only when I click "Find leads now"</option></select>
-        <label>Extra Google Places searches, daily (one per line: query | country | limit)</label>
-        <textarea id="s-discovery" placeholder="gyms in Riyadh | SA | 20"></textarea>
-        <div class="row"><div><label>Currency for deal values</label><input id="s-currency" style="width:110px" placeholder="USD"></div>
-          <div><label>Subject line test</label><select id="s-ab_subjects"><option value="1">On: two subject lines per step, compared in Reports</option><option value="0">Off: one subject line</option></select></div></div>
-        <div class="row"><div><label>Meeting brief by email (minutes before, 0 = off)</label><input id="s-meeting_reminder_min" type="number" min="0" style="width:110px"></div>
-          <div><label>After a meeting</label><select id="s-meeting_followup"><option value="1">Draft a follow-up email for approval</option><option value="0">Don't draft a follow-up</option></select></div></div>
-        <label>Sequence (JSON)</label><textarea id="s-sequence" style="min-height:130px;font-family:ui-monospace,monospace;font-size:12px"></textarea>
-      </div>
-      <div class="card"><h3>Claude usage &amp; cost</h3>
-        <label>How much to use Claude</label><select id="s-ai_mode" style="width:100%">
-          <option value="economy">Economy (recommended): Claude only for emails that really go out, replies, and posts asking online</option>
-          <option value="full">Full: Claude for research, every draft and call notes (costs more)</option>
-          <option value="off">Off: free templates only, no Claude costs</option></select>
-        <p class="muted" style="font-size:12px;margin:4px 0 0">In Economy, research and call notes use free templates.</p>
-        <div class="row"><div style="flex:1"><label>Model</label><select id="s-ai_model" style="width:100%"><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest, $0.10 / $0.50 per million tokens)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 ($2 / $10)</option><option value="claude-opus-5-5">Claude Opus 5.5 (best, $4 / $20)</option></select></div>
-          <div><label>Daily budget, USD</label><input id="s-ai_daily_budget" type="number" step="0.05" min="0" style="width:110px"></div></div>
-        <label>Your current Anthropic credit balance, USD (copy it from the billing page; the agent's spend is subtracted from it)</label>
-        <div class="row"><input id="s-ai_balance" type="number" step="0.01" min="0" placeholder="e.g. 20.00" style="width:140px"><a class="btn" href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Open Anthropic billing ↗</a></div>
-        <div id="usage" style="margin-top:12px"></div></div>
-      <div class="card"><h3>Booking page</h3><div id="bookCard"></div></div>
-      <div class="card"><h3>Saved email templates</h3><div id="tplCard"></div></div>
-      <div class="card"><h3>Sender &amp; email template</h3>
-        <div class="row"><div><label>Sender name</label><input id="s-sender_name"></div><div><label>Sender email</label><input id="s-sender_email"></div></div>
-        <label>Default booking / CTA link</label><input id="s-booking_link" style="width:100%">
-        <label>Postal address in email footer (required by US anti-spam law)</label><input id="s-company_address" style="width:100%">
-        <label>Logo image in emails (web address of a PNG; leave empty to use the built-in brn dynamics logo)</label><input id="s-logo_url" style="width:100%" placeholder="https://…/logo.png"><p class="muted" id="logoNote" style="font-size:12px;margin:4px 0 0"></p>
-        <div class="row" style="margin-top:12px"><select id="pvProd"></select><button onclick="previewEmail()">Preview branded email</button></div>
-      </div>
-      <div class="card"><h3>Pipelines (products &amp; services)</h3><p class="muted" style="margin-top:-6px">Each pipeline has its own pitch, ideal customer, optional sequence and lead sources:
-        <code>"sources": {"places": [{"query": "salons in Riyadh", "country": "SA", "limit": 20}], "only_without_website": true, "reddit": ["need a website"]}</code><br>Web search (finds businesses and their published emails, needs the Anthropic key): <code>"sources": {"web": [{"query": "dentists in Austin TX", "country": "US", "limit": 15}], "wordpress_only": true}</code></p>
-        <textarea id="s-products" style="min-height:220px;font-family:ui-monospace,monospace;font-size:12px"></textarea></div>
-      <button class="pri" onclick="saveSettings()">Save settings</button>
-    </div>
-    <div>
-      <div class="card"><h3>Google Calendar &amp; Meet</h3><div id="gcard"></div></div>
-      <div class="card"><h3>Providers</h3><table id="prov"></table>
-        <div class="row" style="margin-top:10px"><button onclick="testEmail(this)">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
-      <div class="card"><h3>Guardrails</h3><ul class="muted" style="padding-left:18px;margin:0">
-        <li>Every send checks the do-not-contact list, lawful basis, local business hours (Sun–Thu in the Gulf, Mon–Fri elsewhere; calls 10:00–17:00) and daily caps.</li>
-        <li>Every email has an unsubscribe link and your postal address. A "stop" reply or a "remove me" on a call adds the lead to the do-not-contact list for good.</li>
-        <li>AI calls to US/Canada numbers only happen with prior opt-in (TCPA).</li>
-        <li>Leads with no email or phone wait in "needs contact" until you add one.</li>
-        <li>Live mode stays locked until the server sets BRN_ALLOW_LIVE=1.</li></ul></div>
-      <div class="card"><h3>Do-not-contact list</h3>
-        <div class="row"><input id="supv" placeholder="email, phone or domain"><button onclick="addSup()">Add</button></div>
-        <table id="sup" style="margin-top:8px"></table></div>
-    </div>
-  </div></section>
-</main>
+   <div class="setwrap">
+    <nav class="settabs" id="setTabs"></nav>
+    <div class="setbody" id="setBody">
 
+     <div class="setpane" data-tab="agent"><h2>Agent &amp; sending</h2><p class="lead">When the agent works, how it sends, and how it finds new leads.</p>
+      <div class="card"><h3>When the agent runs</h3>
+        <div class="frow"><div><label>Agent</label><select id="s-agent_enabled"><option value="1">On</option><option value="0">Off: nothing runs</option></select></div>
+          <div><label>Working hours</label><select id="s-agent_schedule" onchange="schedShow()"><option value="0">Always, while it is on</option><option value="1">Only on the days and hours below</option></select></div></div>
+        <div id="schedBox"><label>Days</label><div class="chips" id="agDays"></div>
+          <div class="frow" style="margin-top:4px"><div><label>From</label><input id="s-agent_start" type="time"></div><div><label>Until</label><input id="s-agent_end" type="time"></div><div><label>Time zone</label><input id="s-agent_timezone" placeholder="Asia/Riyadh"></div></div>
+          <p class="hint">Outside these hours the agent rests: no research, drafting, follow-ups, inbox reading or lead searches. Meeting reminders still go out. An end time earlier than the start runs past midnight.</p></div>
+        <div class="row" style="margin-top:12px"><span class="tag" id="agNow"></span><button class="sm" data-nosave onclick="runTick()">Run one pass now</button><span class="hint" style="margin:0">Runs once immediately, whatever the hours.</span></div></div>
+      <div class="card"><h3>Sending</h3>
+        <label>Send mode</label><select id="s-mode" style="width:100%"><option value="approval">Approval: each email and call waits for your click, then is sent</option><option value="live">Live: sent automatically within the daily limits</option></select>
+        <p class="hint" id="liveNote"></p>
+        <div class="frow"><div><label>Emails per day</label><input id="s-daily_email_cap" type="number" min="0"></div><div><label>Calls per day</label><input id="s-daily_call_cap" type="number" min="0"></div>
+          <div><label>Lowest fit score to contact</label><input id="s-min_score" type="number" min="0" max="100"></div><div><label>Currency for deal values</label><input id="s-currency" placeholder="USD"></div></div>
+        <label>Pipeline for leads that have none</label><select id="s-default_product"></select></div>
+      <div class="card"><h3>Finding leads</h3>
+        <label>Automatic lead search</label><select id="s-auto_discovery" style="width:100%"><option value="1">On: once a day, each pipeline searches its own sources</option><option value="0">Off: only when I click "Find leads now"</option></select>
+        <label>Extra Google Maps searches, daily</label><textarea id="s-discovery" placeholder="gyms in Riyadh | SA | 20"></textarea><p class="hint">One per line: what to search | country code | how many.</p></div>
+     </div>
+
+     <div class="setpane" data-tab="outreach"><h2>Outreach</h2><p class="lead">The steps each lead goes through, who the emails come from, and how they look.</p>
+      <div class="card"><h3>Sequence<span class="r">used by every pipeline that has none of its own</span></h3><div id="seqEd"></div>
+        <label style="margin-top:14px">Subject line test</label><select id="s-ab_subjects" style="width:100%"><option value="1">On: two subject lines per step, compared in Reports</option><option value="0">Off: one subject line</option></select>
+        <details class="adv"><summary>Edit as JSON</summary><textarea id="s-sequence" class="code" style="min-height:130px" onchange="seqFromText()"></textarea></details></div>
+      <div class="card"><h3>Sender &amp; branding</h3>
+        <div class="frow"><div><label>Sender name</label><input id="s-sender_name"></div><div><label>Sender email</label><input id="s-sender_email"></div></div>
+        <label>Link behind the button in emails</label><input id="s-booking_link" style="width:100%"><p class="hint">Usually your booking page (see Meetings &amp; booking).</p>
+        <label>Postal address in the email footer</label><input id="s-company_address" style="width:100%"><p class="hint">Required by US anti-spam law.</p>
+        <label>Logo image in emails</label><input id="s-logo_url" style="width:100%" placeholder="https://…/logo.png"><p class="hint" id="logoNote"></p>
+        <div class="row" style="margin-top:12px"><select id="pvProd" data-nosave></select><button data-nosave onclick="previewEmail()">Preview branded email</button></div></div>
+      <div class="card" data-nosave><h3>Saved email templates</h3><div id="tplCard"></div></div>
+     </div>
+
+     <div class="setpane" data-tab="rules"><h2>Rules</h2><p class="lead">Which leads the agent may work on. Rules are checked before a lead is researched and again before every email.</p>
+      <div class="card"><h3>Ready-made rules</h3><div id="rulesBuiltin"></div></div>
+      <div class="card"><h3>Your own rules</h3><div id="rulesCustom"></div></div>
+      <div class="card" data-nosave><h3>Check current leads</h3><p class="muted" style="margin:0 0 10px">See which leads the agent is working on right now would be stopped by the rules as they are set above.</p>
+        <button onclick="rulesPreview()">Save and check current leads</button><div id="rulesOut" style="margin-top:12px"></div></div>
+     </div>
+
+     <div class="setpane" data-tab="pipelines"><h2>Pipelines</h2><p class="lead">Each product or service has its own pitch, ideal customer and places to find leads.</p>
+      <div class="card"><div id="plList"></div>
+        <details class="adv"><summary>Edit all pipelines as JSON</summary><textarea id="s-products" class="code" style="min-height:260px" onchange="plFromText()"></textarea></details></div>
+     </div>
+
+     <div class="setpane" data-tab="meetings"><h2>Meetings &amp; booking</h2><p class="lead">Your calendar lives in this app. Invitations are emailed from your own mailbox.</p>
+      <div class="card"><h3>Google Meet links</h3>
+        <p class="muted" style="margin:0 0 8px">Google only lets an app create Meet links after signing in to a Google account. To avoid that, paste one or more permanent links here and each meeting is given one that is free at that time.</p>
+        <textarea id="s-meet_links" class="code" style="min-height:80px" placeholder="https://meet.google.com/abc-defg-hij"></textarea>
+        <p class="hint">One per line. To make one: open meet.google.com, choose <b>New meeting</b>, then <b>Create a meeting for later</b>, and copy the link. Add as many links as you have meetings at the same time; with one link, overlapping meetings share a room.</p></div>
+      <div class="card"><h3>Around each meeting</h3>
+        <div class="frow"><div><label>Brief by email before the meeting</label><input id="s-meeting_reminder_min" type="number" min="0"><p class="hint">Minutes before; 0 switches it off. Sent to whoever booked it.</p></div>
+          <div><label>After a meeting</label><select id="s-meeting_followup"><option value="1">Draft a follow-up email for approval</option><option value="0">Don't draft a follow-up</option></select></div></div></div>
+      <div class="card"><h3>Booking page</h3><div id="bookCard"></div></div>
+     </div>
+
+     <div class="setpane" data-tab="ai"><h2>AI &amp; cost</h2><p class="lead">How much the agent uses Claude, and what it has cost.</p>
+      <div class="card"><h3>Claude</h3>
+        <label>How much to use Claude</label><select id="s-ai_mode" style="width:100%">
+          <option value="economy">Economy (recommended): only for emails that really go out, replies, and posts asking online</option>
+          <option value="full">Full: also research, every draft and call notes (costs more)</option>
+          <option value="off">Off: built-in wording only, no Claude costs</option></select>
+        <div class="frow"><div><label>Model</label><select id="s-ai_model"><option value="claude-haiku-5-5">Claude Haiku 5.5 (cheapest, $0.10 / $0.50 per million tokens)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 ($2 / $10)</option><option value="claude-opus-5-5">Claude Opus 5.5 (best, $4 / $20)</option></select></div>
+          <div><label>Daily budget, USD</label><input id="s-ai_daily_budget" type="number" step="0.05" min="0"></div></div>
+        <label>Your Anthropic credit balance, USD</label>
+        <div class="row"><input id="s-ai_balance" type="number" step="0.01" min="0" placeholder="e.g. 20.00" style="width:140px"><a class="btn" href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Open Anthropic billing ↗</a></div>
+        <p class="hint">Copy it from the billing page; the agent's spend is subtracted from it.</p></div>
+      <div class="card" data-nosave><h3>Usage</h3><div id="usage"></div></div>
+     </div>
+
+     <div class="setpane" data-tab="people" data-perm="users" data-nosave><h2>People &amp; roles</h2><p class="lead">Who can sign in and what each person may do.</p>
+      <div class="card"><div id="people"></div></div>
+     </div>
+
+     <div class="setpane" data-tab="connections" data-nosave><h2>Connections</h2><p class="lead">The outside services this app talks to. They are switched on with variables on the server.</p>
+      <div class="card"><table id="prov"></table>
+        <div class="row" style="margin-top:12px"><button onclick="testEmail(this)">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
+     </div>
+
+     <div class="setpane" data-tab="compliance" data-nosave><h2>Do not contact</h2><p class="lead">Addresses and domains that are never contacted, and the safeguards that always apply.</p>
+      <div class="card"><h3>Do-not-contact list</h3>
+        <div class="row"><input id="supv" placeholder="email, phone or domain" style="flex:1;max-width:340px"><button onclick="addSup()">Add</button></div>
+        <div class="tablewrap" style="max-height:340px;overflow:auto;margin-top:10px"><table id="sup"></table></div></div>
+      <div class="card"><h3>Always on</h3><ul class="muted" style="padding-left:18px;margin:0">
+        <li>Every send checks the do-not-contact list, lawful basis, local business hours (Sun–Thu in the Gulf, Mon–Fri elsewhere; calls 10:00–17:00) and the daily limits.</li>
+        <li>Every email has an unsubscribe link and your postal address. A "stop" reply, a bounce or a spam complaint adds the address to this list for good.</li>
+        <li>AI calls to US/Canada numbers only happen with prior opt-in.</li>
+        <li>Live mode stays locked until the server sets BRN_ALLOW_LIVE=1.</li></ul></div>
+     </div>
+
+    </div>
+   </div>
+   <div class="savebar" id="saveBar"><span id="saveState">All changes saved</span><button class="pri" id="saveBtn" onclick="saveSettings()">Save settings</button></div>
+  </section>
+</main>
 <div class="drawer" id="drawer"></div>
 <div class="compose hide" id="compose"></div>
+<div class="modal" id="ask" style="z-index:40"></div>
 <div class="modal" id="modal"><div class="box"><div class="hd"><h3 id="mTitle"></h3><button onclick="closeModal()">Close</button></div><div class="bd" id="mBody"></div></div></div>
 
 <script>
@@ -481,7 +543,30 @@ const fmt=t=>t?new Date(t).toLocaleString([], {month:'short',day:'numeric',hour:
 const fdate=t=>t?new Date(t).toLocaleDateString([], {month:'short',day:'numeric',year:'2-digit'}):'–';
 let view='overview',PRODUCTS={},ovProduct='',lProduct='',page=0,PAGE=100,sel=new Set(),lastTotal=0,_db;
 const debounce=f=>{clearTimeout(_db);_db=setTimeout(()=>f(0),300)};
-const confirmText=t=>window.confirm(t);
+/* ---- in-page questions instead of browser pop-ups ---- */
+function ask(text,opt={}){return new Promise(res=>{const w=String(text).match(/^(Send|Delete|Skip|Cancel|Discard|Stop|Remove|Never)/),danger=opt.danger??/^(Delete|Cancel|Discard|Stop|Remove|Never)/.test(text);
+  const label=opt.ok||(w?({Never:'Yes, never contact',Cancel:'Yes, cancel it',Stop:'Stop it'})[w[1]]||w[1]:'Confirm'),el=$('#ask');
+  el.innerHTML=`<div class="box" style="width:min(460px,100%)"><div class="bd" style="padding:24px"><p style="margin:0 0 ${opt.input!=null?12:22}px;font-size:15px;line-height:1.55;white-space:pre-line">${esc(text)}</p>
+   ${opt.input!=null?`<input id="askIn" style="width:100%;margin-bottom:20px" placeholder="${esc(opt.input)}" autocomplete="off">`:''}
+   <div class="row" style="justify-content:flex-end">${opt.info?'':'<button id="askNo">Go back</button>'}<button id="askYes" class="pri" ${danger?'style="background:var(--bad);border-color:var(--bad);box-shadow:none"':''}>${esc(label)}</button></div></div></div>`;
+  el.classList.add('open');
+  const done=v=>{el.classList.remove('open');el.innerHTML='';document.removeEventListener('keydown',key,true);res(v)},yes=()=>done(opt.input!=null?$('#askIn').value.trim()||null:true),no=()=>done(opt.input!=null?null:opt.info?true:false);
+  const key=e=>{if(e.key=='Escape'){e.stopPropagation();no()}else if(e.key=='Enter'){e.preventDefault();e.stopPropagation();yes()}};
+  document.addEventListener('keydown',key,true);$('#askYes').onclick=yes;if($('#askNo'))$('#askNo').onclick=no;el.onclick=e=>{if(e.target==el)no()};(opt.input!=null?$('#askIn'):$('#askYes')).focus()})}
+const tell=text=>ask(text,{info:true,ok:'OK',danger:false}),askInput=(text,placeholder)=>ask(text,{input:placeholder||'',ok:'Save',danger:false});
+
+/* ---- a dropdown where several things can be ticked ---- */
+const MS={};
+function multiSel(id,items,selected,onChange,allLabel){const el=$('#'+id),sel=new Set((selected||'').split(',').filter(Boolean));MS[id]={items,onChange,allLabel,open:MS[id]?.open||false};
+  el.innerHTML=`<button class="msb" onclick="msToggle('${id}')"><span class="msl2">${esc(msLabel(id,sel))}</span><span class="car">▾</span></button>
+   <div class="msp ${MS[id].open?'':'hide'}"><input placeholder="Search…" oninput="msFilter('${id}',this.value)"><div class="msl">${items.map(i=>`<label class="msi" data-n="${esc(i.name.toLowerCase())}"><input type="checkbox" value="${esc(i.key)}" ${sel.has(i.key)?'checked':''} onchange="msPick('${id}')"><span>${esc(i.name)}</span><small>${i.n??''}</small></label>`).join('')||'<div class="muted" style="padding:10px">Nothing to choose yet</div>'}</div>
+    <div class="msf"><a onclick="msClear('${id}')">Clear</a><span style="flex:1"></span><a onclick="msToggle('${id}')">Done</a></div></div>`}
+const msLabel=(id,sel)=>sel.size==0?MS[id].allLabel:sel.size==1?(MS[id].items.find(i=>i.key==[...sel][0])||{}).name||'1 selected':sel.size+' selected';
+function msToggle(id){MS[id].open=!MS[id].open;$('#'+id+' .msp').classList.toggle('hide',!MS[id].open);if(MS[id].open)$('#'+id+' .msp input').focus()}
+function msFilter(id,q){q=q.toLowerCase();document.querySelectorAll('#'+id+' .msi').forEach(l=>l.classList.toggle('hide',!!q&&!l.dataset.n.includes(q)))}
+function msPick(id){const vals=[...document.querySelectorAll('#'+id+' .msi input:checked')].map(c=>c.value);$('#'+id+' .msl2').textContent=msLabel(id,new Set(vals));MS[id].onChange(vals.join(','))}
+function msClear(id){document.querySelectorAll('#'+id+' .msi input').forEach(c=>c.checked=false);msPick(id)}
+document.addEventListener('mousedown',e=>{Object.keys(MS).forEach(id=>{if(MS[id].open&&!e.target.closest('#'+id))msToggle(id)})});
 const stageTag=s=>`<span class="tag ${s}">${SL[s]||s}</span>`;
 const prodTag=p=>p?`<span class="tag p">${esc(PRODUCTS[p]?.name||p)}</span>`:'<span class="tag g">no product</span>';
 function alertBanner(t,err){try{const j=JSON.parse(t);if(j.detail)t=j.detail}catch{}$('#banner').innerHTML=`<div class="banner ${err?'':'good'}">${esc(t)}</div>`;window.scrollTo({top:0,behavior:'smooth'});clearTimeout(window._bt);window._bt=setTimeout(()=>$('#banner').innerHTML='',err?20000:7000)}
@@ -501,24 +586,23 @@ async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f
   const keep=id=>{const v=$(id).value;return v};
   [['#f-stage',f.stage,'All statuses'],['#f-segment',f.segment,'All categories'],['#f-country',f.country,'All countries'],['#f-source',f.source,'All sources']].forEach(([id,arr,all])=>{const v=keep(id);$(id).innerHTML=opt(arr,all);$(id).value=v});
   const pc={};f.product.forEach(x=>pc[x.value]=x.n);
-  const chips=(cur,fn)=>`<span class="chip ${cur==''?'on':''}" onclick="${fn}('')">All products</span>`+f.products.filter(p=>pc[p.key]).map(p=>`<span class="chip ${cur==p.key?'on':''}" onclick="${fn}('${p.key}')">${esc(p.name)}<small>${pc[p.key]}</small></span>`).join('');
-  $('#prodChips').innerHTML=chips(lProduct,'setLProd');$('#ovProducts').innerHTML=chips(ovProduct,'setOvProd');
+  const items=f.products.filter(p=>pc[p.key]).map(p=>({key:p.key,name:p.name,n:pc[p.key]}));multiSel('prodChips',items,lProduct,setLProd,'All pipelines');multiSel('ovProducts',items,ovProduct,setOvProd,'All pipelines');
   const popts=f.products.map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');
   $('#bulkProd').innerHTML='<option value="">Set product…</option>'+popts;$('#g-product').innerHTML='<option value="">Any product</option>'+popts;
   $('#imp-product')&&($('#imp-product').innerHTML=popts);$('#bulkStage').innerHTML='<option value="">Set status…</option>'+STAGES.map(s=>`<option value="${s}">${SL[s]}</option>`).join('')}
-function setLProd(p){lProduct=p;loadFacets();loadLeads(0)}function setOvProd(p){ovProduct=p;loadFacets();loadStats()}
+function setLProd(p){lProduct=p;loadLeads(0)}function setOvProd(p){ovProduct=p;loadStats();loadRecent()}
 
 async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='+ovProduct:''));
-  window.AGENT=s.agent_enabled;const ab=$('#agentBtn');ab.classList.toggle('on',s.agent_enabled);$('#agentTxt').textContent=s.agent_enabled?'Running':'Stopped';
+  const A=s.agent||{on:s.agent_enabled,active:s.agent_enabled};window.AGENT=A.on;const ab=$('#agentBtn');ab.classList.toggle('on',A.on);ab.classList.toggle('rest',A.on&&!A.active);$('#agentTxt').textContent=agentNow(A);
   window.MODE=s.mode;$('#mode').textContent=s.mode.replace('_',' ');const L=s.llm_status||{};
   $('#subtitle').textContent=new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'})+' · '+(s.mode=='live'?'Live: emails are sent automatically':'Approval mode: emails are sent when you approve them');
   $('#eng').innerHTML=!s.llm?'Templates only (no key)':L.error?'<span style="color:#f0b400">Problem, using templates</span>':`${esc((L.model||'').replace('claude-','').replace(/-(\d)-(\d)$/,' $1.$2'))} · ${esc(L.ai_mode||'')}`;
   const pct=L.budget?Math.min(100,(L.today||0)/L.budget*100):0;
   $('#spend').innerHTML=s.llm?`<div style="margin-top:4px">${usd(L.today)} today${L.budget?' of $'+L.budget.toFixed(2):''}</div>${L.budget?`<div class="meter"><i style="width:${pct}%"></i></div>`:''}${L.balance_left!=null?`<div style="margin-top:6px">≈ $${L.balance_left.toFixed(2)} credit left</div>`:''}`:'';
-  $('#sysBanner').innerHTML=(!s.agent_enabled?'<div class="banner"><span><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches.</span><button class="sm x" onclick="toggleAgent()">Start agent</button></div>':'')
+  $('#sysBanner').innerHTML=(!A.on?'<div class="banner"><span><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches.</span><button class="sm x" onclick="toggleAgent()">Start agent</button></div>':'')
    +(s.llm&&L.over_budget?`<div class="banner">Today's Claude budget ($${L.budget.toFixed(2)}) is used up, so the agent is on free templates until tomorrow. Change it in Settings &gt; Claude usage.</div>`:'')+(s.llm&&L.error?`<div class="banner"><span><b>Claude isn't answering right now</b>, so the agent is using built-in templates. ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}, retries every 10 minutes)</span></span></div>`:'');
   $('#ncal').textContent=s.kpis.meetings_upcoming;$('#ntask').textContent=s.kpis.tasks_due;$('#ntask').classList.toggle('hot',s.kpis.tasks_due>0);const nm=s.kpis.inbox_unread??s.kpis.unread_mail;$('#nmail').textContent=nm;$('#nmail').classList.toggle('hot',nm>0);$('#napp').textContent=s.kpis.pending_approvals;$('#napp').classList.toggle('hot',s.kpis.pending_approvals>0);
-  $('#agentState').innerHTML=`<b style="font-size:13px"><span class="dot ${s.agent_enabled?'':'off'}"></span>Agent ${s.agent_enabled?'running':'stopped'}</b>`;
+  $('#agentState').innerHTML=`<b style="font-size:13px"><span class="dot ${A.active?'':A.on?'rest':'off'}"></span>Agent ${agentNow(A).toLowerCase()}</b>`;
   if(!ovProduct)$('#nleads').textContent=s.kpis.leads;
   if(view!='overview')return;
   const k=s.kpis,F=[['Leads',k.leads,'in the system'],['Qualified',k.qualified],['Contacted',k.contacted],['Replied',k.replies],['Meetings',k.meetings]];
@@ -619,7 +703,7 @@ function quickActions(l){const A=[];const st=l.stage;
   if(!['lost','won'].includes(st))A.push(['Lost','lost','']);
   if(st!='opted_out')A.push(['Do not contact','opted_out','danger']);
   return A.map(([t,s,c])=>`<button class="sm ${c}" onclick="quickStage(${l.id},'${s}')">${t}</button>`).join('')+(can('calendar')?`<button class="sm" onclick="schedLead()">📅 Schedule meeting</button>`:'')+`<button class="sm" onclick="previewLead(${l.id})">✉ Preview next email</button>`+(l.emails_sent||l.replied_at?`<button class="sm" onclick="openMail(${l.id})">Open conversation</button>`:'')+((!l.email||!l.phone)&&l.contact_name?`<button class="sm" onclick="findContact(${l.id},this)">Find email & phone</button>`:'')}
-async function quickStage(id,stage){if(stage=='opted_out'&&!confirmText('Never contact this lead again?'))return;
+async function quickStage(id,stage){if(stage=='opted_out'&&!await ask('Never contact this lead again?'))return;
   await api('/api/leads/'+id,{method:'PATCH',body:{stage}});toast('Status: '+SL[stage]);openLead(id);refresh()}
 async function markReplied(id){await api('/api/leads/'+id,{method:'PATCH',body:{stage:'replied'}});toast('Marked as replied');openLead(id);refresh()}
 async function saveLead(id){const b={};['contact_name','title','email','phone','website','city','country','segment','product','stage','consent_basis','notes','deal_value','expected_close'].forEach(k=>b[k]=$('#e-'+k).value||null);
@@ -670,35 +754,24 @@ async function loadPeople(){if(!can('users'))return;const r=await api('/api/user
    <div class="row" style="margin-top:10px"><button class="pri" onclick="addUser()">Add person</button><span class="muted" style="font-size:12px">Tell them the password yourself; they can change it after signing in.</span></div>
    <div class="adv">${r.roles.map(x=>`<p style="margin:0 0 6px;font-size:13px"><b>${esc(x.label)}</b> <span class="muted">${esc(x.about)}</span></p>`).join('')}</div>`}
 async function addUser(){const r=await api('/api/users',{method:'POST',body:{name:$('#nu-name').value,email:$('#nu-email').value,role:$('#nu-role').value,password:$('#nu-pw').value}});
-  if(r.first){alert('Your admin account is ready and you are signed in. From now on everyone signs in with their own email and password.');location.reload()}else{toast('Person added');loadPeople()}}
+  if(r.first){await tell('Your admin account is ready and you are signed in. From now on everyone signs in with their own email and password.');location.reload()}else{toast('Person added');loadPeople()}}
 async function patchUser(id,b){try{await api('/api/users/'+id,{method:'PATCH',body:b});toast('Saved')}finally{loadPeople()}}
-async function resetPw(id,name){const p=window.prompt('New password for '+name+' (8 or more characters). They will be signed out everywhere.');if(p)patchUser(id,{password:p})}
-async function delUser(id,name){if(!confirmText('Delete the account of '+name+'? They will no longer be able to sign in. To keep their name on past activity but block access, use Deactivate instead.'))return;await api('/api/users/'+id,{method:'DELETE'});loadPeople()}
+async function resetPw(id,name){const p=await askInput('New password for '+name+'. They will be signed out everywhere.','8 or more characters');if(p)patchUser(id,{password:p})}
+async function delUser(id,name){if(!await ask('Delete the account of '+name+'? They will no longer be able to sign in. To keep their name on past activity but block access, use Deactivate instead.'))return;await api('/api/users/'+id,{method:'DELETE'});loadPeople()}
 
-/* ---- Google Calendar connection (Settings) ---- */
-async function loadGoogle(){if(!can('settings'))return;const g=await api('/api/settings/google'),uri=`<code style="user-select:all">${esc(g.redirect_uri)}</code>`;
-  $('#gcard').innerHTML=g.connected?`<p style="margin:0 0 10px"><span class="tag ok">connected</span> Meetings are created in the calendar of <b>${esc(g.account||'your Google account')}</b>, with a Google Meet link, and Google emails the invitations.</p><button class="danger" onclick="googleOff()">Disconnect</button>`
-   :g.configured?`<p class="muted" style="margin:0 0 10px">Connect the Google account whose calendar the team should use. Meetings booked here get a Google Meet link and Google emails the invitations.</p><a class="btn" href="/oauth/google/start" style="background:var(--blue);color:#fff;border-color:var(--blue)">Connect Google Calendar</a>
-     <p class="muted" style="font-size:12px;margin:10px 0 0">If Google says the redirect address is not allowed, add this one to your OAuth client: ${uri}</p>`
-   :`<p class="muted" style="margin:0 0 8px">Not set up yet. Meetings still work and show on the Calendar page, but without a Meet link or invitations. To turn those on:</p>
-     <ol class="muted" style="margin:0;padding-left:18px;font-size:13px"><li>In Google Cloud Console, enable <b>Google Calendar API</b>.</li><li>Create an OAuth client of type <b>Web application</b> and add this authorised redirect address: ${uri}</li>
-     <li>Add its ID and secret to the server as <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>, then come back here and click Connect.</li></ol>`}
-async function googleOff(){if(!confirmText('Disconnect Google Calendar? Meetings already booked stay in Google, but new ones will have no Meet link.'))return;await api('/api/settings/google/disconnect',{method:'POST'});loadGoogle();loadSettings()}
-
-/* ---- calendar ---- */
-let calAt=new Date(),CAL={meetings:[],google:[],upcoming:[]};const MEET={},TZ=Intl.DateTimeFormat().resolvedOptions().timeZone;
+/* ---- calendar (kept in this app; invitations are emailed from your own mailbox) ---- */
+let calAt=new Date(),CAL={meetings:[],upcoming:[]};const MEET={},TZ=Intl.DateTimeFormat().resolvedOptions().timeZone;
 const dkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-const asDate=t=>/^\d{4}-\d\d-\d\d$/.test(t)?new Date(+t.slice(0,4),+t.slice(5,7)-1,+t.slice(8,10)):new Date(t);
 const hm=t=>new Date(t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
 const whenTxt=m=>new Date(m.starts_at).toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'})+', '+hm(m.starts_at)+' – '+hm(m.ends_at);
 const keepMeet=a=>a.forEach(m=>MEET[m.id]=m);
 function calMove(n){calAt=n?new Date(calAt.getFullYear(),calAt.getMonth()+n,1):new Date();loadCalendar()}
 async function loadCalendar(){const first=new Date(calAt.getFullYear(),calAt.getMonth(),1),gs=new Date(first);gs.setDate(1-first.getDay());const ge=new Date(gs);ge.setDate(gs.getDate()+42);
   CAL=await api('/api/calendar?'+qs({start:gs.toISOString(),end:ge.toISOString()}));keepMeet(CAL.meetings);keepMeet(CAL.upcoming);
-  $('#calTitle').textContent=first.toLocaleDateString([], {month:'long',year:'numeric'});
-  $('#calNote').innerHTML=CAL.error?note('<b>Google Calendar could not be read.</b> '+esc(CAL.error)):CAL.connected?'':note(`<b>Google Calendar is not connected</b>, so meetings booked here have no Google Meet link and no invitation is sent. ${CAL.can_connect?'<a style="cursor:pointer;text-decoration:underline" onclick="show(\'settings\')">Connect it in Settings</a>.':'Ask an admin to connect it in Settings.'}`);
+  $('#calTitle').textContent=first.toLocaleDateString([], {month:'long',year:'numeric'});const fix=CAL.can_settings?' <a style="cursor:pointer;text-decoration:underline" onclick="setTab(\'meetings\');show(\'settings\')">Open Settings</a>.':' Ask an admin to set it up.';
+  $('#calNote').innerHTML=(!CAL.meet_links?note('<b>No Google Meet link is saved yet</b>, so meetings are booked without a video link. Paste one in Settings &gt; Meetings &amp; booking.'+fix):'')
+   +(!CAL.can_email?note('<b>Email sending is not connected</b>, so invitations cannot be emailed. Meetings still show here.'):'');
   const by={};CAL.meetings.forEach(m=>(by[dkey(new Date(m.starts_at))]=by[dkey(new Date(m.starts_at))]||[]).push({t:new Date(m.starts_at),h:`<div class="cev ${m.status}" onclick="event.stopPropagation();showMeeting(${m.id})" title="${esc(m.title)}"><b>${hm(m.starts_at)}</b> ${esc(m.company||m.title)}</div>`}));
-  CAL.google.forEach(g=>{const d=asDate(g.starts_at);(by[dkey(d)]=by[dkey(d)]||[]).push({t:g.all_day?new Date(d.getFullYear(),d.getMonth(),d.getDate(),0,0,-1):d,h:`<a class="cev ext" href="${esc(g.link||'#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${esc(g.title)} (from Google Calendar)">${g.all_day?'':'<b>'+hm(g.starts_at)+'</b> '}${esc(g.title)}</a>`})});
   const today=dkey(new Date());let h=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cdow">${d}</div>`).join('');
   for(let i=0;i<42;i++){const d=new Date(gs);d.setDate(gs.getDate()+i);const k=dkey(d),ev=(by[k]||[]).sort((a,b)=>a.t-b.t);
     h+=`<div class="cday ${d.getMonth()==first.getMonth()?'':'off'} ${k==today?'today':''}" ${can('calendar')?`onclick="openMeeting({date:'${k}'})"`:''}><span class="cnum">${d.getDate()}</span>${ev.map(e=>e.h).join('')}</div>`}
@@ -706,40 +779,42 @@ async function loadCalendar(){const first=new Date(calAt.getFullYear(),calAt.get
   $('#calSide').innerHTML=`<h3>Coming up</h3>`+(CAL.upcoming.map(m=>`<div class="cup" onclick="showMeeting(${m.id})"><div class="cdate"><b>${new Date(m.starts_at).getDate()}</b>${new Date(m.starts_at).toLocaleDateString([], {month:'short'})}</div>
     <div style="flex:1;min-width:0"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.title)}</div><small class="muted">${new Date(m.starts_at).toLocaleDateString([], {weekday:'short'})} ${hm(m.starts_at)}${m.company?' · '+esc(m.company):''}</small></div>
     ${m.meet_link?`<a class="btn sm" href="${esc(m.meet_link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Join</a>`:''}</div>`).join('')||'<p class="muted">No meetings booked. Click a day, or "New meeting".</p>')
-   +`<p class="muted" style="font-size:12px;margin:14px 0 0">Times are shown in your time zone (${esc(TZ)}).${CAL.connected?' Grey entries are other events in '+esc(CAL.account||'the connected Google calendar')+'.':''}</p>`}
-const RSP={accepted:['ok','accepted'],declined:['error','declined'],tentative:['pending_approval','maybe'],needsAction:['g','no answer yet']};
+   +`<p class="muted" style="font-size:12px;margin:14px 0 0">Times are shown in your time zone (${esc(TZ)}).</p>`}
 function showMeeting(id){const m=MEET[id];if(!m)return;const st={scheduled:'ok',done:'g',cancelled:'error'}[m.status],live=m.status=='scheduled',w=can('calendar');
   openModal(m.title,`<div class="kv" style="grid-template-columns:110px 1fr"><span>When</span><div><b>${whenTxt(m)}</b> <span class="tag ${st}">${m.status}</span></div>
    ${m.company?`<span>Lead</span><div><a style="cursor:pointer;text-decoration:underline" onclick="closeModal();openLead(${m.lead_id})">${esc(m.company)}</a>${m.contact_name?' · '+esc(m.contact_name):''}</div>`:''}
-   <span>Google Meet</span><div>${m.meet_link?`<a href="${esc(m.meet_link)}" target="_blank" rel="noopener">${esc(m.meet_link.replace('https://',''))}</a> <button class="sm" onclick="navigator.clipboard.writeText('${esc(m.meet_link)}');toast('Link copied')">Copy</button>`:'<span class="muted">No Meet link (Google Calendar was not connected when this was booked)</span>'}</div>
-   <span>Invited</span><div>${m.attendees.map(a=>`${esc(a.email)} ${m.google_event_id?`<span class="tag ${(RSP[a.response]||RSP.needsAction)[0]}">${(RSP[a.response]||RSP.needsAction)[1]}</span>`:''}`).join('<br>')||'<span class="muted">nobody</span>'}</div>
+   <span>Google Meet</span><div>${m.meet_link?`<a href="${esc(m.meet_link)}" target="_blank" rel="noopener">${esc(m.meet_link.replace('https://',''))}</a> <button class="sm" onclick="navigator.clipboard.writeText('${esc(m.meet_link)}');toast('Link copied')">Copy</button>`:'<span class="muted">No video link on this meeting</span>'}</div>
+   <span>Invited</span><div>${m.attendees.map(a=>esc(a.email)).join('<br>')||'<span class="muted">nobody</span>'}</div>
    ${m.description?`<span>Notes</span><div style="white-space:pre-wrap">${esc(m.description)}</div>`:''}${m.created_by?`<span>Booked by</span><div>${esc(m.created_by)}</div>`:''}</div>
    <div class="row" style="margin-top:18px">${m.meet_link&&live?`<a class="btn" href="${esc(m.meet_link)}" target="_blank" rel="noopener" style="background:var(--blue);color:#fff;border-color:var(--blue)">Join meeting</a>`:''}
-    ${w&&live?`<button onclick="openMeeting(MEET[${m.id}])">Change or move</button><button onclick="meetingStatus(${m.id},'done')">Mark as done</button>`:''}${m.google_link?`<a class="btn" href="${esc(m.google_link)}" target="_blank" rel="noopener">Open in Google Calendar ↗</a>`:''}
+    ${w&&live?`<button onclick="openMeeting(MEET[${m.id}])">Change or move</button><button onclick="meetingStatus(${m.id},'done')">Mark as done</button>`:''}
     <span style="flex:1"></span>${w&&live?`<button class="danger" onclick="cancelMeeting(${m.id})">Cancel meeting</button>`:''}</div>`)}
 async function meetingStatus(id,status){await api('/api/calendar/'+id,{method:'PATCH',body:{status}});closeModal();toast('Marked as '+status);refresh()}
-async function cancelMeeting(id){const m=MEET[id];if(!confirmText('Cancel this meeting?'+(m.google_event_id?' Google will tell the people invited.':'')))return;await api('/api/calendar/'+id,{method:'DELETE'});closeModal();toast('Meeting cancelled');refresh();if($('#drawer').classList.contains('open')&&m.lead_id)openLead(m.lead_id)}
+async function cancelMeeting(id){const m=MEET[id];if(!await ask('Cancel this meeting?'+(m.attendees.length?' The people invited get an email saying it is cancelled.':'')))return;
+  const r=await api('/api/calendar/'+id,{method:'DELETE'});closeModal();toast(r.told.length?'Cancelled, and '+r.told.join(', ')+' told':'Meeting cancelled');refresh();if($('#drawer').classList.contains('open')&&m.lead_id)openLead(m.lead_id)}
 let MF_={};
-function openMeeting(o={}){const edit=!!o.id,d=o.starts_at?new Date(o.starts_at):null,dur=d?Math.round((new Date(o.ends_at)-d)/6e4):30,tm=new Date(Date.now()+864e5);
+function openMeeting(o={}){const edit=!!o.id,d=o.starts_at?new Date(o.starts_at):null,dur=d?Math.round((new Date(o.ends_at)-d)/6e4):30,tm=new Date(Date.now()+864e5),mail=CAL.can_email!==false;
   MF_={id:o.id||null,lead_id:o.lead_id||null,company:o.company||''};
   openModal(edit?'Change meeting':'New meeting',`<div id="mtLead">${meetLead()}</div>
    <label>Title</label><input id="mt-title" style="width:100%" value="${esc(o.title||'')}" placeholder="Intro call">
    <div class="fgrid" style="margin-top:2px"><div><label>Date</label><input id="mt-date" type="date" value="${d?dkey(d):o.date||dkey(tm)}"></div><div><label>Starts at</label><input id="mt-time" type="time" value="${d?String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'):'10:00'}"></div>
     <div><label>Length</label><select id="mt-dur">${[15,30,45,60,90,120].map(n=>`<option value="${n}" ${n==dur?'selected':''}>${n<60?n+' minutes':n/60+(n==60?' hour':' hours')}</option>`).join('')}${[15,30,45,60,90,120].includes(dur)?'':`<option value="${dur}" selected>${dur} minutes</option>`}</select></div></div>
    <label>Invite (email addresses, separated by commas)</label><input id="mt-att" style="width:100%" value="${esc(Array.isArray(o.attendees)?o.attendees.map(a=>a.email||a).join(', '):o.attendees||'')}" placeholder="name@company.com">
+   <label>Google Meet link</label><input id="mt-link" style="width:100%" value="${esc(o.meet_link||'')}" placeholder="${CAL.meet_links===0?'None saved in Settings: paste a link here, or leave empty':'Leave empty to use one of your saved links'}">
    <label>Notes for the invitation</label><textarea id="mt-desc" style="min-height:70px">${esc(o.description||'')}</textarea>
-   ${edit?'':`<label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px;margin-top:12px"><input type="checkbox" id="mt-meet" ${CAL.connected?'checked':'disabled'}> Create a Google Meet link and email the invitation${CAL.connected?'':' <span class="muted">(connect Google Calendar in Settings first)</span>'}</label>`}
-   <div class="row" style="margin-top:14px"><button class="pri" id="mtBtn" onclick="saveMeeting()">${edit?'Save changes':'Book meeting'}</button><span class="muted" style="font-size:12px">Your time zone: ${esc(TZ)}${edit&&o.google_event_id?'. Google tells the people invited about the change.':''}</span></div>`)}
+   <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:14px;margin-top:12px"><input type="checkbox" id="mt-invite" ${mail?'checked':'disabled'}> ${edit?'Email the people invited about the change':'Email the invitation, with a calendar file, to the people invited'}${mail?'':' <span class="muted">(email sending is not connected)</span>'}</label>
+   <div class="row" style="margin-top:14px"><button class="pri" id="mtBtn" onclick="saveMeeting()">${edit?'Save changes':'Book meeting'}</button><span class="muted" style="font-size:12px">Your time zone: ${esc(TZ)}</span></div>`)}
 function meetLead(){return MF_.lead_id?`<div class="row" style="margin-bottom:4px"><span class="tag">Lead · ${esc(MF_.company||'#'+MF_.lead_id)}</span>${MF_.id?'':`<a class="muted" style="cursor:pointer;font-size:12px" onclick="MF_.lead_id=null;MF_.company='';$('#mtLead').innerHTML=meetLead()">remove</a>`}</div>`
   :MF_.id?'':`<label style="margin-top:0">Lead (optional)</label><input id="mt-lq" style="width:100%" placeholder="Search a company or person to link this meeting to" oninput="clearTimeout(window._mlq);window._mlq=setTimeout(meetLeadSearch,300)"><div id="mt-lr" class="row" style="margin-top:6px"></div>`}
 async function meetLeadSearch(){const q=$('#mt-lq').value.trim();if(q.length<2)return $('#mt-lr').innerHTML='';const r=await api('/api/leads?'+qs({q,limit:6}));
   window._mlr=r.rows;$('#mt-lr').innerHTML=r.rows.map((l,i)=>`<button class="sm" onclick="pickMeetLead(${i})">${esc(l.company)}${l.contact_name?' · '+esc(l.contact_name):''}</button>`).join('')||'<span class="muted" style="font-size:12px">No lead matches.</span>'}
 function pickMeetLead(i){const l=window._mlr[i];MF_.lead_id=l.id;MF_.company=l.company;$('#mtLead').innerHTML=meetLead();if(!$('#mt-title').value)$('#mt-title').value='Intro call: '+l.company;if(l.email&&!$('#mt-att').value.includes(l.email))$('#mt-att').value=[$('#mt-att').value,l.email].filter(Boolean).join(', ')}
 async function saveMeeting(){const date=$('#mt-date').value,time=$('#mt-time').value;if(!$('#mt-title').value.trim())return alertBanner('Give the meeting a title',true);if(!date||!time)return alertBanner('Pick a date and time',true);
-  const body={title:$('#mt-title').value,starts_at:new Date(date+'T'+time).toISOString(),duration_min:+$('#mt-dur').value,timezone:TZ,attendees:$('#mt-att').value,description:$('#mt-desc').value};
+  const body={title:$('#mt-title').value,starts_at:new Date(date+'T'+time).toISOString(),duration_min:+$('#mt-dur').value,timezone:TZ,attendees:$('#mt-att').value,description:$('#mt-desc').value,meet_link:$('#mt-link').value.trim(),invite:$('#mt-invite').checked};
   const b=$('#mtBtn');b.disabled=true;b.textContent='Saving…';
-  try{if(MF_.id){await api('/api/calendar/'+MF_.id,{method:'PATCH',body});closeModal();toast('Meeting updated')}
-   else{body.lead_id=MF_.lead_id;body.meet=$('#mt-meet').checked;const r=await api('/api/calendar',{method:'POST',body});closeModal();alertBanner('Meeting booked'+(r.meet_link?'. Google Meet link: '+r.meet_link:'')+(r.invited?'. Invitations were emailed by Google.':r.google?'':'. No invitation was sent: Google Calendar is not connected.'))}
+  try{if(MF_.id){const r=await api('/api/calendar/'+MF_.id,{method:'PATCH',body});closeModal();alertBanner('Meeting updated'+(r.told&&r.told.length?'. Update emailed to '+r.told.join(', '):''))}
+   else{body.lead_id=MF_.lead_id;const r=await api('/api/calendar',{method:'POST',body});closeModal();
+    alertBanner('Meeting booked'+(r.meet_link?'. Meet link: '+r.meet_link:'')+(r.invited.length?'. Invitation emailed to '+r.invited.join(', '):body.invite&&body.attendees?'. No invitation went out'+(r.can_email?'':': email sending is not connected'):'')+(r.shared_link?'. Note: another meeting at that time uses the same Meet link; add a second link in Settings to keep them apart.':''))}
    const lid=MF_.lead_id;await refresh();if($('#drawer').classList.contains('open')&&lid)openLead(lid)}
   finally{const x=$('#mtBtn');if(x){x.disabled=false;x.textContent=MF_.id?'Save changes':'Book meeting'}}}
 function schedLead(){const l=window.LEAD;openMeeting({lead_id:l.id,company:l.company,title:'Intro call: '+l.company,attendees:l.email||''})}
@@ -793,7 +868,7 @@ async function taskEdit(id){const src=TASKS.tasks.concat((window.LEAD||{}).tasks
    <label>Notes</label><textarea id="te-notes" style="min-height:70px">${esc(t.notes||'')}</textarea><div class="row" style="margin-top:14px"><button class="pri" onclick="taskSave(${id},${t.lead_id||0})">Save</button><span style="flex:1"></span><button class="danger" onclick="taskDel(${id},${t.lead_id||0})">Delete task</button></div>`)}
 async function taskSave(id,leadId){const b={title:$('#te-title').value,due_at:$('#te-due').value?new Date($('#te-due').value).toISOString():null,notes:$('#te-notes').value};if($('#te-who'))b.assigned_to=+$('#te-who').value||null;
   await api('/api/tasks/'+id,{method:'PATCH',body:b});closeModal();loadStats();if(view=='tasks')loadTasks();if(leadId&&$('#drawer').classList.contains('open'))openLead(leadId)}
-async function taskDel(id,leadId){if(!confirmText('Delete this task?'))return;await api('/api/tasks/'+id,{method:'DELETE'});closeModal();loadStats();if(view=='tasks')loadTasks();if(leadId&&$('#drawer').classList.contains('open'))openLead(leadId)}
+async function taskDel(id,leadId){if(!await ask('Delete this task?'))return;await api('/api/tasks/'+id,{method:'DELETE'});closeModal();loadStats();if(view=='tasks')loadTasks();if(leadId&&$('#drawer').classList.contains('open'))openLead(leadId)}
 
 /* ---- email templates ---- */
 let TPL={templates:[],values:{}};
@@ -810,21 +885,95 @@ function tplEdit(id){const t=TPL.templates.find(x=>x.id==id)||{name:'',subject:'
   <label>Text</label><textarea id="tp-body" style="min-height:200px">${esc(t.body)}</textarea><p class="muted" style="font-size:12px;margin:6px 0 0">These are filled in for you when the email is to a lead: <code>{{first_name}}</code> <code>{{name}}</code> <code>{{company}}</code> <code>{{sender_name}}</code> <code>{{booking_link}}</code></p>
   <div class="row" style="margin-top:14px"><button class="pri" onclick="tplSave(${id})">Save template</button><span style="flex:1"></span>${id?`<button class="danger" onclick="tplDel(${id})">Delete</button>`:''}</div>`)}
 async function tplSave(id){await api('/api/templates',{method:'POST',body:{id:id||null,name:$('#tp-name').value,subject:$('#tp-subject').value,body:$('#tp-body').value}});closeModal();toast('Template saved');renderTemplates()}
-async function tplDel(id){if(!confirmText('Delete this template?'))return;await api('/api/templates/'+id,{method:'DELETE'});closeModal();renderTemplates()}
+async function tplDel(id){if(!await ask('Delete this template?'))return;await api('/api/templates/'+id,{method:'DELETE'});closeModal();renderTemplates()}
+
+/* ---- settings: tabs, save bar ---- */
+const STABS=[['agent','Agent & sending'],['outreach','Outreach'],['rules','Rules'],['pipelines','Pipelines'],['meetings','Meetings & booking'],['ai','AI & cost'],['people','People & roles','users'],['connections','Connections'],['compliance','Do not contact']];
+let setCur='agent',setDirtyFlag=false;const DAYS=[['6','Sun'],['0','Mon'],['1','Tue'],['2','Wed'],['3','Thu'],['4','Fri'],['5','Sat']];
+function setTab(t){setCur=t;$('#setTabs').innerHTML=STABS.filter(x=>!x[2]||can(x[2])).map(([k,n])=>`<a class="settab ${k==setCur?'on':''}" onclick="setTab('${k}')">${n}</a>`).join('');
+  document.querySelectorAll('.setpane').forEach(p=>p.classList.toggle('hide',p.dataset.tab!=setCur));$('#saveBar').classList.toggle('hide',!!document.querySelector(`.setpane[data-tab="${setCur}"][data-nosave]`)&&!setDirtyFlag)}
+function setDirty(on=true){setDirtyFlag=on;$('#saveState').textContent=on?'You have unsaved changes':'All changes saved';$('#saveBar').classList.toggle('dirty',on);if(on)$('#saveBar').classList.remove('hide')}
+const dayChips=(id,value)=>{const have=String(value||'').split(',').map(x=>x.trim());$('#'+id).innerHTML=DAYS.map(([v,n])=>`<span class="chip ${have.includes(v)?'on':''}" data-d="${v}" onclick="this.classList.toggle('on');setDirty()">${n}</span>`).join('')};
+const dayVals=id=>[...document.querySelectorAll('#'+id+' .chip.on')].map(c=>c.dataset.d).join(',');
+function schedShow(){$('#schedBox').classList.toggle('hide',$('#s-agent_schedule').value!='1')}
+const agentNow=A=>!A||!A.on?'Stopped':A.active?(A.scheduled&&A.until?'Running until '+hm(A.until):'Running'):'Resting'+(A.next_start?' until '+new Date(A.next_start).toLocaleDateString([], {weekday:'short'})+' '+hm(A.next_start):'');
+
+/* ---- sequence editor ---- */
+let SEQ=[];const SACT={intro:'First email',follow_up_1:'Follow-up 1',follow_up_2:'Follow-up 2',breakup:'Last note',call:'Phone call'};
+function seqRender(){$('#seqEd').innerHTML=SEQ.map((s,i)=>`<div class="seqrow"><span class="n">${i+1}</span><span class="muted">Day</span><input type="number" min="0" value="${s.day}" style="width:74px" onchange="SEQ[${i}].day=Math.max(0,+this.value||0);seqSync(true)">
+   <select onchange="seqChan(${i},this.value)"><option value="email" ${s.channel=='email'?'selected':''}>Email</option><option value="phone" ${s.channel=='phone'?'selected':''}>Phone call</option></select>
+   ${s.channel=='email'?`<select onchange="SEQ[${i}].action=this.value;seqSync()">${['intro','follow_up_1','follow_up_2','breakup'].map(a=>`<option value="${a}" ${a==s.action?'selected':''}>${SACT[a]}</option>`).join('')}${SACT[s.action]&&s.action!='call'?'':`<option selected value="${esc(s.action)}">${esc(s.action)}</option>`}</select>`:'<span class="muted" style="flex:1">AI call, or a brief for you to call by hand</span>'}
+   <span style="flex:1"></span><button class="sm ghost" title="Remove this step" onclick="SEQ.splice(${i},1);seqSync(true)">✕</button></div>`).join('')
+  +`<div class="row" style="margin-top:10px"><button class="sm" onclick="seqAdd()">+ Add a step</button><span class="hint" style="margin:0">Day 0 is the day outreach starts. Steps wait for the lead's local business hours.</span></div>`}
+function seqChan(i,ch){SEQ[i].channel=ch;SEQ[i].action=ch=='phone'?'call':'follow_up_1';seqSync(true)}
+function seqAdd(){const last=SEQ[SEQ.length-1],used=SEQ.map(s=>s.action);SEQ.push({day:last?last.day+3:0,channel:'email',action:['intro','follow_up_1','follow_up_2','breakup'].find(a=>!used.includes(a))||'follow_up_2'});seqSync(true)}
+function seqSync(re){SEQ.sort((a,b)=>a.day-b.day);$('#s-sequence').value=JSON.stringify(SEQ,null,1);setDirty();if(re)seqRender()}
+function seqFromText(){try{SEQ=JSON.parse($('#s-sequence').value);seqRender()}catch{alertBanner('The sequence is not valid JSON',true)}}
+
+/* ---- pipeline editor ---- */
+let PL=[];const lines=(a)=>(a||[]).map(x=>typeof x=='string'?x:[x.query,x.country||'',x.limit||''].join(' | ')).join('\n');
+const unlines=(t,objs)=>t.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{if(!objs)return l;const[query,country,limit]=l.split('|').map(x=>x.trim());return{query,country:(country||'SA').toUpperCase(),limit:+limit||20}});
+function plRender(){$('#plList').innerHTML=PL.map((p,i)=>{const s=p.sources||{},src=[(s.places||[]).length&&(s.places.length+' map search'+(s.places.length>1?'es':'')),(s.web||[]).length&&(s.web.length+' web search'+(s.web.length>1?'es':'')),(s.reddit||[]).length&&(s.reddit.length+' intent phrase'+(s.reddit.length>1?'s':''))].filter(Boolean).join(' · ')||'no lead sources yet';
+   return `<div class="trow"><div style="flex:1;min-width:0"><div class="tt">${esc(p.name)} <span class="tag ${p.type=='service'?'g':'p'}">${esc(p.type||'product')}</span>${p.sequence?' <span class="tag g">own sequence</span>':''}</div><small class="muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.pitch||'')}</small><small class="muted">${src}</small></div><button class="sm" onclick="plEdit(${i})">Edit</button></div>`}).join('')
+  +`<div class="row" style="margin-top:12px"><button onclick="plEdit(-1)">+ Add a pipeline</button></div>`}
+function plSync(){$('#s-products').value=JSON.stringify(PL,null,1);setDirty();plRender()}
+function plFromText(){try{PL=JSON.parse($('#s-products').value);plRender()}catch{alertBanner('The pipelines are not valid JSON',true)}}
+function plEdit(i){const p=i<0?{name:'',type:'product',pitch:'',icp:'',sources:{}}:PL[i],s=p.sources||{};
+  openModal(i<0?'New pipeline':'Edit pipeline',`<div class="fgrid"><div><label>Name</label><input id="pl-name" value="${esc(p.name)}"></div><div><label>Kind</label><select id="pl-type"><option value="product" ${p.type!='service'?'selected':''}>Product</option><option value="service" ${p.type=='service'?'selected':''}>Service</option></select></div></div>
+   <label>Pitch (what the agent says you offer)</label><textarea id="pl-pitch" style="min-height:80px">${esc(p.pitch||'')}</textarea>
+   <label>Ideal customer</label><input id="pl-icp" style="width:100%" value="${esc(p.icp||'')}">
+   <label>Its own button link in emails (optional)</label><input id="pl-link" style="width:100%" value="${esc(p.booking_link||'')}" placeholder="Leave empty to use the general one">
+   <h3 style="font-size:14px;margin:18px 0 0">Where to find leads</h3><p class="hint">One search per line: what to search | country code | how many.</p>
+   <label>Google Maps searches</label><textarea id="pl-places" style="min-height:64px" placeholder="salons in Riyadh | SA | 20">${esc(lines(s.places))}</textarea>
+   <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-nosite" ${s.only_without_website?'checked':''}> Keep only businesses with no website</label>
+   <label>Web searches (finds businesses and their published emails)</label><textarea id="pl-web" style="min-height:64px" placeholder="dentists in Austin TX | US | 15">${esc(lines(s.web))}</textarea>
+   <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-wp" ${s.wordpress_only?'checked':''}> Keep only WordPress sites</label>
+   <label>Phrases people post when they need this (Reddit)</label><textarea id="pl-reddit" style="min-height:64px" placeholder="need a website for my business">${esc(lines(s.reddit))}</textarea>
+   <div class="row" style="margin-top:16px"><button class="pri" onclick="plSave(${i})">${i<0?'Add pipeline':'Done'}</button><span class="hint" style="margin:0">Kept when you press "Save settings".</span><span style="flex:1"></span>${i<0?'':`<button class="danger" onclick="plDel(${i})">Delete pipeline</button>`}</div>`)}
+function plSave(i){const name=$('#pl-name').value.trim();if(!name)return alertBanner('Give the pipeline a name',true);
+  const p=i<0?{key:name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'pipeline'}:PL[i];
+  if(i<0){let k=p.key,n=2;while(PL.some(x=>x.key==p.key))p.key=k+'_'+n++}
+  Object.assign(p,{name,type:$('#pl-type').value,pitch:$('#pl-pitch').value.trim(),icp:$('#pl-icp').value.trim()});
+  if($('#pl-link').value.trim())p.booking_link=$('#pl-link').value.trim();else delete p.booking_link;
+  p.sources={...(p.sources||{}),places:unlines($('#pl-places').value,true),web:unlines($('#pl-web').value,true),reddit:unlines($('#pl-reddit').value,false),only_without_website:$('#pl-nosite').checked,wordpress_only:$('#pl-wp').checked};
+  if(i<0)PL.push(p);closeModal();plSync()}
+async function plDel(i){if(!await ask('Delete the pipeline "'+PL[i].name+'"? Its leads stay, but without a pipeline.'))return;PL.splice(i,1);closeModal();plSync()}
+
+/* ---- rules ---- */
+let RULES=null;const ROUT={fix:['needs_contact','waits for a fix'],skip:['blocked','lead is skipped'],review:['pending_approval','paused for you']};
+async function loadRules(){if(!can('settings'))return;RULES=await api('/api/rules');rulesRender()}
+function rulesRender(){if(!RULES)return;
+  $('#rulesBuiltin').innerHTML=RULES.builtin.map((r,i)=>`<div class="rule"><input type="checkbox" class="sw" ${r.on?'checked':''} onchange="RULES.builtin[${i}].on=this.checked;setDirty();rulesRender()" title="${r.on?'On':'Off'}">
+    <div style="flex:1;min-width:0"><div class="tt">${esc(r.name)} <span class="tag ${ROUT[r.outcome][0]}">${ROUT[r.outcome][1]}</span></div><div class="hint" style="margin:2px 0 0">${esc(r.about)}</div>
+    ${'hint' in r?`<input style="width:100%;margin-top:8px" value="${esc(r.value)}" placeholder="${esc(r.hint)}" ${r.on?'':'disabled'} oninput="RULES.builtin[${i}].value=this.value;setDirty()">`:''}</div></div>`).join('');
+  const opt=(o,sel)=>Object.entries(o).map(([k,n])=>`<option value="${k}" ${k==sel?'selected':''}>${esc(n)}</option>`).join('');
+  $('#rulesCustom').innerHTML=(RULES.custom.map((c,i)=>`<div class="seqrow"><span class="muted">When</span><select onchange="RULES.custom[${i}].field=this.value;setDirty()">${opt(RULES.fields,c.field)}</select>
+    <select onchange="RULES.custom[${i}].test=this.value;setDirty();rulesRender()">${opt(RULES.tests,c.test)}</select>
+    ${['empty','not_empty'].includes(c.test)?'':`<input value="${esc(c.value)}" placeholder="value" style="flex:1;min-width:120px" oninput="RULES.custom[${i}].value=this.value;setDirty()">`}
+    <span class="muted">then</span><select onchange="RULES.custom[${i}].outcome=this.value;setDirty()">${opt(RULES.outcomes,c.outcome)}</select><button class="sm ghost" title="Remove this rule" onclick="RULES.custom.splice(${i},1);setDirty();rulesRender()">✕</button></div>`).join('')||'<p class="muted" style="margin:0 0 4px">None yet. For example: when job title contains "student", skip the lead.</p>')
+   +`<div class="row" style="margin-top:10px"><button class="sm" onclick="RULES.custom.push({field:'email',test:'ends',value:'',outcome:'skip',on:true});setDirty();rulesRender()">+ Add a rule</button></div>`}
+const rulesBody=()=>({builtin:Object.fromEntries(RULES.builtin.map(r=>[r.key,{on:r.on,value:r.value}])),custom:RULES.custom});
+async function rulesPreview(apply){if(setDirtyFlag&&!await saveSettings(true))return;const r=await api('/api/rules/preview',{method:'POST',body:{apply:!!apply}});
+  $('#rulesOut').innerHTML=apply?`<div class="banner good"><span>${r.moved} ${r.moved==1?'lead was':'leads were'} moved. Each one's timeline says which rule stopped it.</span></div>`
+   :r.total?`<table><tr><th>Rule</th><th>Leads it stops now</th><th>For example</th></tr>${r.rules.map(x=>`<tr><td>${esc(x.name)}</td><td><b>${x.leads}</b></td><td class="muted">${esc(x.examples.join(', '))}</td></tr>`).join('')}</table>
+     <div class="row" style="margin-top:12px"><button class="pri" onclick="rulesPreview(true)">Apply to these ${r.total} ${r.total==1?'lead':'leads'} now</button><span class="hint" style="margin:0">Otherwise each is stopped when the agent next reaches it. Checking whether a domain can receive email only happens then.</span></div>`
+   :'<p class="muted" style="margin:0">None of the leads the agent is working on breaks a rule.</p>';if(apply)refresh()}
 
 /* ---- booking page settings ---- */
-function bookingCard(s){const days=(s.booking_days||'').split(',').map(x=>x.trim()),D=[['6','Sun'],['0','Mon'],['1','Tue'],['2','Wed'],['3','Thu'],['4','Fri'],['5','Sat']],url=s.booking_url;
-  $('#bookCard').innerHTML=`<p class="muted" style="margin:0 0 8px">A public page where a lead picks a free time themselves. It only offers times inside the hours below that are free in the calendar${s.google&&s.google.connected?' (Google Calendar included)':''}; the meeting then appears on your Calendar page.</p>
-   <div class="row"><code style="user-select:all;font-size:13px;padding:6px 9px">${esc(url)}</code><button class="sm" onclick="navigator.clipboard.writeText('${esc(url)}');toast('Link copied')">Copy</button><a class="btn sm" href="/book" target="_blank" rel="noopener">Open ↗</a>
-    ${s.booking_link==url?'<span class="tag ok">used as the button in emails</span>':`<button class="sm" onclick="$('#s-booking_link').value='${esc(url)}';saveSettings()">Use as the button in emails</button>`}</div>
-   <div class="fgrid" style="margin-top:6px"><div><label>Booking page</label><select id="s-booking_enabled"><option value="1">On</option><option value="0">Off</option></select></div><div><label>Title</label><input id="s-booking_title"></div>
+const BKEYS=['booking_enabled','booking_title','booking_start','booking_end','booking_slot_min','booking_timezone','booking_notice_hours','booking_days_ahead','booking_page_url'];
+function bookingCard(s){const own=(s.booking_page_url||'').trim(),url=own||s.booking_url,code=`<div id="brn-booking"></div>\n<script src="${s.app_url}/book/embed.js" async><\/script>`;
+  $('#bookCard').innerHTML=`<p class="muted" style="margin:0 0 8px">A page where a lead picks a free time themselves. It only offers times inside the hours below that are free in your calendar here.</p>
+   <div class="frow"><div><label>Booking page</label><select id="s-booking_enabled"><option value="1">On</option><option value="0">Off</option></select></div><div><label>Title</label><input id="s-booking_title"></div>
     <div><label>From</label><input id="s-booking_start" type="time"></div><div><label>Until</label><input id="s-booking_end" type="time"></div>
     <div><label>Length</label><select id="s-booking_slot_min">${[15,20,30,45,60].map(n=>`<option value="${n}">${n} minutes</option>`).join('')}</select></div>
     <div><label>Time zone of these hours</label><input id="s-booking_timezone" placeholder="Asia/Riyadh"></div><div><label>Earliest booking (hours from now)</label><input id="s-booking_notice_hours" type="number" min="0"></div><div><label>How many days ahead</label><input id="s-booking_days_ahead" type="number" min="1" max="60"></div></div>
-   <label>Days</label><div class="chips" id="bkDays">${D.map(([v,n])=>`<span class="chip ${days.includes(v)?'on':''}" data-d="${v}" onclick="this.classList.toggle('on')">${n}</span>`).join('')}</div>
-   <p class="muted" style="font-size:12px;margin:10px 0 0">Saved with the "Save settings" button at the bottom of the page.</p>`;
-  BKEYS.forEach(k=>{if($('#s-'+k))$('#s-'+k).value=s[k]??''})}
-const BKEYS=['booking_enabled','booking_title','booking_start','booking_end','booking_slot_min','booking_timezone','booking_notice_hours','booking_days_ahead'];
+   <label>Days</label><div class="chips" id="bkDays"></div>
+   <h3 style="font-size:14px;margin:20px 0 0">Put it on your own website</h3>
+   <p class="hint">Paste this where the booking page should appear on brndynamics.com (for example on a page at /book). It shows the same booking page inside yours and sizes itself.</p>
+   <pre style="user-select:all;margin:6px 0 0">${esc(code)}</pre><div class="row" style="margin-top:6px"><button class="sm" data-nosave onclick="navigator.clipboard.writeText(${JSON.stringify(code).replace(/"/g,'&quot;')});toast('Code copied')">Copy code</button><a class="btn sm" href="/book" target="_blank" rel="noopener">See the page ↗</a></div>
+   <label>Address of that page on your website</label><input id="s-booking_page_url" style="width:100%" placeholder="https://brndynamics.com/book"><p class="hint">Once the code is on your site, enter its address here. Emails then link to it, and each lead gets a personal link that already knows who they are.</p>
+   <div class="row" style="margin-top:6px"><span class="muted" style="font-size:13px">Link used in emails now:</span><code>${esc(s.booking_link||'none')}</code>${s.booking_link==url?'<span class="tag ok">the booking page</span>':`<button class="sm" data-nosave onclick="$('#s-booking_link').value=($('#s-booking_page_url').value.trim()||'${esc(s.booking_url)}');setDirty();toast('Press Save settings to keep it')">Use the booking page</button>`}</div>`;
+  BKEYS.forEach(k=>{if($('#s-'+k))$('#s-'+k).value=s[k]??''});dayChips('bkDays',s.booking_days)}
 function openAdd(){const f=(k,n,ph,t)=>`<div><label>${n}</label><input id="al-${k}" placeholder="${ph||''}" ${t?`type="${t}"`:''} style="width:100%"></div>`;
   openModal('Add a lead',`<div class="fgrid">${f('company','Company *','Pulse Fitness')}${f('contact_name','Contact name','Sara Ahmed')}${f('title','Job title','Operations Director')}${f('email','Email','sara@pulsefitness.com','email')}
    ${f('phone','Phone','+966 5x xxx xxxx')}${f('website','Website','https://')}${f('linkedin','LinkedIn profile','linkedin.com/in/…')}${f('city','City','Jeddah')}
@@ -880,7 +1029,7 @@ const appContent=id=>{const c={subject:$('#as'+id).value,body:$('#ab'+id).value}
 function appBar(){const n=appSel.size,all=APPS.length&&n==APPS.length;$('#appBar').innerHTML=`<label style="color:#fff;margin:0;display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" ${all?'checked':''} onchange="APPS.forEach(a=>this.checked?appSel.add(a.id):appSel.delete(a.id));document.querySelectorAll('.apck').forEach(c=>c.checked=this.checked);appBar()"> ${n?n+' of '+APPS.length+' selected':'Select all '+APPS.length}</label>
   <span style="flex:1"></span><button id="appGo" ${n?'':'disabled'} onclick="decideBulk(true)">Approve and send ${n||''}</button><button ${n?'':'disabled'} onclick="decideBulk(false)">Skip ${n||''}</button>`}
 async function decideBulk(ok){const picked=APPS.filter(a=>appSel.has(a.id));if(!picked.length)return;
-  if(!confirmText(ok?`Send ${picked.length} ${picked.length==1?'item':'items'} now? Emails go out for real, with any edits you made on this page.`:`Skip ${picked.length} ${picked.length==1?'draft':'drafts'}? ${appTab=='replies'?'No answer will be sent.':'Those steps will not be sent.'}`))return;
+  if(!await ask(ok?`Send ${picked.length} ${picked.length==1?'item':'items'} now? Emails go out for real, with any edits you made on this page.`:`Skip ${picked.length} ${picked.length==1?'draft':'drafts'}? ${appTab=='replies'?'No answer will be sent.':'Those steps will not be sent.'}`))return;
   const items=picked.map(a=>ok&&a.channel=='email'&&$('#as'+a.id)?{id:a.id,content:appContent(a.id)}:{id:a.id});
   document.querySelectorAll('#appBar button').forEach(b=>b.disabled=true);$('#appGo').textContent=ok?'Sending…':'Skipping…';
   try{const r=await api('/api/approvals/bulk',{method:'POST',body:{approve:ok,items}});appSel.clear();
@@ -931,7 +1080,7 @@ function renderFolder(){const role=mbRole(),out=role=='sent'||role=='drafts',n=M
    ||`<div class="empty"><h3>Nothing here</h3><p class="muted">${$('#mq').value||MB.filter!='all'?'No email matches this search or filter.':'This folder is empty.'}</p></div>`)}
 async function mbFlag(uids,body){await api('/api/mailbox/flags',{method:'POST',body:{folder:MB.folder,uids,...body}});MB.sel.clear();loadMail();loadStats()}
 async function mbStar(u){const x=MB.rows.find(r=>r.uid==u);if(!x)return;x.starred=!x.starred;renderFolder();await api('/api/mailbox/flags',{method:'POST',body:{folder:MB.folder,uids:[u],starred:x.starred}})}
-async function mbMove(uids,to){if(!uids.length)return;const gone=to=='delete'||(to=='trash'&&mbRole()=='trash');if(gone&&!confirmText(`Delete ${uids.length==1?'this email':uids.length+' emails'} for good? This cannot be undone.`))return;
+async function mbMove(uids,to){if(!uids.length)return;const gone=to=='delete'||(to=='trash'&&mbRole()=='trash');if(gone&&!await ask(`Delete ${uids.length==1?'this email':uids.length+' emails'} for good? This cannot be undone.`))return;
   await api('/api/mailbox/move',{method:'POST',body:{folder:MB.folder,uids,to}});if(uids.includes(MB.open)){MB.open=null;$('#mthread').innerHTML=''}MB.sel.clear();
   toast(gone?'Deleted for good':to=='trash'?'Moved to Trash':to=='spam'?'Moved to Spam':to=='archive'?'Archived':'Moved to Inbox');loadMail();loadStats()}
 async function openMsg(uid){if(mbRole()=='drafts')return openDraft(uid);const m=await api('/api/mailbox/message?'+mbQ({uid}));MB.open=uid;MB.msg=m;const x=MB.rows.find(r=>r.uid==uid),was=x&&!x.seen;if(x)x.seen=true;renderFolder();
@@ -982,9 +1131,9 @@ function cSave(c){clearTimeout(c.t);const say=t=>{if(c===C&&$('#cState'))$('#cSt
       c.draft_uid=d.uid;c.draft_folder=d.folder;c.files=c.files.filter(f=>!sent.includes(f));if(d.uid)c.carry=d.attachments.length?{folder:d.folder,uid:d.uid,items:d.attachments}:null;
       c.sig=cSig(c)==sig||!c.files.length?cSig(c):null;say('Draft saved');if(c===C)cAtts()}catch{say('Draft not saved')}})}
 async function cClose(){const c=C;if(!c)return;cRead();C=null;$('#compose').className='compose hide';if(c.touched&&MB.on&&cSig(c)!=c.sig){await cSave(c);toast('Saved to Drafts')}else await c.chain;if(view=='mail')loadMail()}
-async function cDiscard(){const c=C;if(!c)return;if((c.touched||c.draft_uid)&&!confirmText('Discard this email? The draft will be deleted.'))return;c.gone=true;clearTimeout(c.t);C=null;$('#compose').className='compose hide';await c.chain;
+async function cDiscard(){const c=C;if(!c)return;if((c.touched||c.draft_uid)&&!await ask('Discard this email? The draft will be deleted.'))return;c.gone=true;clearTimeout(c.t);C=null;$('#compose').className='compose hide';await c.chain;
   if(c.draft_uid&&c.draft_folder)await api('/api/mailbox/move',{method:'POST',body:{folder:c.draft_folder,uids:[c.draft_uid],to:'delete'}});if(view=='mail')loadMail()}
-async function cSend(){const c=C;cRead();if(!(c.to+c.cc+c.bcc).includes('@'))return alertBanner('Add at least one email address',true);if(!c.subject.trim()&&!confirmText('Send without a subject?'))return;
+async function cSend(){const c=C;cRead();if(!(c.to+c.cc+c.bcc).includes('@'))return alertBanner('Add at least one email address',true);if(!c.subject.trim()&&!await ask('Send without a subject?'))return;
   const b=$('#cSend');b.disabled=true;b.textContent='Sending…';clearTimeout(c.t);await c.chain;
   try{const r=await api('/api/mailbox/send',{method:'POST',body:{...cBody(c),answered:c.answered}});c.gone=true;C=null;$('#compose').className='compose hide';toast('Sent to '+r.to.join(', '));refresh()}
   catch{if($('#cSend')){b.disabled=false;b.textContent='Send'}}}
@@ -1017,37 +1166,42 @@ async function openThread(id){mailLead=id;history.replaceState(null,'','#mail/'+
   const row=document.querySelector(`.mrow[onclick="openThread(${id})"]`);if(row){row.classList.add('on');row.classList.remove('unread');row.querySelector('.udot')?.remove()}
   const b=$('#mmsgs');b.scrollTop=b.scrollHeight;loadStats()}
 async function sendMail(id){const subject=$('#msubj').value.trim(),body=$('#mbody').value.trim();if(!subject||!body)return alertBanner('Write a subject and a message first',true);
-  if(!confirmText('Send this email now?'))return;const b=$('#msend');b.disabled=true;b.textContent='Sending…';
+  if(!await ask('Send this email now?'))return;const b=$('#msend');b.disabled=true;b.textContent='Sending…';
   try{await api('/api/mail/'+id+'/send',{method:'POST',body:{subject,body}});$('#mbody').value='';toast('Reply sent');await openThread(id);loadMail()}finally{const x=$('#msend');if(x){x.disabled=false;x.textContent='Send reply'}}}
 async function syncMail(b){b.disabled=true;b.textContent='Checking…';try{const r=await api('/api/inbox/check',{method:'POST'});toast(r.replies?r.replies+' new '+(r.replies==1?'reply':'replies'):'No new replies');await refresh()}finally{b.disabled=false;b.textContent='Check mail'}}
 const usd=v=>'$'+(+v||0).toFixed((+v||0)<1?4:2);
-async function toggleAgent(){const on=!window.AGENT;if(!on&&!confirmText('Stop the agent? Nothing will run until you start it again.'))return;
+async function toggleAgent(){const on=!window.AGENT;if(!on&&!await ask('Stop the agent? Nothing will run until you start it again.'))return;
   await api('/api/agent/state',{method:'POST',body:{on}});toast(on?'Agent started':'Agent stopped');refresh()}
 async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}});toast('Send mode: '+m);refresh()}
 async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content=appContent(id);if(b){b.disabled=true;b.textContent='Sending…'}
   try{await api('/api/approvals/'+id,{method:'POST',body});toast(ok?'Sent':'Skipped')}finally{appSel.delete(id);appsDirty=false;refresh()}}
 
-const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product','currency','ab_subjects','meeting_reminder_min','meeting_followup'];
-async function loadSettings(){loadPeople();loadGoogle();renderTemplates();const s=await api('/api/settings');bookingCard(s);
+const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product','currency','ab_subjects','meeting_reminder_min','meeting_followup','agent_schedule','agent_start','agent_end','agent_timezone','meet_links'];
+async function loadSettings(){if(setDirtyFlag)return;setTab(setCur);loadPeople();renderTemplates();loadRules();const s=await api('/api/settings');bookingCard(s);
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
-  SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');$('#s-sequence').value=JSON.stringify(s.sequence,null,1);$('#s-products').value=JSON.stringify(s.products,null,1);
-  $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');
-  $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;$('#logoNote').textContent=s.logo_effective?'Emails load the logo from '+s.logo_effective:'No public address for this server is known, so emails show the name as text instead of the logo. Paste a logo address above to fix that.';
+  SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');SEQ=s.sequence||[];$('#s-sequence').value=JSON.stringify(SEQ,null,1);seqRender();PL=s.products||[];$('#s-products').value=JSON.stringify(PL,null,1);plRender();
+  $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');dayChips('agDays',s.agent_days);schedShow();
+  api('/api/stats').then(st=>{$('#agNow').textContent='Right now: '+agentNow(st.agent).toLowerCase();$('#agNow').className='tag '+(st.agent.active?'ok':st.agent.on?'pending_approval':'blocked')});
+  $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;$('#logoNote').textContent=s.logo_effective?'Leave empty to use the built-in brn dynamics logo. Emails load it from '+s.logo_effective:'No public address for this server is known, so emails show the name as text instead of the logo. Paste a logo address to fix that.';
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
-  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Calendar and Google Meet','calendar','GOOGLE_CLIENT_ID, then Connect above'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
+  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['Google Meet links for meetings','meet','Paste them under Meetings & booking'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
+  setDirty(false);setTab(setCur);
   const u=await api('/api/ai/usage');
   $('#usage').innerHTML=`<div class="kpis" style="margin-bottom:8px"><div class="kpi"><span>Today</span><b>${usd(u.today)}</b></div><div class="kpi"><span>This month</span><b>${usd(u.month)}</b></div>
    <div class="kpi"><span>Balance left (estimate)</span><b>${u.balance_left!=null?'$'+u.balance_left.toFixed(2):'–'}</b></div></div>
    <p class="muted" style="font-size:12px;margin:0 0 8px">Anthropic doesn't let an app read your credit balance, so this is counted from every Claude call the agent makes${u.balance_at?', starting from the balance you entered on '+fdate(u.balance_at):''}. The billing page has the exact figure.</p>
    ${u.days.length?`<table><tr><th>Day</th><th>Claude calls</th><th>Tokens in / out</th><th>Cost</th></tr>${u.days.slice(0,10).map(d=>`<tr><td>${d.day}</td><td>${d.calls}</td><td class="muted">${d.input_tokens.toLocaleString()} / ${d.output_tokens.toLocaleString()}</td><td>${usd(d.cost)}</td></tr>`).join('')}</table>
    <p class="muted" style="font-size:12px">Last 30 days by task: ${u.tasks.map(t=>`${t.task} ${t.calls} calls ${usd(t.cost)}`).join(' · ')}</p>`:'<p class="muted">No Claude calls recorded yet.</p>'}`;
-  const sup=await api('/api/suppression');$('#sup').innerHTML=sup.map(x=>`<tr><td>${esc(x.value)}</td><td class="muted">${esc(x.reason)}</td></tr>`).join('')||'<tr><td class="muted">Empty</td></tr>'}
-async function saveSettings(){const b={};SKEYS.concat(BKEYS).forEach(k=>b[k]=$('#s-'+k).value);b.booking_days=[...document.querySelectorAll('#bkDays .chip.on')].map(c=>c.dataset.d).join(',');
-  try{b.sequence=JSON.parse($('#s-sequence').value)}catch{return alertBanner('Sequence is not valid JSON',true)}
-  try{b.products=JSON.parse($('#s-products').value)}catch{return alertBanner('Products is not valid JSON',true)}
+  const sup=await api('/api/suppression');$('#sup').innerHTML=sup.map(x=>`<tr><td>${esc(x.value)}</td><td class="muted">${esc(x.reason)}</td></tr>`).join('')||'<tr><td class="muted">Nobody is on the list yet</td></tr>'}
+async function saveSettings(quiet){const b={};SKEYS.concat(BKEYS).forEach(k=>{if($('#s-'+k))b[k]=$('#s-'+k).value});b.booking_days=dayVals('bkDays');b.agent_days=dayVals('agDays');
+  try{b.sequence=JSON.parse($('#s-sequence').value)}catch{alertBanner('The sequence is not valid JSON',true);return false}
+  try{b.products=JSON.parse($('#s-products').value)}catch{alertBanner('The pipelines are not valid JSON',true);return false}
+  if(b.agent_schedule=='1'&&!b.agent_days){alertBanner('Pick at least one day for the agent to work',true);return false}
   b.discovery_queries=$('#s-discovery').value.split('\n').map(l=>l.split('|').map(x=>x.trim())).filter(p=>p[0]).map(([query,country,limit])=>({query,country:(country||'SA').toUpperCase(),limit:+limit||20}));
-  await api('/api/settings',{method:'POST',body:b});alertBanner('Saved');loadFacets();refresh()}
+  const btn=$('#saveBtn');btn.disabled=true;btn.textContent='Saving…';
+  try{await api('/api/settings',{method:'POST',body:b});if(RULES)await api('/api/rules',{method:'POST',body:rulesBody()});setDirty(false);if(!quiet)toast('Settings saved');await loadMe();loadFacets();await refresh();return true}
+  catch{return false}finally{btn.disabled=false;btn.textContent='Save settings'}}
 async function testEmail(b){b.disabled=true;b.textContent='Sending…';try{const r=await api('/api/email/test',{method:'POST'});alertBanner('Test email sent to '+r.sent_to+' via '+r.via+'. Check that inbox.')}finally{b.disabled=false;b.textContent='Send test email to myself'}}
 async function checkInbox(){const r=await api('/api/inbox/check',{method:'POST'});alertBanner(r.replies+' lead replies processed');refresh()}
 async function addSup(){await api('/api/suppression',{method:'POST',body:{value:$('#supv').value,reason:'manual'}});$('#supv').value='';loadSettings()}
@@ -1103,7 +1257,7 @@ async function loadSetup(){if(view!='overview')return;const[s,st]=await Promise.
    <div class="steps">${steps.map(([ok,t,sub,on],i)=>`<div class="step ${ok?'done':''}" onclick="${on}"><span class="n">${ok?'✓':i+1}</span><b>${t}</b><small>${sub}</small></div>`).join('')}</div>`}
 document.addEventListener('keydown',e=>{if(e.key=='Escape'){closeModal();$('#drawer').classList.remove('open')}});
 document.addEventListener('mousedown',e=>{const d=$('#drawer');if(d.classList.contains('open')&&!d.contains(e.target)&&!$('#modal').contains(e.target)&&!e.target.closest('tr.click,.kcard,.fi,.att a'))d.classList.remove('open')});
-loadMe().then(loadTemplates).then(loadFacets).then(()=>{const g=new URLSearchParams(location.search).get('google');if(g){history.replaceState(null,'',location.pathname+location.hash);setTimeout(()=>alertBanner(g=='ok'?'Google Calendar is connected. New meetings get a Google Meet link.':'Google Calendar was not connected: '+g,g!='ok'),400)}const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh()});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings'&&!(view=='approvals'&&(appsDirty||appSel.size)))refresh()},20000);
+loadMe().then(loadTemplates).then(loadFacets).then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh();$('#setBody').addEventListener('input',e=>{if(!e.target.closest('[data-nosave]'))setDirty()});$('#setBody').addEventListener('change',e=>{if(!e.target.closest('[data-nosave]'))setDirty()})});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings'&&!(view=='approvals'&&(appsDirty||appSel.size)))refresh()},20000);
 
 /* ---- assistant chat (bottom corner) ---- */
 (function(){
