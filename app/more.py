@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, Response
 from . import agent, auth, compliance, db
 from . import main as M
 from . import invites, rules
+from .providers import llm
 
 router = APIRouter()
 
@@ -129,6 +130,122 @@ def forecast(product=None):
             "by_month": [{**m, "weighted": round(m["weighted"], 2)} for _, m in sorted(months.items(), key=lambda x: (x[0] == "no date", x[0]))],
             "top": [{**d, "chance": STAGE_CHANCE.get(d["stage"], 0)} for d in sorted(open_, key=lambda d: -d["deal_value"])[:8]],
             "chances": STAGE_CHANCE, "no_value": db.one(f"SELECT COUNT(*) n FROM leads WHERE stage IN ('replied','meeting_booked') AND (deal_value IS NULL OR deal_value=0) {lw}", largs)["n"]}
+
+
+# ---------- email coach: how emails should be written ----------
+def _guidance():
+    try:
+        g = json.loads(db.setting("email_guidance") or "{}")
+    except ValueError:
+        g = {}
+    return {"all": g.get("all") or "", "by_pipeline": {k: v for k, v in (g.get("by_pipeline") or {}).items() if v}, "examples": (g.get("examples") or [])[:5]}
+
+
+def _sent_with_outcome(days=90, limit=400):
+    """Outreach emails the agent sent, each with what came back: [{id, lead_id, company, step, subject, body, at, outcome}]."""
+    since = _iso(datetime.now(timezone.utc) - timedelta(days=days))
+    rows = db.q("""SELECT a.id, a.lead_id, a.kind, a.summary, a.payload, a.created_at, l.company FROM activities a JOIN leads l ON l.id=a.lead_id
+                   WHERE ((a.kind='email_sent' AND a.status='ok') OR a.kind='email_reply') AND a.created_at>=? ORDER BY a.id""", (since,))
+    out, last = [], {}
+    for a in rows:
+        p = json.loads(a["payload"] or "{}")
+        if a["kind"] == "email_sent":
+            if p.get("manual"):
+                last.pop(a["lead_id"], None)
+                continue
+            e = {"id": a["id"], "lead_id": a["lead_id"], "company": a["company"], "step": _action(a, p), "subject": p.get("subject") or "",
+                 "body": (p.get("body") or "").split("\n\n--\n")[0], "at": a["created_at"], "outcome": "no reply"}
+            out.append(e); last[a["lead_id"]] = e
+        elif a["lead_id"] in last and last[a["lead_id"]]["outcome"] == "no reply":
+            last[a["lead_id"]]["outcome"] = "reply: " + (p.get("intent") or "replied")
+    return out[-limit:]
+
+
+@router.get("/api/coach")
+def coach():
+    sent = _sent_with_outcome()
+    subjects = {}
+    for e in sent:
+        s = subjects.setdefault(e["subject"], {"subject": e["subject"], "sent": 0, "replies": 0, "positive": 0})
+        s["sent"] += 1; s["replies"] += e["outcome"] != "no reply"; s["positive"] += e["outcome"].split(": ")[-1] in POSITIVE
+    ok, why = llm.enabled() and llm._usable("email"), ""
+    if not ok:
+        why = ("Claude is not connected (no ANTHROPIC_API_KEY), so emails use built-in wording and these instructions have no effect yet." if not llm.enabled()
+               else "Claude is switched off or over today's budget, so emails use built-in wording and these instructions have no effect right now.")
+    return {"guidance": _guidance(), "pipelines": [{"key": k, "name": p["name"]} for k, p in db.products().items()], "ai": ok, "ai_note": why,
+            "sent": len(sent), "replied": sum(e["outcome"] != "no reply" for e in sent),
+            "subjects": sorted((s for s in subjects.values() if s["replies"]), key=lambda s: (-s["replies"], -s["sent"]))[:8],
+            "worked": [e for e in reversed(sent) if e["outcome"] != "no reply" and e["outcome"].split(": ")[-1] not in ("not_interested", "unsubscribe")][:6]}
+
+
+@router.post("/api/coach")
+def save_coach(p: dict = Body(...)):
+    g = {"all": (p.get("all") or "").strip()[:4000], "by_pipeline": {k: str(v).strip()[:2000] for k, v in (p.get("by_pipeline") or {}).items() if k in db.products() and str(v).strip()},
+         "examples": [{"subject": (e.get("subject") or "").strip()[:200], "body": (e.get("body") or "").strip()[:2000]} for e in (p.get("examples") or []) if (e.get("body") or "").strip()][:5]}
+    db.set_setting("email_guidance", json.dumps(g, ensure_ascii=False))
+    db.log(None, "system", "Email writing instructions changed", channel="system")
+    return {"ok": True}
+
+
+@router.post("/api/coach/try")
+def coach_try(p: dict = Body(...)):
+    """Write a sample email with the instructions as they are on the page right now (saved or not)."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (int(p["lead_id"]),)) if p.get("lead_id") else None
+    lead = lead or db.one("SELECT * FROM leads WHERE product=? AND research IS NOT NULL ORDER BY score DESC LIMIT 1", (p.get("product") or "",)) or \
+        {"id": 0, "step": 0, "company": "Acme Fitness", "contact_name": "Sarah Miller", "city": "Riyadh", "country": "SA", "product": p.get("product"), "research": None}
+    lead = {**lead, "product": p.get("product") or lead.get("product")}
+    s = agent._settings(lead)
+    if "guidance" in p:   # try the text on the page before saving it
+        s["guidance"] = "\n".join(x for x in [(p["guidance"].get("all") or "").strip(), ((p["guidance"].get("by_pipeline") or {}).get(s["product_key"]) or "").strip()] if x)
+        s["examples"] = [e for e in p["guidance"].get("examples") or [] if e.get("body")][:5]
+    research = json.loads(lead.get("research") or "null") or llm.research(lead, s["offer"], s["icp"], s["product_key"]) or {}
+    used_ai = llm.enabled() and llm._usable("email")
+    out = llm.write_email(lead, research, p.get("action") or "intro", s)
+    return {"subject": out.get("subject"), "body": out.get("body"), "cta": out.get("cta"), "for": lead["company"], "used_ai": bool(used_ai), "pipeline": s.get("product_name")}
+
+
+@router.post("/api/coach/suggest")
+def coach_suggest():
+    """Claude reads what was sent and how people answered, and proposes instructions to add."""
+    if not (llm.enabled() and llm._usable("coach")):
+        raise HTTPException(400, "This needs Claude, which is not connected, is switched off, or is over today's budget.")
+    sent = _sent_with_outcome(days=120, limit=40)
+    if len(sent) < 5:
+        raise HTTPException(400, f"Only {len(sent)} outreach emails have been sent so far. Come back when there are more to learn from.")
+    g = _guidance()
+    try:
+        out = llm.coach_suggestions(g["all"], [{"step": e["step"], "subject": e["subject"], "body": e["body"][:700], "outcome": e["outcome"]} for e in sent])
+    except Exception as e:
+        raise HTTPException(502, f"Claude could not review the emails: {e}")
+    return {"observations": out.get("observations") or [], "suggestions": [x for x in out.get("suggestions") or [] if isinstance(x, dict) and x.get("text")],
+            "based_on": len(sent), "replied": sum(e["outcome"] != "no reply" for e in sent)}
+
+
+@router.post("/api/approvals/{approval_id}/rewrite")
+def rewrite_draft(approval_id: int, p: dict = Body(...)):
+    """Tell the AI what to change in one waiting draft. With remember, the same instruction is kept for future emails."""
+    feedback = (p.get("feedback") or "").strip()
+    if not feedback:
+        raise HTTPException(400, "Say what should change.")
+    a = db.one("SELECT * FROM approvals WHERE id=? AND state='pending'", (approval_id,))
+    if not a or a["channel"] != "email":
+        raise HTTPException(404, "That draft is no longer waiting.")
+    lead = db.one("SELECT * FROM leads WHERE id=?", (a["lead_id"],))
+    c = json.loads(a["content"])
+    try:
+        new = llm.rewrite_email(p.get("subject") or c.get("subject"), p.get("body") or c.get("body"), feedback, agent._settings(lead), signed=a["action"] in ("reply", "followup"))
+    except Exception as e:
+        raise HTTPException(502, f"Claude could not rewrite it: {e}")
+    if not new:
+        raise HTTPException(400, "Rewriting needs Claude, which is not connected, is switched off, or is over today's budget. You can edit the text yourself.")
+    c.update(subject=new["subject"], body=new["body"])
+    db.ex("UPDATE approvals SET content=? WHERE id=?", (json.dumps(c, ensure_ascii=False), approval_id))
+    db.log(a["lead_id"], "system", f"Draft rewritten on request: {feedback[:120]}", channel="system")
+    if p.get("remember"):
+        g = _guidance()
+        g["all"] = (g["all"] + "\n" if g["all"] else "") + "- " + feedback
+        db.set_setting("email_guidance", json.dumps(g, ensure_ascii=False))
+    return {"subject": new["subject"], "body": new["body"], "remembered": bool(p.get("remember"))}
 
 
 # ---------- rules ----------

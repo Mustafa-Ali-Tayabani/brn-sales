@@ -60,7 +60,7 @@ async def gate(request: Request, call_next):
         user = user or auth.IMPLICIT_ADMIN
         need = auth.required(request.method, path)
         if path not in OWN and need not in auth.perms(user):
-            return JSONResponse({"detail": f"Your role ({auth.ROLES[user['role']]['label']}) can't do this. It needs permission to: {auth.PERMS[need].lower()}."}, status_code=403)
+            return JSONResponse({"detail": f"Your role ({auth.roles().get(user['role'], {}).get('label', user['role'])}) can't do this. It needs permission to: {auth.PERMS[need].lower()}."}, status_code=403)
         if path.startswith("/api/mailbox/") and path != "/api/mailbox/folders" and _mailbox_locked(request):
             return JSONResponse({"detail": MAILBOX_LOCKED}, status_code=403)
     mark = db.actor.set(user)
@@ -128,7 +128,7 @@ def logout(request: Request):
 def me():
     u = db.actor.get() or auth.IMPLICIT_ADMIN
     return {"user": {k: u.get(k) for k in ("id", "name", "email", "role")}, "perms": auth.perms(u), "mode": auth.mode(),
-            "role_label": auth.ROLES[u["role"]]["label"], "currency": db.setting("currency") or "USD"}
+            "role_label": auth.roles().get(u["role"], {}).get("label", u["role"]), "currency": db.setting("currency") or "USD"}
 
 
 @app.post("/api/password")
@@ -150,7 +150,7 @@ def change_password(payload: dict = Body(...)):
 @app.get("/api/users")
 def list_users():
     return {"users": auth.users(), "mode": auth.mode(), "perms": auth.PERMS,
-            "roles": [{"key": k, **v} for k, v in auth.ROLES.items()]}
+            "roles": [{"key": k, **v, "people": sum(1 for u in auth.users() if u["role"] == k)} for k, v in auth.roles().items()]}
 
 
 @app.post("/api/users")
@@ -160,7 +160,7 @@ def add_user(request: Request, payload: dict = Body(...)):
         uid = auth.create(payload.get("name"), payload.get("email"), payload.get("role"), payload.get("password"))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    db.log(None, "system", f"Account added: {payload.get('name')} ({auth.ROLES[payload['role']]['label']})", channel="system")
+    db.log(None, "system", f"Account added: {payload.get('name')} ({auth.roles()[payload['role']]['label']})", channel="system")
     r = JSONResponse({"id": uid, "first": first})
     return _signed_in(r, request, uid) if first else r  # from now on everyone signs in: keep the person who set it up signed in
 
@@ -171,10 +171,31 @@ def edit_user(user_id: int, payload: dict = Body(...)):
         u = auth.update(user_id, {k: payload[k] for k in ("name", "role", "active", "password") if k in payload}, db.actor.get())
     except ValueError as e:
         raise HTTPException(400, str(e))
-    what = [f"role {auth.ROLES[payload['role']]['label']}" if "role" in payload and payload["role"] != u["role"] else "",
+    what = [f"role {auth.roles()[payload['role']]['label']}" if "role" in payload and payload["role"] != u["role"] else "",
             ("reactivated" if payload["active"] else "deactivated") if "active" in payload and bool(payload["active"]) != bool(u["active"]) else "",
             "password reset" if payload.get("password") else ""]
     db.log(None, "system", f"Account changed: {u['name']} ({', '.join(w for w in what if w) or 'details'})", channel="system")
+    return {"ok": True}
+
+
+@app.post("/api/roles")
+def save_role(payload: dict = Body(...)):
+    """Change what a role may do, or add a role. Takes effect at once for everyone who has it."""
+    try:
+        key = auth.save_role(payload.get("key"), payload.get("label"), payload.get("about"), payload.get("perms"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.log(None, "system", f"Role {'changed' if payload.get('key') else 'added'}: {auth.roles()[key]['label']}", channel="system")
+    return {"key": key}
+
+
+@app.delete("/api/roles/{key}")
+def remove_role(key: str):
+    try:
+        auth.delete_role(key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.log(None, "system", f"Role deleted: {key}", channel="system")
     return {"ok": True}
 
 

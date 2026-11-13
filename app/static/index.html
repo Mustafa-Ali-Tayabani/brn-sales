@@ -249,6 +249,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
 .savebar #saveState{color:var(--mut);font-size:13px;margin-right:auto}.savebar.dirty{border-color:#f5d9a8;background:var(--warnbg)}.savebar.dirty #saveState{color:#6b3d00;font-weight:500}
 .dot.rest{background:#f0b400;box-shadow:0 0 0 3px #f0b40033}.agentsw.rest .tg{background:#e0a800}.agentsw.rest .st{color:var(--warn)}
 @media(max-width:1000px){.setwrap{grid-template-columns:1fr}.settabs{position:static;flex-direction:row;flex-wrap:wrap}.savebar{margin-left:0}}
+.rmx td,.rmx th{padding:8px 10px}.rmx input{width:16px;height:16px}.rmx td:first-child{font-size:13px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;z-index:30;font-size:13px;box-shadow:0 10px 30px #0005;animation:tin .2s ease-out}
 @keyframes tin{from{opacity:0;transform:translate(-50%,8px)}}
 .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px}
@@ -293,8 +294,10 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
   <button class="nav" data-v="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>Tasks <span class="pill" id="ntask">0</span></button>
   <div class="navlbl">Monitor</div>
   <button class="nav" data-v="reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></svg>Reports</button>
+  <button class="nav" data-v="coach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.2-4.2L16.5 4.5a2.1 2.1 0 0 1 3 3L8.2 18.8 4 20z"/><path d="M14.5 6.5l3 3"/></svg>Email coach</button>
   <button class="nav" data-v="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>Activity log</button>
   <button class="nav" data-v="settings" data-perm="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+  <button class="nav" data-v="settings" data-tab="people" data-perm="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.9-3.6 3.7-5.5 7-5.5s6.1 1.9 7 5.5"/></svg>People &amp; roles</button>
   <div class="mode"><div id="agentState"></div>
     <div><div class="lbl">Send mode</div><b id="mode">approval</b></div>
     <div><div class="lbl">Claude</div><span id="eng"></span><div id="spend"></div></div></div>
@@ -414,6 +417,9 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
   <!-- REPORTS -->
   <section id="v-reports" class="hide"><div class="filters"><div class="chips" id="repChips"></div></div><div id="repBody"></div></section>
 
+  <!-- EMAIL COACH -->
+  <section id="v-coach" class="hide"><div id="coachNote"></div><div class="grid2e" style="align-items:start"><div id="coachLeft"></div><div id="coachRight"></div></div></section>
+
   <!-- LOG -->
   <section id="v-log" class="hide">
     <div class="fbox"><div class="fgrid">
@@ -505,7 +511,8 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
      </div>
 
      <div class="setpane" data-tab="people" data-perm="users" data-nosave><h2>People &amp; roles</h2><p class="lead">Who can sign in and what each person may do.</p>
-      <div class="card"><div id="people"></div></div>
+      <div class="card"><h3>People</h3><div id="people"></div></div>
+      <div class="card"><h3>Roles</h3><div id="rolesBox"></div></div>
      </div>
 
      <div class="setpane" data-tab="connections" data-nosave><h2>Connections</h2><p class="lead">The outside services this app talks to. They are switched on with variables on the server.</p>
@@ -572,14 +579,15 @@ const prodTag=p=>p?`<span class="tag p">${esc(PRODUCTS[p]?.name||p)}</span>`:'<s
 function alertBanner(t,err){try{const j=JSON.parse(t);if(j.detail)t=j.detail}catch{}$('#banner').innerHTML=`<div class="banner ${err?'':'good'}">${esc(t)}</div>`;window.scrollTo({top:0,behavior:'smooth'});clearTimeout(window._bt);window._bt=setTimeout(()=>$('#banner').innerHTML='',err?20000:7000)}
 function openModal(title,html){$('#mTitle').textContent=title;$('#mBody').innerHTML=html;$('#modal').classList.add('open')}
 function closeModal(){$('#modal').classList.remove('open');$('#mBody').innerHTML=''}
-document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>show(b.dataset.v));
-function show(v){view=v;history.replaceState(null,'','#'+v+(v=='mail'&&MB.mode=='leads'&&mailLead?'/'+mailLead:''));document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==v));
+document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>{if(b.dataset.v=='settings')setCur=b.dataset.tab||(setCur=='people'?'agent':setCur);show(b.dataset.v)});
+const navOn=()=>document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==view&&(view!='settings'||(b.dataset.tab=='people')==(setCur=='people'))));
+function show(v){view=v;history.replaceState(null,'','#'+v+(v=='mail'&&MB.mode=='leads'&&mailLead?'/'+mailLead:''));navOn();
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hide',s.id!='v-'+v));
   if(v=='pipelines'&&!window._keepBoard)closeBoard(true);window._keepBoard=false;
-  $('#title').textContent={overview:'Overview',pipelines:'Pipelines',leads:'Leads',approvals:'Approvals',mail:'Mailbox',calendar:'Calendar',tasks:'Tasks',reports:'Reports & forecast',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
+  $('#title').textContent={overview:'Overview',pipelines:'Pipelines',leads:'Leads',approvals:'Approvals',mail:'Mailbox',calendar:'Calendar',tasks:'Tasks',reports:'Reports & forecast',coach:'Email coach',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 async function manualRefresh(){const b=$('#refreshBtn');b.classList.add('spinning');b.disabled=true;try{await loadFacets();await refresh();toast('Up to date')}finally{b.classList.remove('spinning');b.disabled=false}}
-function refresh(){if(view=='overview')loadSetup();$('#refreshBtn').title='Refresh (updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')';return Promise.all([loadStats(),({overview:loadRecent,pipelines:loadPipelines,leads:()=>loadLeads(page),approvals:loadApps,mail:loadMail,calendar:loadCalendar,tasks:loadTasks,reports:loadReports,log:loadLog,settings:loadSettings})[view]()])}
+function refresh(){if(view=='overview')loadSetup();$('#refreshBtn').title='Refresh (updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')';return Promise.all([loadStats(),({overview:loadRecent,pipelines:loadPipelines,leads:()=>loadLeads(page),approvals:loadApps,mail:loadMail,calendar:loadCalendar,tasks:loadTasks,reports:loadReports,coach:loadCoach,log:loadLog,settings:loadSettings})[view]()])}
 
 async function loadFacets(){const f=await api('/api/leads/facets');PRODUCTS={};f.products.forEach(p=>PRODUCTS[p.key]=p);
   const opt=(arr,all)=>`<option value="">${all}</option>`+arr.map(x=>`<option value="${esc(x.value)}">${esc(SL[x.value]||PRODUCTS[x.value]?.name||x.value)} (${x.n})</option>`).join('');
@@ -744,15 +752,14 @@ async function savePassword(){await api('/api/password',{method:'POST',body:{cur
 async function signOut(){await api('/api/logout',{method:'POST'});location.href='/login'}
 
 /* ---- people & roles (Settings) ---- */
-async function loadPeople(){if(!can('users'))return;const r=await api('/api/users'),ro=sel=>r.roles.map(x=>`<option value="${x.key}" ${x.key==sel?'selected':''}>${esc(x.label)}</option>`).join('');
+async function loadPeople(){if(!can('users'))return;const r=await api('/api/users');rolesRender(r);const ro=sel=>r.roles.map(x=>`<option value="${x.key}" ${x.key==sel?'selected':''}>${esc(x.label)}</option>`).join('');
   $('#people').innerHTML=(r.mode!='users'?`<div class="banner"><span><b>Nobody has to sign in yet.</b> Anyone who can open this page can do everything. Add yourself as the first admin below: from then on, each person signs in with their own email and password and only sees what their role allows.</span></div>`:'')
   +(r.users.length?`<div class="tablewrap"><table><tr><th>Person</th><th>Role</th><th>Last signed in</th><th></th></tr>${r.users.map(u=>`<tr style="${u.active?'':'opacity:.55'}"><td class="cell2"><b>${esc(u.name)}</b>${u.id==ME.user.id?' <span class="tag g">you</span>':''}<small>${esc(u.email)}</small></td>
      <td><select onchange="patchUser(${u.id},{role:this.value})" ${u.active?'':'disabled'}>${ro(u.role)}</select></td><td class="muted">${u.active?(u.last_login_at?fmt(u.last_login_at):'never'):'deactivated'}</td>
      <td style="white-space:nowrap"><button class="sm" onclick="resetPw(${u.id},'${esc(u.name).replace(/'/g,'')}')">Reset password</button> <button class="sm" onclick="patchUser(${u.id},{active:${u.active?'false':'true'}})">${u.active?'Deactivate':'Reactivate'}</button> ${u.id==ME.user.id?'':`<button class="sm danger" onclick="delUser(${u.id},'${esc(u.name).replace(/'/g,'')}')">Delete</button>`}</td></tr>`).join('')}</table></div>`:'')
   +`<h3 style="margin:18px 0 0;font-size:14px">Add a person</h3><div class="fgrid"><div><label>Name</label><input id="nu-name"></div><div><label>Email</label><input id="nu-email" type="email" autocomplete="off"></div>
     <div><label>Role</label><select id="nu-role">${r.mode!='users'?'<option value="admin">Admin</option>':ro('sales')}</select></div><div><label>Password (8 or more characters)</label><input id="nu-pw" type="text" autocomplete="off"></div></div>
-   <div class="row" style="margin-top:10px"><button class="pri" onclick="addUser()">Add person</button><span class="muted" style="font-size:12px">Tell them the password yourself; they can change it after signing in.</span></div>
-   <div class="adv">${r.roles.map(x=>`<p style="margin:0 0 6px;font-size:13px"><b>${esc(x.label)}</b> <span class="muted">${esc(x.about)}</span></p>`).join('')}</div>`}
+   <div class="row" style="margin-top:10px"><button class="pri" onclick="addUser()">Add person</button><span class="muted" style="font-size:12px">Tell them the password yourself; they can change it after signing in.</span></div>`}
 async function addUser(){const r=await api('/api/users',{method:'POST',body:{name:$('#nu-name').value,email:$('#nu-email').value,role:$('#nu-role').value,password:$('#nu-pw').value}});
   if(r.first){await tell('Your admin account is ready and you are signed in. From now on everyone signs in with their own email and password.');location.reload()}else{toast('Person added');loadPeople()}}
 async function patchUser(id,b){try{await api('/api/users/'+id,{method:'PATCH',body:b});toast('Saved')}finally{loadPeople()}}
@@ -890,7 +897,7 @@ async function tplDel(id){if(!await ask('Delete this template?'))return;await ap
 /* ---- settings: tabs, save bar ---- */
 const STABS=[['agent','Agent & sending'],['outreach','Outreach'],['rules','Rules'],['pipelines','Pipelines'],['meetings','Meetings & booking'],['ai','AI & cost'],['people','People & roles','users'],['connections','Connections'],['compliance','Do not contact']];
 let setCur='agent',setDirtyFlag=false;const DAYS=[['6','Sun'],['0','Mon'],['1','Tue'],['2','Wed'],['3','Thu'],['4','Fri'],['5','Sat']];
-function setTab(t){setCur=t;$('#setTabs').innerHTML=STABS.filter(x=>!x[2]||can(x[2])).map(([k,n])=>`<a class="settab ${k==setCur?'on':''}" onclick="setTab('${k}')">${n}</a>`).join('');
+function setTab(t){setCur=t;navOn();$('#setTabs').innerHTML=STABS.filter(x=>!x[2]||can(x[2])).map(([k,n])=>`<a class="settab ${k==setCur?'on':''}" onclick="setTab('${k}')">${n}</a>`).join('');
   document.querySelectorAll('.setpane').forEach(p=>p.classList.toggle('hide',p.dataset.tab!=setCur));$('#saveBar').classList.toggle('hide',!!document.querySelector(`.setpane[data-tab="${setCur}"][data-nosave]`)&&!setDirtyFlag)}
 function setDirty(on=true){setDirtyFlag=on;$('#saveState').textContent=on?'You have unsaved changes':'All changes saved';$('#saveBar').classList.toggle('dirty',on);if(on)$('#saveBar').classList.remove('hide')}
 const dayChips=(id,value)=>{const have=String(value||'').split(',').map(x=>x.trim());$('#'+id).innerHTML=DAYS.map(([v,n])=>`<span class="chip ${have.includes(v)?'on':''}" data-d="${v}" onclick="this.classList.toggle('on');setDirty()">${n}</span>`).join('')};
@@ -974,6 +981,56 @@ function bookingCard(s){const own=(s.booking_page_url||'').trim(),url=own||s.boo
    <label>Address of that page on your website</label><input id="s-booking_page_url" style="width:100%" placeholder="https://brndynamics.com/book"><p class="hint">Once the code is on your site, enter its address here. Emails then link to it, and each lead gets a personal link that already knows who they are.</p>
    <div class="row" style="margin-top:6px"><span class="muted" style="font-size:13px">Link used in emails now:</span><code>${esc(s.booking_link||'none')}</code>${s.booking_link==url?'<span class="tag ok">the booking page</span>':`<button class="sm" data-nosave onclick="$('#s-booking_link').value=($('#s-booking_page_url').value.trim()||'${esc(s.booking_url)}');setDirty();toast('Press Save settings to keep it')">Use the booking page</button>`}</div>`;
   BKEYS.forEach(k=>{if($('#s-'+k))$('#s-'+k).value=s[k]??''});dayChips('bkDays',s.booking_days)}
+/* ---- email coach: tell the agent how emails should be written ---- */
+let COACH=null,coachPipe='';
+async function loadCoach(){if(COACH&&COACH.dirty)return;COACH=await api('/api/coach');COACH.dirty=false;coachPipe=coachPipe||(COACH.pipelines[0]||{}).key||'';coachRender()}
+function coachDirty(){COACH.dirty=true;$('#coachSave').classList.add('pri');$('#coachState').textContent='You have unsaved changes'}
+function coachRead(){const g=COACH.guidance;if($('#co-all')){g.all=$('#co-all').value;g.by_pipeline[coachPipe]=$('#co-pipe').value}return g}
+function coachRender(){const g=COACH.guidance,can_=can('send'),ro=can_?'':'disabled';
+  $('#coachNote').innerHTML=COACH.ai?'':note('<b>These instructions are not being used yet.</b> '+esc(COACH.ai_note));
+  $('#coachLeft').innerHTML=`<div class="card"><h3>How our emails should be written</h3>
+    <p class="muted" style="margin:-6px 0 8px">Write it the way you would brief a new salesperson. The agent follows this in every outreach email, answer and follow-up it writes.</p>
+    <textarea id="co-all" style="min-height:170px" ${ro} oninput="coachDirty()" placeholder="For example:&#10;- Open with one specific thing about their business, never with who we are.&#10;- No exclamation marks, no &quot;I hope this finds you well&quot;.&#10;- One question at the end, never two.&#10;- Mention our Clutch rating only in follow-ups.">${esc(g.all)}</textarea>
+    <label style="margin-top:14px">Extra instructions for one pipeline</label><div class="row"><select id="co-pick" onchange="coachRead();coachPipe=this.value;coachRender()">${COACH.pipelines.map(p=>`<option value="${p.key}" ${p.key==coachPipe?'selected':''}>${esc(p.name)}${g.by_pipeline[p.key]?' •':''}</option>`).join('')}</select><span class="hint" style="margin:0">A dot marks pipelines that have their own.</span></div>
+    <textarea id="co-pipe" style="min-height:90px;margin-top:8px" ${ro} oninput="coachDirty()" placeholder="Only for this pipeline, on top of the instructions above.">${esc(g.by_pipeline[coachPipe]||'')}</textarea>
+    <div class="row" style="margin-top:12px"><button id="coachSave" class="${COACH.dirty?'pri':''}" ${ro} onclick="coachSave()">Save instructions</button><span class="muted" id="coachState" style="font-size:13px">${COACH.dirty?'You have unsaved changes':''}</span></div></div>
+   <div class="card"><h3>Emails you like<span class="r">${g.examples.length} of 5</span></h3><p class="muted" style="margin:-6px 0 8px">The agent copies their voice and shape, never their wording or facts.</p>
+    ${g.examples.map((e,i)=>`<div class="trow"><div style="flex:1;min-width:0"><div class="tt">${esc(e.subject||'(no subject)')}</div><div class="muted" style="font-size:13px;white-space:pre-wrap;max-height:84px;overflow:hidden">${esc(e.body)}</div></div>${can_?`<button class="sm ghost" title="Remove" onclick="coachRead();COACH.guidance.examples.splice(${i},1);coachDirty();coachRender()">✕</button>`:''}</div>`).join('')||'<p class="muted">None yet. Add one from "What has worked", or paste your own.</p>'}
+    ${can_&&g.examples.length<5?`<div class="row" style="margin-top:10px"><button class="sm" onclick="coachExample()">+ Paste an email</button></div>`:''}</div>`;
+  $('#coachRight').innerHTML=`<div class="card"><h3>Try it</h3><p class="muted" style="margin:-6px 0 8px">Writes a sample with the instructions as they are on this page, saved or not.</p>
+    <div class="row"><select id="co-tp">${COACH.pipelines.map(p=>`<option value="${p.key}" ${p.key==coachPipe?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+     <select id="co-ta"><option value="intro">First email</option><option value="follow_up_1">Follow-up 1</option><option value="follow_up_2">Follow-up 2</option><option value="breakup">Last note</option></select><button id="coTry" onclick="coachTry()">Write a sample</button></div><div id="coachTry" style="margin-top:12px"></div></div>
+   <div class="card"><h3>Ideas from the AI</h3><p class="muted" style="margin:-6px 0 8px">Claude reads the emails that went out and how people answered, and proposes instructions to add.</p>
+    <button id="coSug" onclick="coachSuggest()" ${COACH.ai?'':'disabled'}>Review our emails</button><div id="coachSug" style="margin-top:12px"></div></div>
+   <div class="card"><h3>What has worked<span class="r">last 90 days: ${COACH.sent} sent, ${COACH.replied} answered</span></h3>
+    ${COACH.subjects.length?`<table><tr><th>Subject line</th><th>Sent</th><th>Replies</th></tr>${COACH.subjects.map(s=>`<tr><td>${esc(s.subject)}</td><td>${s.sent}</td><td><b>${s.replies}</b></td></tr>`).join('')}</table>`:'<p class="muted">No replies to outreach emails yet.</p>'}
+    ${COACH.worked.length?`<label style="margin-top:14px">Emails that got an answer</label>${COACH.worked.map((e,i)=>`<div class="trow"><div style="flex:1;min-width:0"><div class="tt">${esc(e.subject)} <span class="tag replied">${esc(e.outcome.replace('reply: ','').replace(/_/g,' '))}</span></div><small class="muted">${esc(e.company)} · ${esc(e.body.replace(/\s+/g,' ').slice(0,130))}</small></div>${can_?`<button class="sm" onclick="coachAdd(${i})">Use as example</button>`:''}</div>`).join('')}`:''}</div>`}
+async function coachSave(){const g=coachRead();await api('/api/coach',{method:'POST',body:g});COACH.dirty=false;toast('Instructions saved');loadCoach()}
+async function coachExample(){openModal('An email you like',`<label>Subject</label><input id="ce-s" style="width:100%"><label>Email text</label><textarea id="ce-b" style="min-height:200px"></textarea><div class="row" style="margin-top:14px"><button class="pri" onclick="coachRead();if($('#ce-b').value.trim()){COACH.guidance.examples.push({subject:$('#ce-s').value,body:$('#ce-b').value});coachDirty()}closeModal();coachRender()">Add</button></div>`)}
+function coachAdd(i){coachRead();const e=COACH.worked[i];if(COACH.guidance.examples.length>=5)return alertBanner('You can keep five examples. Remove one first.',true);COACH.guidance.examples.push({subject:e.subject,body:e.body});coachDirty();coachRender();toast('Added. Save instructions to keep it.')}
+async function coachTry(){const b=$('#coTry');b.disabled=true;b.textContent='Writing…';try{const r=await api('/api/coach/try',{method:'POST',body:{product:$('#co-tp').value,action:$('#co-ta').value,guidance:coachRead()}});
+  $('#coachTry').innerHTML=`${r.used_ai?'':'<div class="banner" style="margin-bottom:10px"><span>Built-in wording, because Claude is not available: your instructions did not shape this one.</span></div>'}<div class="msg" style="max-width:none"><div class="mh"><span>Sample for <b>${esc(r.for)}</b> · ${esc(r.pipeline||'')}</span></div><div class="sj">${esc(r.subject)}</div><div class="bd">${esc(r.body)}</div>${r.cta?`<div style="margin-top:10px"><span class="tag">Button: ${esc(r.cta)}</span></div>`:''}</div>`}finally{b.disabled=false;b.textContent='Write a sample'}}
+async function coachSuggest(){const b=$('#coSug');b.disabled=true;b.textContent='Reading…';try{const r=await api('/api/coach/suggest',{method:'POST'});window._sug=r.suggestions;
+  $('#coachSug').innerHTML=`<p class="muted" style="font-size:12px;margin:0 0 8px">Based on ${r.based_on} emails, ${r.replied} of them answered.${r.replied<5?' That is very little to go on: treat these as ideas, not findings.':''}</p>
+   ${r.observations.map(o=>`<p style="margin:0 0 6px">• ${esc(o)}</p>`).join('')}${r.suggestions.map((s,i)=>`<div class="trow"><div style="flex:1"><div class="tt">${esc(s.text)}</div><small class="muted">${esc(s.why||'')}</small></div>${can('send')?`<button class="sm" onclick="coachTake(${i},this)">Add to instructions</button>`:''}</div>`).join('')||'<p class="muted">No suggestions this time.</p>'}`}
+  finally{b.disabled=false;b.textContent='Review our emails'}}
+function coachTake(i,btn){const g=coachRead();g.all=(g.all.trim()?g.all.trim()+'\n':'')+'- '+window._sug[i].text;$('#co-all').value=g.all;coachDirty();btn.disabled=true;btn.textContent='Added';toast('Added. Save instructions to keep it.')}
+async function rewriteDraft(id,btn){const fb=$('#af'+id).value.trim();if(!fb)return alertBanner('Say what should change, for example "shorter, and mention their Google rating"',true);btn.disabled=true;btn.textContent='Rewriting…';
+  try{const r=await api(`/api/approvals/${id}/rewrite`,{method:'POST',body:{feedback:fb,remember:$('#ar'+id).checked,subject:$('#as'+id).value,body:$('#ab'+id).value}});$('#as'+id).value=r.subject;$('#ab'+id).value=r.body;$('#af'+id).value='';
+   const a=ALLAPPS.find(x=>x.id==id);if(a){a.content.subject=r.subject;a.content.body=r.body}toast(r.remembered?'Rewritten, and remembered for future emails':'Rewritten')}finally{btn.disabled=false;btn.textContent='Rewrite'}}
+const rewriteBox=a=>a.channel=='email'&&can('send')?`<div class="row" style="margin-top:10px;background:var(--soft);border-radius:10px;padding:8px 10px"><input id="af${a.id}" placeholder="Tell the AI what to change, e.g. shorter, friendlier, mention their Google rating" style="flex:1;min-width:200px" onkeydown="if(event.key=='Enter')rewriteDraft(${a.id},this.nextElementSibling)"><button onclick="rewriteDraft(${a.id},this)">Rewrite</button>
+  <label style="margin:0;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mut)"><input type="checkbox" id="ar${a.id}"> Remember this for future emails</label></div>`:'';
+
+/* ---- roles and what each may do ---- */
+let ROLESX=[];
+function rolesRender(r){ROLESX=r.roles.map(x=>({...x,perms:[...x.perms]}));const P=Object.entries(r.perms);
+  $('#rolesBox').innerHTML=`<div class="tablewrap"><table class="rmx"><tr><th>What they may do</th>${ROLESX.map((x,i)=>`<th style="text-align:center">${esc(x.label)}${x.custom?` <a title="Delete this role" style="cursor:pointer;color:var(--bad)" onclick="roleDel(${i})">✕</a>`:''}<br><span style="font-weight:400;text-transform:none;letter-spacing:0">${x.people} ${x.people==1?'person':'people'}</span></th>`).join('')}</tr>
+   ${P.map(([k,d])=>`<tr><td>${esc(d)}</td>${ROLESX.map((x,i)=>`<td style="text-align:center"><input type="checkbox" ${x.perms.includes(k)?'checked':''} ${x.key=='admin'||k=='view'?'disabled':''} onchange="roleTick(${i},'${k}',this.checked)"></td>`).join('')}</tr>`).join('')}</table></div>
+   <div class="row" style="margin-top:12px"><button id="rolesSave" onclick="rolesSave()">Save roles</button><button onclick="roleAdd()">+ Add a role</button><span class="hint" style="margin:0">Admin always has everything. Changes apply at once to everyone with that role.</span></div>`}
+function roleTick(i,k,on){const p=ROLESX[i].perms;on?p.push(k):p.splice(p.indexOf(k),1);ROLESX[i].changed=true;$('#rolesSave').classList.add('pri')}
+async function rolesSave(){for(const x of ROLESX.filter(x=>x.changed))await api('/api/roles',{method:'POST',body:{key:x.key,label:x.label,about:x.about,perms:x.perms}});toast('Roles saved');await loadMe();loadPeople()}
+async function roleAdd(){const name=await askInput('Name of the new role. It starts with read-only access; tick what it may do afterwards.','e.g. Intern');if(!name)return;await api('/api/roles',{method:'POST',body:{label:name,perms:[]}});loadPeople()}
+async function roleDel(i){if(!await ask('Delete the role "'+ROLESX[i].label+'"?'))return;await api('/api/roles/'+ROLESX[i].key,{method:'DELETE'});loadPeople()}
 function openAdd(){const f=(k,n,ph,t)=>`<div><label>${n}</label><input id="al-${k}" placeholder="${ph||''}" ${t?`type="${t}"`:''} style="width:100%"></div>`;
   openModal('Add a lead',`<div class="fgrid">${f('company','Company *','Pulse Fitness')}${f('contact_name','Contact name','Sara Ahmed')}${f('title','Job title','Operations Director')}${f('email','Email','sara@pulsefitness.com','email')}
    ${f('phone','Phone','+966 5x xxx xxxx')}${f('website','Website','https://')}${f('linkedin','LinkedIn profile','linkedin.com/in/…')}${f('city','City','Jeddah')}
@@ -1013,10 +1070,10 @@ function renderApps(){const nr=ALLAPPS.filter(isReply).length,no=ALLAPPS.length-
   const card=a=>{const c=a.content,head=`<div class="row"><input type="checkbox" class="apck" data-id="${a.id}" ${appSel.has(a.id)?'checked':''} onchange="this.checked?appSel.add(${a.id}):appSel.delete(${a.id});appBar()" title="Select">`;
    if(isReply(a))return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · ${a.action=='followup'?'follow-up after meeting':'reply'}</h3>${c.intent?`<span class="tag replied" title="${esc(c.summary||'')}">${esc(c.intent.replace(/_/g,' '))}</span>`:''}<span class="muted">to ${esc(c.to||a.email||'')}</span></div>
     ${a.action=='followup'?`<p class="muted" style="margin:8px 0 0">After “${esc(c.meeting_title||'your meeting')}” on ${fmt(c.meeting_at)}. Fill in what you agreed before sending.</p>`:`<label>They wrote</label><pre style="max-height:180px;overflow:auto">${esc(c.their_text||'')}</pre>`}
-    <label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Your answer (sent as a plain email in the same thread)</label><textarea id="ab${a.id}" style="min-height:170px">${esc(c.body)}</textarea>
+    <label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Your answer (sent as a plain email in the same thread)</label><textarea id="ab${a.id}" style="min-height:170px">${esc(c.body)}</textarea>${rewriteBox(a)}
     <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'email',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="openMail(${a.lead_id})">Open conversation</button>${can('calendar')?`<button onclick="openMeeting({lead_id:${a.lead_id},company:APPS.find(x=>x.id==${a.id}).company,title:'Intro call: '+APPS.find(x=>x.id==${a.id}).company,attendees:APPS.find(x=>x.id==${a.id}).content.to||''})">📅 Schedule meeting</button>`:''}</div></div>`;
    return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
-  ${a.channel=='email'?`<label>Subject ${c.variant?`<span class="tag" id="av${a.id}" style="margin-left:6px">Subject version ${c.variant}</span> <a id="ao${a.id}" style="cursor:pointer;text-decoration:underline;font-weight:400" onclick="swapSubject(${a.id})">Use version ${c.variant=='A'?'B':'A'} instead: ${esc(c.variant=='A'?c.subject_b:c.subject_a)}</a>`:''}</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(c.body)}</textarea><label>Button label</label><input id="ac${a.id}" value="${esc(c.cta||'Book a 15-min call')}">`
+  ${a.channel=='email'?`<label>Subject ${c.variant?`<span class="tag" id="av${a.id}" style="margin-left:6px">Subject version ${c.variant}</span> <a id="ao${a.id}" style="cursor:pointer;text-decoration:underline;font-weight:400" onclick="swapSubject(${a.id})">Use version ${c.variant=='A'?'B':'A'} instead: ${esc(c.variant=='A'?c.subject_b:c.subject_a)}</a>`:''}</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Body</label><textarea id="ab${a.id}" style="min-height:160px">${esc(c.body)}</textarea><label>Button label</label><input id="ac${a.id}" value="${esc(c.cta||'Book a 15-min call')}">${rewriteBox(a)}`
    :`<label>Call brief</label><pre>${esc(JSON.stringify(c,null,2))}</pre>`}
   <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'${a.channel}',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="previewLead(${a.lead_id})">Preview</button></div></div>`};
   $('#apps').innerHTML=tabs+(APPS.length?`<div class="bulk on" id="appBar" style="top:8px"></div>`+APPS.map(card).join('')
@@ -1257,7 +1314,7 @@ async function loadSetup(){if(view!='overview')return;const[s,st]=await Promise.
    <div class="steps">${steps.map(([ok,t,sub,on],i)=>`<div class="step ${ok?'done':''}" onclick="${on}"><span class="n">${ok?'✓':i+1}</span><b>${t}</b><small>${sub}</small></div>`).join('')}</div>`}
 document.addEventListener('keydown',e=>{if(e.key=='Escape'){closeModal();$('#drawer').classList.remove('open')}});
 document.addEventListener('mousedown',e=>{const d=$('#drawer');if(d.classList.contains('open')&&!d.contains(e.target)&&!$('#modal').contains(e.target)&&!e.target.closest('tr.click,.kcard,.fi,.att a'))d.classList.remove('open')});
-loadMe().then(loadTemplates).then(loadFacets).then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh();$('#setBody').addEventListener('input',e=>{if(!e.target.closest('[data-nosave]'))setDirty()});$('#setBody').addEventListener('change',e=>{if(!e.target.closest('[data-nosave]'))setDirty()})});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings'&&!(view=='approvals'&&(appsDirty||appSel.size)))refresh()},20000);
+loadMe().then(loadTemplates).then(loadFacets).then(()=>{const[h,id]=location.hash.slice(1).split('/');if(h=='mail'&&+id){mailLead=+id;mailN=-1;MB.mode='leads'}$('#v-'+h)?show(h):refresh();$('#setBody').addEventListener('input',e=>{if(!e.target.closest('[data-nosave]'))setDirty()});$('#setBody').addEventListener('change',e=>{if(!e.target.closest('[data-nosave]'))setDirty()})});setInterval(()=>{if(!$('#drawer').classList.contains('open')&&!$('#modal').classList.contains('open')&&view!='settings'&&view!='coach'&&!(view=='approvals'&&(appsDirty||appSel.size)))refresh()},20000);
 
 /* ---- assistant chat (bottom corner) ---- */
 (function(){

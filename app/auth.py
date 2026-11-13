@@ -8,6 +8,8 @@ Three states, so nothing breaks on upgrade:
 """
 import hashlib
 import hmac
+import json
+import re
 import os
 import secrets
 import time
@@ -32,7 +34,7 @@ PERMS = {
     "settings": "Change settings, the do-not-contact list and connections",
     "users": "Add people and change their roles",
 }
-ROLES = {
+DEFAULT_ROLES = {
     "admin": {"label": "Admin", "about": "Everything, including people, roles and settings.", "perms": list(PERMS)},
     "manager": {"label": "Manager", "about": "Runs the pipeline day to day: leads, approvals, mailbox, meetings, the agent and exports. No settings or people.",
                 "perms": ["view", "leads.write", "leads.delete", "export", "send", "mailbox", "calendar", "agent"]},
@@ -41,6 +43,58 @@ ROLES = {
     "viewer": {"label": "Viewer", "about": "Read only: dashboard, leads, pipelines, calendar and activity log. No mailbox, nothing can be sent or changed.",
                "perms": ["view"]},
 }
+def roles():
+    """Every role and what it may do: the built-in ones (as changed in Settings > People & roles) plus roles you added.
+    Admin always has everything, and every role can at least look."""
+    try:
+        saved = json.loads(db.setting("roles") or "{}")
+    except ValueError:
+        saved = {}
+    out = {k: {**v, "perms": list(v["perms"]), "custom": False} for k, v in DEFAULT_ROLES.items()}
+    for key, v in saved.items():
+        if key == "admin" or not isinstance(v, dict):
+            continue
+        base = out.get(key, {"label": key, "about": "", "custom": True})
+        out[key] = {**base, "label": (v.get("label") or base["label"])[:40], "about": (v.get("about", base.get("about")) or "")[:200],
+                    "perms": ["view"] + [p for p in PERMS if p != "view" and p in (v.get("perms") or [])]}
+    return out
+
+
+def save_role(key, label, about, perms):
+    """Change what a role may do, or add a new role (key empty). Returns its key."""
+    label = (label or "").strip()
+    cur = roles()
+    if key == "admin":
+        raise ValueError("The admin role always has every permission.")
+    if key and key not in cur:
+        raise ValueError("That role no longer exists.")
+    if not key:
+        if not label:
+            raise ValueError("Give the role a name.")
+        key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") or "role"
+        if key in cur:
+            raise ValueError("There is already a role with that name.")
+    try:
+        saved = json.loads(db.setting("roles") or "{}")
+    except ValueError:
+        saved = {}
+    saved[key] = {"label": label or cur[key]["label"], "about": about if about is not None else cur.get(key, {}).get("about", ""),
+                  "perms": [p for p in PERMS if p in (perms or [])]}
+    db.set_setting("roles", json.dumps(saved, ensure_ascii=False))
+    return key
+
+
+def delete_role(key):
+    if key in DEFAULT_ROLES:
+        raise ValueError("Built-in roles can be changed but not deleted.")
+    n = db.one("SELECT COUNT(*) n FROM users WHERE role=?", (key,))["n"]
+    if n:
+        raise ValueError(f"{n} {'person has' if n == 1 else 'people have'} this role. Give them another role first.")
+    saved = json.loads(db.setting("roles") or "{}")
+    saved.pop(key, None)
+    db.set_setting("roles", json.dumps(saved, ensure_ascii=False))
+
+
 IMPLICIT_ADMIN = {"id": None, "name": "Admin", "email": "", "role": "admin", "implicit": True}
 _fails = {}
 
@@ -52,7 +106,7 @@ def mode():
 
 
 def perms(user):
-    return ROLES.get((user or {}).get("role"), {"perms": []})["perms"]
+    return roles().get((user or {}).get("role"), {"perms": []})["perms"]
 
 
 def can(perm, user=None):
@@ -61,7 +115,7 @@ def can(perm, user=None):
 
 def required(method, path):
     """The permission a request needs. Anything not listed that changes data needs an admin."""
-    if path.startswith("/api/users"):
+    if path.startswith(("/api/users", "/api/roles")):
         return "users"
     if path.startswith(("/api/mailbox", "/api/mail", "/api/inbox")):
         return "mailbox"
@@ -79,7 +133,7 @@ def required(method, path):
         return "calendar"
     if path.startswith(("/api/leads", "/api/assistant", "/api/tasks")):
         return "leads.write"
-    if path.startswith("/api/templates"):
+    if path.startswith(("/api/templates", "/api/coach")):
         return "send"
     return "settings"
 
@@ -166,7 +220,7 @@ def create(name, email, role, password):
     name, email = (name or "").strip(), (email or "").strip().lower()
     if not name or "@" not in email:
         raise ValueError("Enter a name and a valid email address.")
-    if role not in ROLES:
+    if role not in roles():
         raise ValueError("Pick a role.")
     if mode() != "users" and role != "admin":
         raise ValueError("The first account must be an admin, so someone can manage the rest.")
@@ -185,7 +239,7 @@ def update(user_id, fields, by=None):
     if "name" in fields and (fields["name"] or "").strip():
         sets["name"] = fields["name"].strip()
     if "role" in fields:
-        if fields["role"] not in ROLES:
+        if fields["role"] not in roles():
             raise ValueError("Pick a role.")
         sets["role"] = fields["role"]
     if "active" in fields:

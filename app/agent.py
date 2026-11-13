@@ -26,6 +26,12 @@ def _settings(lead=None):
         if p.get("booking_link"):
             s["booking_link"] = p["booking_link"]
     s["product_key"] = key
+    try:  # how the team wants emails written (Email coach)
+        g = json.loads(db.setting("email_guidance") or "{}")
+    except ValueError:
+        g = {}
+    s["guidance"] = "\n".join(x for x in [(g.get("all") or "").strip(), ((g.get("by_pipeline") or {}).get(key) or "").strip()] if x)
+    s["examples"] = [e for e in g.get("examples") or [] if e.get("body")][:5]
     link, own = s.get("booking_link") or "", (db.setting("booking_page_url") or "").strip().rstrip("/")
     # a link to our booking page (here, or embedded on the website): let the page recognise this lead
     if (lead or {}).get("id") and (link.split("?")[0].rstrip("/").endswith("/book") or (own and link.split("?")[0].rstrip("/") == own)):

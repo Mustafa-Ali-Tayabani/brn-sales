@@ -50,8 +50,21 @@ Once you add yourself as the first admin, everyone signs in at `/login` with the
 | Sales rep | Add and edit leads, approve emails, mailbox, book meetings. No delete, export or agent control |
 | Viewer | Read only: dashboard, leads, pipelines, calendar, activity log. No mailbox |
 
+The table shows the starting point. Under Settings > People & roles you can tick what each role may do and add roles of
+your own; admin always has everything.
+
 Every request is checked on the server (`app/auth.py`), the activity log records who did what, and passwords are stored
 only as salted hashes. `BRN_ADMIN_PASSWORD` keeps working as a recovery password for admin accounts.
+
+## Email coach
+
+The **Email coach** page is where you tell the agent how your emails should be written, the way you would brief a new
+salesperson: instructions for every email, extra ones per pipeline, and up to five emails you like as examples. They are
+given to Claude with every outreach email, answer and follow-up. On the same page: **Try it** writes a sample with the
+instructions as they stand; **What has worked** lists the subject lines and emails that got answers (one click makes
+an email an example); **Ideas from the AI** has Claude read what was sent and how people answered, and propose
+instructions to add. In Approvals, each draft has a box to say what to change ("shorter, mention their Google rating"),
+with an option to remember it for future emails. All of this needs Claude; built-in wording ignores the instructions.
 
 ## Calendar and meetings
 

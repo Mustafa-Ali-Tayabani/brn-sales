@@ -13,7 +13,7 @@ from .. import db
 MODEL_ENV = os.environ.get("BRN_MODEL")
 # USD per million tokens (input, output). Check anthropic.com/pricing if these change.
 PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.0, 10.0), "claude-opus-5-5": (4.0, 20.0)}
-ECONOMY_TASKS = {"email", "reply", "intent"}
+ECONOMY_TASKS = {"email", "reply", "intent", "coach"}
 EFFORT = os.environ.get("BRN_EFFORT", "low")  # short sales copy and JSON: low effort keeps cost and latency down
 _cooldown_until = 0.0
 _use_fallbacks = True
@@ -211,6 +211,43 @@ STEP_GOAL = {
 }
 
 
+def house_style(settings):
+    """The team's own instructions and example emails from Email coach, as a block for any writing prompt."""
+    out = ""
+    if (settings.get("guidance") or "").strip():
+        out += ("\nThe team's own instructions for how our emails are written. Follow them; where they differ from the rules above, they win "
+                "(but never invent facts, and never drop the greeting):\n" + settings["guidance"].strip() + "\n")
+    if settings.get("examples"):
+        out += "\nEmails the team likes. Match their voice and structure; do not copy their wording or facts:\n" + "\n---\n".join(
+            f"Subject: {e.get('subject', '')}\n{e.get('body', '')}"[:900] for e in settings["examples"]) + "\n"
+    return out
+
+
+def rewrite_email(subject, body, feedback, settings, signed=False):
+    """Rewrite a draft the way a reviewer asked. Returns None when Claude is not available."""
+    if not _usable("email"):
+        return None
+    out = _ask_json(SYSTEM, f"""Rewrite this email draft following the reviewer's feedback. Keep every fact that is in the draft; add no new facts,
+prices, clients or promises. Keep it plain text with paragraphs separated by blank lines, and keep the greeting.
+{"Keep the sign-off." if signed else "Do NOT add a sign-off, signature, links or a booking URL: the email template adds those."}
+Reviewer's feedback: {feedback!r}
+Draft subject: {subject!r}
+Draft body: {body!r}{house_style(settings)}
+Return JSON: {{"subject": str, "body": str}}""", 900, "email")
+    return {"subject": out.get("subject") or subject, "body": out.get("body") or body}
+
+
+def coach_suggestions(guidance, emails):
+    """Ideas for writing better emails, from what was sent and how people answered. emails: [{step, subject, body, outcome}]."""
+    return _ask_json(SYSTEM, f"""You are reviewing our cold outreach to help the team improve it. Below are emails we sent, each with what happened
+(no reply, or the kind of reply). Our current writing instructions: {guidance or 'none yet'!r}
+Emails: {json.dumps(emails, ensure_ascii=False)}
+Say what you see and what to change. Base every point on these emails; with few emails or few replies, say that the evidence is thin
+rather than overstating it. Each suggestion must be an instruction we could add to our writing guide, in one sentence, concrete
+(not "be more engaging").
+Return JSON: {{"observations": [str, up to 4], "suggestions": [{{"text": "the instruction", "why": "what in the emails led to it"}}, up to 6]}}""", 1200, "coach")
+
+
 def write_email(lead, research_, action, settings):
     if _usable("email"):
         try:
@@ -222,7 +259,7 @@ Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 Research: {json.dumps(research_, ensure_ascii=False)}
 Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated by blank lines.
 Start with a greeting ("Hi <first name>," or "Hi there," if no name). Do NOT add a sign-off, signature, links or the booking URL:
-the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.
+the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.{house_style(settings)}
 Return JSON: {{"subject": str, "subject_b": "a clearly different subject line for the same email, to compare which gets more replies", "body": str, "cta": "short button label, 2-4 words"}}""", 800, "email")
         except Exception as e:
             _note_error(e)
@@ -332,7 +369,7 @@ Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 Research: {json.dumps(research_, ensure_ascii=False)}
 Rules: under 90 words, plain text, paragraphs separated by blank lines. Thank them for their time, and leave ONE line in square
 brackets like "[add what we agreed and the next step]" for the sender to fill in, because you do not know what was said in the
-meeting. Never invent what was discussed, prices or dates. Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}.
+meeting. Never invent what was discussed, prices or dates. Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}.{house_style(settings)}
 Return JSON: {{"subject": str, "body": str}}""", 600, "reply")
             if out.get("body"):
                 return {"subject": out.get("subject") or "Thanks for your time today", "body": out["body"]}
@@ -361,7 +398,7 @@ Rules: under 90 words, plain text, paragraphs separated by blank lines, warm and
 Never invent prices, timelines, features, clients or facts that are not stated above: if you can't answer from what is given,
 say you will confirm and offer a short call. If they want to meet, give the booking link and offer to send an invite for a time they name.
 If the timing is wrong for them, be gracious and say you will check back later. If they are the wrong person, ask who the right person is.
-Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}. Write in the language of their reply.
+Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}. Write in the language of their reply.{house_style(settings)}
 Return JSON: {{"body": str}}""", 700, "reply")
             if out.get("body"):
                 return {"body": out["body"]}

@@ -216,6 +216,8 @@ DEFAULT_SETTINGS = {
     "logo_url": "",   # logo image in emails; empty = the copy this server hosts at /brand/logo-light.png
     "currency": "USD",            # deal values and the forecast are shown in this currency
     "ab_subjects": "1",           # try two subject lines per outreach step and compare reply rates in Reports
+    "email_guidance": "{}",       # how the team wants emails written, and examples they like: see Email coach
+    "roles": "{}",                # changes to the built-in roles, and roles you added: see auth.py
     "rules": "{}",                # which leads the agent may work on: see rules.py
     "meet_links": "",             # permanent Google Meet links, one per line; each meeting gets one that is free at that time
     # when the agent runs: always while it is on, or only inside these hours
