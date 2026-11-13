@@ -1,12 +1,19 @@
-"""SQLite storage. Swap for Postgres (Supabase) in production: the schema is plain SQL."""
+"""Storage. SQLite by default (one file, nothing to set up). Set DATABASE_URL to a postgres:// address to use
+Postgres instead: the same SQL is translated on the way through, and the first start on an empty Postgres copies
+everything over from the SQLite file, so switching loses nothing."""
 import json
 import os
+import contextvars
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
 
 DB_PATH = os.environ.get("BRN_DB_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "pipeline.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL") or ""
+PG = DATABASE_URL.startswith(("postgres://", "postgresql://"))
 _lock = threading.RLock()
+actor = contextvars.ContextVar("brn_actor", default=None)  # the signed-in person behind the current request, if any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS leads (
@@ -70,6 +77,63 @@ CREATE TABLE IF NOT EXISTS inbox_seen (
   message_id TEXT PRIMARY KEY,  -- Message-ID of every mailbox email already recorded, so nothing is logged twice
   lead_id INTEGER,
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL,          -- admin, manager, sales, viewer
+  password TEXT NOT NULL,      -- salted hash, never the password itself
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  last_login_at TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,      -- hash of the browser's sign-in cookie
+  user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meetings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER,
+  title TEXT NOT NULL,
+  starts_at TEXT NOT NULL,     -- UTC
+  ends_at TEXT NOT NULL,
+  timezone TEXT,
+  attendees TEXT,              -- JSON list of {email, response}
+  description TEXT,
+  location TEXT,
+  meet_link TEXT,
+  google_event_id TEXT,
+  google_link TEXT,
+  status TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled, done, cancelled
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_meet_start ON meetings(starts_at);
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER,
+  title TEXT NOT NULL,
+  notes TEXT,
+  due_at TEXT,                 -- UTC; NULL = no date
+  assigned_to INTEGER,         -- users.id; NULL = anyone
+  done_at TEXT,
+  done_by TEXT,
+  notified_at TEXT,            -- reminder email sent
+  created_by TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_due ON tasks(due_at);
+CREATE TABLE IF NOT EXISTS templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_act_lead ON activities(lead_id);
 CREATE INDEX IF NOT EXISTS idx_act_time ON activities(created_at);
@@ -150,6 +214,20 @@ DEFAULT_SETTINGS = {
     "sender_email": "sales@brndynamics.com",
     "booking_link": "https://brndynamics.com/contact",
     "logo_url": "",   # logo image in emails; empty = the copy this server hosts at /brand/logo-light.png
+    "currency": "USD",            # deal values and the forecast are shown in this currency
+    "ab_subjects": "1",           # try two subject lines per outreach step and compare reply rates in Reports
+    "meeting_reminder_min": "60", # email a brief to whoever booked a meeting this many minutes before it (0 = off)
+    "meeting_followup": "1",      # after a meeting, draft a follow-up email for approval
+    # public booking page (/book): which slots a lead may pick
+    "booking_enabled": "1",
+    "booking_title": "Intro call with brn dynamics",
+    "booking_days": "6,0,1,2,3",  # Python weekdays, Monday = 0: Sunday to Thursday
+    "booking_start": "10:00",
+    "booking_end": "17:00",
+    "booking_slot_min": "30",
+    "booking_timezone": "Asia/Riyadh",
+    "booking_notice_hours": "4",
+    "booking_days_ahead": "14",
     "daily_email_cap": "40",
     "daily_call_cap": "20",
     "min_score": "55",
@@ -178,11 +256,18 @@ DEFAULT_SETTINGS = {
 }
 
 
+# Columns added after a table first shipped: (table, column, type). Applied on start when missing.
 MIGRATIONS = [
-    ("product", "TEXT"), ("segment", "TEXT"), ("extra", "TEXT"),
-    ("emails_sent", "INTEGER NOT NULL DEFAULT 0"), ("last_contacted_at", "TEXT"), ("replied_at", "TEXT"),
-    ("mail_seen_at", "TEXT"),  # when a human last opened this lead's conversation in the Mailbox
+    ("leads", "product", "TEXT"), ("leads", "segment", "TEXT"), ("leads", "extra", "TEXT"),
+    ("leads", "emails_sent", "INTEGER NOT NULL DEFAULT 0"), ("leads", "last_contacted_at", "TEXT"), ("leads", "replied_at", "TEXT"),
+    ("leads", "mail_seen_at", "TEXT"),      # when a human last opened this lead's conversation in the Mailbox
+    ("leads", "deal_value", "REAL"),        # what the deal is worth, in the currency set in Settings
+    ("leads", "expected_close", "TEXT"),    # date the deal is expected to close
+    ("leads", "closed_at", "TEXT"),         # when it was marked won or lost
+    ("activities", "actor", "TEXT"),        # who did it, when a person did
+    ("meetings", "reminded_at", "TEXT"), ("meetings", "followup_at", "TEXT"),
 ]
+ID_TABLES = ("leads", "activities", "approvals", "users", "meetings", "tasks", "templates")  # tables whose INSERT returns a new id
 
 
 def products():
@@ -212,6 +297,50 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _pg_sql(sql):
+    """The app writes SQLite-flavoured SQL; this is the same statement for Postgres."""
+    sql = sql.replace("%", "%%").replace("?", "%s")
+    sql = re.sub(r"\s+COLLATE NOCASE", "", sql)
+    sql = re.sub(r"\bLIKE\b", "ILIKE", sql)   # SQLite's LIKE ignores case; keep searches working the same way
+    if re.match(r"\s*INSERT OR IGNORE", sql, re.I):
+        sql = re.sub(r"INSERT OR IGNORE", "INSERT", sql, count=1, flags=re.I) + " ON CONFLICT DO NOTHING"
+    return sql
+
+
+class _Pg:
+    """One shared Postgres connection that looks enough like sqlite3's for the helpers below."""
+    def __init__(self):
+        import psycopg
+        from psycopg.rows import dict_row
+        self._psycopg, self._row = psycopg, dict_row
+        self._c = None
+
+    def _conn(self):
+        if self._c is None or self._c.closed:
+            self._c = self._psycopg.connect(DATABASE_URL, autocommit=True, row_factory=self._row)
+        return self._c
+
+    def run(self, sql, args=(), fetch=False, insert_id=False):
+        sql = _pg_sql(sql)
+        if insert_id:
+            sql += " RETURNING id"
+        for attempt in (0, 1):
+            try:
+                cur = self._conn().execute(sql, tuple(args))
+                if insert_id:
+                    row = cur.fetchone()
+                    return row["id"] if row else None
+                return [dict(r) for r in cur.fetchall()] if fetch else None
+            except self._psycopg.OperationalError:  # the server dropped the connection: reconnect once
+                try:
+                    self._c and self._c.close()
+                except Exception:
+                    pass
+                self._c = None
+                if attempt:
+                    raise
+
+
 def conn() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
     c = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -222,26 +351,85 @@ def conn() -> sqlite3.Connection:
 _conn = None
 
 
-def db() -> sqlite3.Connection:
+def _columns(table):
+    if PG:
+        return {r["column_name"] for r in _conn.run("SELECT column_name FROM information_schema.columns WHERE table_name=?", (table,), fetch=True)}
+    return {r[1] for r in _conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _setup():
+    """Create tables, add columns introduced by newer versions, and seed default settings."""
+    run = (lambda sql, args=(): _conn.run(sql, args)) if PG else (lambda sql, args=(): _conn.execute(sql, args))
+    schema = SCHEMA
+    if PG:
+        schema = re.sub(r"--[^\n]*", "", schema).replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY").replace(" REAL", " DOUBLE PRECISION")
+        # SQLite lets you add up true/false directly, as in SUM(stage='won'); teach Postgres the same
+        run("CREATE OR REPLACE FUNCTION brn_bool_add(bigint, boolean) RETURNS bigint AS 'SELECT $1 + CASE WHEN $2 THEN 1 ELSE 0 END' LANGUAGE SQL IMMUTABLE")
+        if not _conn.run("SELECT 1 x FROM pg_aggregate a JOIN pg_proc p ON p.oid=a.aggfnoid WHERE p.proname='sum' AND p.proargtypes[0]='boolean'::regtype", fetch=True):
+            run("CREATE AGGREGATE sum(boolean) (SFUNC = brn_bool_add, STYPE = bigint, INITCOND = '0')")
+    if PG:
+        for stmt in (x.strip() for x in schema.split(";")):
+            if stmt:
+                run(stmt)
+    else:
+        _conn.executescript(schema)
+    for table in sorted({t for t, _, _ in MIGRATIONS}):
+        have = _columns(table)
+        for t, col, typ in MIGRATIONS:
+            if t == table and col not in have:
+                run(f"ALTER TABLE {table} ADD COLUMN {col} {typ.replace('REAL', 'DOUBLE PRECISION') if PG else typ}")
+    run("CREATE INDEX IF NOT EXISTS idx_lead_product ON leads(product)")
+    if PG:
+        _import_sqlite()
+    # dry-run mode is gone: anything that was on it now waits for approval (never auto-sends by surprise)
+    run("UPDATE settings SET value='approval' WHERE key='mode' AND value NOT IN ('approval','live')")
+    for k, v in DEFAULT_SETTINGS.items():
+        run("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
+    if not PG:
+        _conn.commit()
+
+
+def _import_sqlite():
+    """First start on an empty Postgres: bring everything over from the SQLite file this app used before."""
+    if not os.path.isfile(DB_PATH) or _conn.run("SELECT 1 x FROM settings LIMIT 1", fetch=True) or _conn.run("SELECT 1 x FROM leads LIMIT 1", fetch=True):
+        return
+    src = sqlite3.connect(DB_PATH)
+    src.row_factory = sqlite3.Row
+    copied = {}
+    try:
+        tables = [r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+        for table in tables:
+            have = _columns(table)
+            if not have:
+                continue
+            rows = [dict(r) for r in src.execute(f"SELECT * FROM {table}")]
+            for r in rows:
+                cols = [c for c in r if c in have]
+                _conn.run(f"INSERT INTO {table}({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [r[c] for c in cols])
+            copied[table] = len(rows)
+            if table in ID_TABLES and rows:  # carry on numbering after the highest copied id
+                _conn.run(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), (SELECT MAX(id) FROM {table}))", fetch=True)
+    finally:
+        src.close()
+    summary = ", ".join(f"{n} {t}" for t, n in copied.items() if n)
+    _conn.run("INSERT INTO activities(lead_id, kind, channel, status, summary, payload, created_at) VALUES (?,?,?,?,?,?,?)",
+              (None, "system", "system", "ok", f"Moved to Postgres: copied {summary or 'an empty database'} from the SQLite file", "{}", now()))
+
+
+def db():
     global _conn
     if _conn is None:
-        _conn = conn()
-        _conn.executescript(SCHEMA)
-        cols = {r[1] for r in _conn.execute("PRAGMA table_info(leads)")}
-        for col, typ in MIGRATIONS:
-            if col not in cols:
-                _conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {typ}")
-        _conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_product ON leads(product)")
-        # dry-run mode is gone: anything that was on it now waits for approval (never auto-sends by surprise)
-        _conn.execute("UPDATE settings SET value='approval' WHERE key='mode' AND value NOT IN ('approval','live')")
-        for k, v in DEFAULT_SETTINGS.items():
-            _conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
-        _conn.commit()
+        with _lock:
+            if _conn is None:
+                _conn = _Pg() if PG else conn()
+                _setup()
     return _conn
 
 
 def q(sql, args=()):
     with _lock:
+        if PG:
+            return db().run(sql, args, fetch=True)
         return [dict(r) for r in db().execute(sql, args).fetchall()]
 
 
@@ -251,7 +439,11 @@ def one(sql, args=()):
 
 
 def ex(sql, args=()):
+    """Run a change. For an INSERT into a table with ids, returns the new row's id."""
     with _lock:
+        if PG:
+            m = re.match(r"\s*INSERT\s+INTO\s+(\w+)", sql, re.I)
+            return db().run(sql, args, insert_id=bool(m and m[1].lower() in ID_TABLES and "RETURNING" not in sql.upper()))
         cur = db().execute(sql, args)
         db().commit()
         return cur.lastrowid
@@ -270,13 +462,17 @@ def set_setting(key, value):
 
 
 def log(lead_id, kind, summary, channel="agent", status="ok", payload=None):
+    who = actor.get()
     return ex(
-        "INSERT INTO activities(lead_id, kind, channel, status, summary, payload, created_at) VALUES (?,?,?,?,?,?,?)",
-        (lead_id, kind, channel, status, summary, json.dumps(payload or {}, ensure_ascii=False), now()),
+        "INSERT INTO activities(lead_id, kind, channel, status, summary, payload, created_at, actor) VALUES (?,?,?,?,?,?,?,?)",
+        (lead_id, kind, channel, status, summary, json.dumps(payload or {}, ensure_ascii=False), now(),
+         who["name"] if who and not who.get("implicit") else None),
     )
 
 
 def update_lead(lead_id, **fields):
     fields["updated_at"] = now()
+    if "stage" in fields:  # a deal closes when it is won or lost, and reopens if it moves on
+        fields.setdefault("closed_at", now() if fields["stage"] in ("won", "lost") else None)
     cols = ", ".join(f"{k}=?" for k in fields)
     ex(f"UPDATE leads SET {cols} WHERE id=?", (*fields.values(), lead_id))

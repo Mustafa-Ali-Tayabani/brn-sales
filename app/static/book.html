@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Book a call · brn dynamics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0B0C10;--blue:#010ECF;--mut:#6b6d76;--line:#e6e6e0;--paper:#F4F4F0}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding:28px 16px;font:15px/1.5 "DM Sans",system-ui,sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;display:grid;place-items:start center}
+.wrap{width:min(920px,100%);background:#fff;border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 12px 40px #0b0c1014;display:grid;grid-template-columns:300px 1fr}
+.side{background:var(--ink);color:#fff;padding:28px 26px}
+.side img{width:112px;display:block;margin-bottom:26px}
+h1{font:700 22px/1.25 "Space Grotesk",sans-serif;letter-spacing:-.015em;margin:0 0 14px}
+.meta{color:#b9bac3;font-size:14px;display:flex;flex-direction:column;gap:8px}.meta b{color:#fff;font-weight:500}
+.main{padding:26px 28px;min-width:0}
+h2{font:700 16px "Space Grotesk",sans-serif;margin:0 0 12px}
+.days{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;scroll-snap-type:x proximity}
+.day{flex:none;border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 12px;cursor:pointer;text-align:center;min-width:64px;font:inherit;color:var(--ink);scroll-snap-align:start}
+.day small{display:block;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}.day b{display:block;font:700 18px "Space Grotesk"}
+.day:hover{border-color:#c5c8f3}.day.on{background:var(--ink);border-color:var(--ink);color:#fff}.day.on small{color:#b9bac3}
+.slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin:6px 0 4px}
+.slot{font:inherit;font-weight:500;border:1px solid #c5c8f3;background:#fff;color:var(--blue);border-radius:10px;padding:10px 6px;cursor:pointer}
+.slot:hover{background:#eef0ff}.slot.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+label{display:block;font-size:12px;font-weight:500;color:var(--mut);margin:12px 0 5px}
+input,textarea{width:100%;font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--ink);background:#fff}
+input:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px #010ecf1a}textarea{min-height:76px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.go{width:100%;margin-top:18px;font:inherit;font-weight:600;border:0;border-radius:10px;padding:13px;background:var(--blue);color:#fff;cursor:pointer;box-shadow:0 4px 14px #010ecf40}
+.go:hover{background:#000bb0}.go:disabled{opacity:.6;cursor:default}
+.pick{background:#eef0ff;color:var(--blue);border-radius:10px;padding:10px 12px;font-weight:500;margin-bottom:4px;display:flex;gap:10px;align-items:center}
+.pick a{margin-left:auto;font-weight:400;font-size:13px;color:var(--mut);cursor:pointer;text-decoration:underline}
+.err{display:none;margin-top:12px;background:#fdecea;color:#b42318;border-radius:10px;padding:10px 12px;font-size:14px}
+.muted{color:var(--mut);font-size:13px}.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.done{text-align:center;padding:26px 6px}.tick{width:56px;height:56px;border-radius:50%;background:#e7f6ee;color:#127a4a;display:grid;place-items:center;font-size:28px;margin:0 auto 14px}
+@media(max-width:760px){.wrap{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="side"><img src="/brand/logo-light.png" alt="brn dynamics"><h1 id="title">Book a call</h1>
+    <div class="meta"><div><b id="mins"></b></div><div id="where"></div><div>Times shown in <b id="tz"></b></div></div></div>
+  <div class="main" id="main"><p class="muted">Loading available times…</p></div>
+</div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TZ=Intl.DateTimeFormat().resolvedOptions().timeZone,L=new URLSearchParams(location.search).get('l');
+const dkey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const hm=t=>new Date(t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}),long=t=>new Date(t).toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});
+let INFO=null,DAYS={},day=null,slot=null;
+async function load(keep){const r=await fetch('/api/book/info'+(L?'?l='+encodeURIComponent(L):''));INFO=await r.json();$('#tz').textContent=TZ;
+  if(!INFO.enabled){$('#main').innerHTML='<h2>Online booking is not available right now</h2><p class="muted">Please reply to our email and we will find a time together.</p>';return}
+  $('#title').textContent=INFO.title;$('#mins').textContent=INFO.minutes+' minutes';$('#where').textContent=INFO.meet?'Google Meet video call. The link arrives by email.':'We will send you the call details by email.';
+  DAYS={};INFO.slots.forEach(s=>(DAYS[dkey(new Date(s))]=DAYS[dkey(new Date(s))]||[]).push(s));if(!keep||!DAYS[day])day=Object.keys(DAYS)[0];slot=null;render()}
+function render(){const keys=Object.keys(DAYS);if(!keys.length){$('#main').innerHTML='<h2>No free times in the next days</h2><p class="muted">Please reply to our email and we will find a time together.</p>';return}
+  const p=INFO.lead||{};
+  $('#main').innerHTML=`<h2>Pick a day</h2><div class="days">${keys.map(k=>{const d=new Date(DAYS[k][0]);return `<button class="day ${k==day?'on':''}" onclick="day='${k}';slot=null;render()"><small>${d.toLocaleDateString([], {weekday:'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString([], {month:'short'})}</small></button>`}).join('')}</div>
+   ${slot?`<div class="pick">${long(slot)}, ${hm(slot)}<a onclick="slot=null;render()">change</a></div>
+    <form id="f"><div class="two"><div><label for="name">Your name</label><input id="name" required value="${esc(p.name)}" autocomplete="name"></div><div><label for="email">Email</label><input id="email" type="email" required value="${esc(p.email)}" autocomplete="email"></div></div>
+     <label for="company">Company</label><input id="company" value="${esc(p.company)}" autocomplete="organization">
+     <label for="note">Anything you would like us to prepare? (optional)</label><textarea id="note"></textarea>
+     <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+     <div class="err" id="err" role="alert"></div><button class="go" id="go">Confirm ${hm(slot)}</button></form>`
+   :`<h2 style="margin-top:8px">${long(DAYS[day][0])}</h2><div class="slots">${DAYS[day].map(s=>`<button class="slot" onclick="slot='${s}';render()">${hm(s)}</button>`).join('')}</div>`}`;
+  if(slot){$('#f').onsubmit=send;(p.name?$('#note'):$('#name')).focus()}}
+async function send(e){e.preventDefault();const b=$('#go'),err=$('#err');b.disabled=true;b.textContent='Booking…';err.style.display='none';
+  try{const r=await fetch('/api/book',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot,name:$('#name').value,email:$('#email').value,company:$('#company').value,note:$('#note').value,website:$('#website').value,tz:TZ,l:L})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){$('#main').innerHTML=`<div class="done"><div class="tick">✓</div><h2>You're booked</h2><p><b>${long(slot)}, ${hm(slot)}</b><br><span class="muted">${INFO.minutes} minutes · ${esc(TZ)}</span></p>
+      <p class="muted">${d.invited?'A calendar invitation with the Google Meet link is on its way to '+esc($('#email')?.value||'your inbox')+'.':'We have your booking and will email you the call details.'}</p>${d.meet_link?`<p><a href="${esc(d.meet_link)}">${esc(d.meet_link)}</a></p>`:''}</div>`;return}
+    err.textContent=d.detail||'Something went wrong. Please try again.';err.style.display='block';if(r.status==409){await load(true);return}}
+  catch{err.textContent='Could not reach the server. Check your connection and try again.';err.style.display='block'}
+  b.disabled=false;b.textContent='Confirm '+hm(slot)}
+load();
+</script>
+</body>
+</html>

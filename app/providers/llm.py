@@ -5,6 +5,7 @@ import os
 import re
 
 import time
+from datetime import datetime, timedelta, timezone
 
 from .. import db
 
@@ -67,9 +68,10 @@ def _record(task, usage):
 def usage_report():
     """Spend per day (last 30 days), today, this month, and the estimated balance left."""
     today = db.now()[:10]
+    month_ago = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
     days = db.q("""SELECT day, SUM(calls) calls, SUM(input_tokens) input_tokens, SUM(output_tokens) output_tokens, SUM(cost) cost
-                   FROM ai_usage WHERE day>=date(?, '-30 day') GROUP BY day ORDER BY day DESC""", (today,))
-    tasks = db.q("SELECT task, SUM(calls) calls, SUM(cost) cost FROM ai_usage WHERE day>=date(?, '-30 day') GROUP BY task ORDER BY cost DESC", (today,))
+                   FROM ai_usage WHERE day>=? GROUP BY day ORDER BY day DESC""", (month_ago,))
+    tasks = db.q("SELECT task, SUM(calls) calls, SUM(cost) cost FROM ai_usage WHERE day>=? GROUP BY task ORDER BY cost DESC", (month_ago,))
     bal, bal_at = db.setting("ai_balance"), db.setting("ai_balance_at")
     left = None
     if bal and bal_at:
@@ -221,7 +223,7 @@ Research: {json.dumps(research_, ensure_ascii=False)}
 Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated by blank lines.
 Start with a greeting ("Hi <first name>," or "Hi there," if no name). Do NOT add a sign-off, signature, links or the booking URL:
 the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.
-Return JSON: {{"subject": str, "body": str, "cta": "short button label, 2-4 words"}}""", 800, "email")
+Return JSON: {{"subject": str, "subject_b": "a clearly different subject line for the same email, to compare which gets more replies", "body": str, "cta": "short button label, 2-4 words"}}""", 800, "email")
         except Exception as e:
             _note_error(e)
     name = (lead.get("contact_name") or "there").split(" ")[0]
@@ -307,6 +309,38 @@ Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsu
     if "?" in t:
         return {"intent": "question", "summary": "has a question"}
     return {"intent": "interested", "summary": "positive reply"}
+
+
+def alt_subject(subject, lead, action):
+    """A second subject line for the same email, when Claude did not supply one."""
+    company, first = lead.get("company") or "your team", (lead.get("contact_name") or "").split(" ")[0]
+    options = {"intro": [f"Idea for {company}", f"Question for {first or company}"], "follow_up_1": [f"{company}: worth a quick look?", "Following up"],
+               "follow_up_2": [f"One thought for {company}", "A quick idea"], "breakup": [f"Should I close the file on {company}?", "Last note from me"]}.get(action, [f"A note for {company}", "Quick question"])
+    return next((o for o in options if o.lower() != (subject or "").lower()), options[0])
+
+
+def write_followup(lead, research_, settings, meeting):
+    """Draft the email sent after a meeting. A person approves it, and edits in what was actually agreed."""
+    name = (lead.get("contact_name") or "").split(" ")[0]
+    sender = settings.get("sender_name") or "brn dynamics"
+    if _usable("reply"):
+        try:
+            out = _ask_json(SYSTEM, f"""We just had a meeting with a prospect. Write the short follow-up email.
+Meeting: {meeting.get('title')}. Notes on the invitation: {meeting.get('description') or 'none'}
+Product: {settings.get('product_name', '')}. Offer: {settings['offer']}
+Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
+Research: {json.dumps(research_, ensure_ascii=False)}
+Rules: under 90 words, plain text, paragraphs separated by blank lines. Thank them for their time, and leave ONE line in square
+brackets like "[add what we agreed and the next step]" for the sender to fill in, because you do not know what was said in the
+meeting. Never invent what was discussed, prices or dates. Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}.
+Return JSON: {{"subject": str, "body": str}}""", 600, "reply")
+            if out.get("body"):
+                return {"subject": out.get("subject") or "Thanks for your time today", "body": out["body"]}
+        except Exception as e:
+            _note_error(e)
+    return {"subject": "Thanks for your time today",
+            "body": f"Hi {name or 'there'},\n\nThank you for taking the time to speak with us today. It was great to learn more about {lead.get('company') or 'your business'}.\n\n"
+                    f"[add what we agreed and the next step]\n\nIf anything comes up in the meantime, just reply to this email.\n\nBest regards,\n{sender}"}
 
 
 def write_reply(lead, research_, settings, their_text, intent, last_sent=None):

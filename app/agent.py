@@ -3,7 +3,10 @@
 Stages: new, researched, disqualified, in_sequence, awaiting_approval, replied, meeting_booked,
 nurture, opted_out, completed, won, lost.
 """
+import hashlib
+import hmac
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from . import compliance, db
@@ -22,7 +25,27 @@ def _settings(lead=None):
         if p.get("booking_link"):
             s["booking_link"] = p["booking_link"]
     s["product_key"] = key
+    link = s.get("booking_link") or ""
+    if (lead or {}).get("id") and link.split("?")[0].rstrip("/").endswith("/book"):  # our own booking page: let it recognise this lead
+        s["booking_link"] = link + ("&" if "?" in link else "?") + "l=" + lead_token(lead["id"])
     return s
+
+
+def lead_token(lead_id):
+    """A link token that identifies a lead on the public booking page without exposing anything guessable."""
+    key = db.setting("secret_booking_key")
+    if not key:
+        key = secrets.token_hex(24)
+        db.set_setting("secret_booking_key", key)
+    return f"{lead_id}.{hmac.new(key.encode(), str(lead_id).encode(), hashlib.sha256).hexdigest()[:20]}"
+
+
+def lead_from_token(token):
+    try:
+        lead_id = int(str(token).split(".")[0])
+    except (ValueError, AttributeError):
+        return None
+    return db.one("SELECT * FROM leads WHERE id=?", (lead_id,)) if hmac.compare_digest(lead_token(lead_id), str(token)) else None
 
 
 def _iso(dt):
@@ -91,7 +114,14 @@ def _draft(lead, step):
     s = _settings(lead)
     r = json.loads(lead["research"] or "{}")
     if step["channel"] == "email":
-        return llm.write_email(lead, r, step["action"], s)
+        content = llm.write_email(lead, r, step["action"], s)
+        if db.setting("ab_subjects") == "1":  # two subject lines, split evenly across leads; Reports compares reply rates
+            a, b = content.get("subject") or "", content.pop("subject_b", None) or llm.alt_subject(content.get("subject"), lead, step["action"])
+            content.update(subject_a=a, subject_b=b, variant="B" if (lead["id"] + lead["step"]) % 2 else "A")
+            content["subject"] = b if content["variant"] == "B" else a
+        else:
+            content.pop("subject_b", None)
+        return content
     return llm.call_script(lead, r, s)
 
 
@@ -116,7 +146,8 @@ def deliver(lead, step, content, at):
             db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=1)))
             return
         res.pop("html", None)
-        db.log(lead["id"], "email_sent", f"{step['action']}: {content['subject']}", channel="email", status=res["status"], payload=res)
+        db.log(lead["id"], "email_sent", f"{step['action']}: {content['subject']}", channel="email", status=res["status"],
+               payload={**res, "action": step["action"], "variant": content.get("variant")})
         if res["status"] == "ok":
             db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
     else:
@@ -201,7 +232,7 @@ def decide(approval_id, approve, edited=None):
           ("approved" if approve else "rejected", db.now(), json.dumps(content, ensure_ascii=False), approval_id))
     db.log(lead["id"], "approval", f"{'Approved' if approve else 'Rejected'} {a['channel']} '{a['action']}'", channel=a["channel"])
     now = datetime.now(timezone.utc)
-    if a["action"] == "reply":  # an answer to a lead's reply: not a step of the sequence, so the lead's status is left alone
+    if a["action"] in ("reply", "followup"):  # an answer or a meeting follow-up: not a step of the sequence, so the status is left alone
         if approve:
             send_reply(lead, content)
         return True
@@ -251,8 +282,34 @@ def send_reply(lead, content):
     except Exception as e:
         db.log(lead["id"], "email_sent", f"Send failed: {e}", channel="email", status="error")
         return
-    db.log(lead["id"], "email_sent", f"reply: {content['subject']}", channel="email", status="ok", payload={**res, "manual": True, "reply": True})
+    db.log(lead["id"], "email_sent", f"reply: {content['subject']}", channel="email", status="ok", payload={**res, "manual": True, "reply": True, "action": "reply"})
     db.ex("UPDATE leads SET emails_sent=emails_sent+1, last_contacted_at=?, mail_seen_at=? WHERE id=?", (db.now(), db.now(), lead["id"]))
+
+
+def handle_bounce(address, reason="", hard=True):
+    """An email could not be delivered. A permanent failure stops all email to that address: sending to dead
+    addresses is what gets a sender marked as spam. A temporary one (full mailbox, server busy) is only noted."""
+    address = (address or "").strip().lower()
+    if "@" not in address:
+        return 0
+    leads = db.q("SELECT id, stage, extra FROM leads WHERE lower(email)=?", (address,))
+    what = (reason or "").strip()[:200]
+    for lead in leads:
+        db.log(lead["id"], "email_bounce", (f"Email bounced: {address} can't receive mail" if hard else f"Delivery delayed to {address}") + (f" ({what})" if what else ""),
+               channel="email", status="error" if hard else "ok", payload={"address": address, "reason": what, "hard": hard})
+        if hard:
+            extra = json.loads(lead["extra"] or "{}")
+            extra["email_bounced"] = address
+            fields = {"extra": json.dumps(extra, ensure_ascii=False)}
+            if lead["stage"] not in ("won", "lost", "opted_out", "meeting_booked"):
+                fields.update(stage="needs_contact", next_action=None, next_action_at=None)
+            db.update_lead(lead["id"], **fields)
+            db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending'", (db.now(), lead["id"]))
+    if hard:
+        compliance.suppress(address, "bounced")
+        if not leads:
+            db.log(None, "email_bounce", f"Email bounced: {address} can't receive mail" + (f" ({what})" if what else ""), channel="email", status="error")
+    return len(leads)
 
 
 AGENT_STAGES = ("new", "researched", "in_sequence", "awaiting_approval", "completed", "paused", "nurture")

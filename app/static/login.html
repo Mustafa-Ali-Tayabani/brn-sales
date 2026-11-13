@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · brn. pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;font:15px/1.5 "DM Sans",system-ui,sans-serif;background:#0B0C10;color:#0B0C10;-webkit-font-smoothing:antialiased}
+.card{width:min(400px,100%);background:#fff;border-radius:18px;padding:32px 30px;box-shadow:0 30px 80px #0008}
+.logo{display:block;width:120px;margin:0 auto 6px;background:#0B0C10;border-radius:12px;padding:12px 16px}
+h1{font:700 22px "Space Grotesk",sans-serif;letter-spacing:-.015em;margin:18px 0 4px;text-align:center}
+p{color:#6b6d76;margin:0 0 20px;text-align:center;font-size:14px}
+label{display:block;font-size:12px;font-weight:500;color:#6b6d76;margin:14px 0 5px}
+input{width:100%;font:inherit;border:1px solid #e6e6e0;border-radius:10px;padding:11px 12px;background:#fff;color:#0B0C10}
+input:focus{outline:none;border-color:#010ECF;box-shadow:0 0 0 3px #010ecf1a}
+button{width:100%;margin-top:22px;font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px;background:#010ECF;color:#fff;cursor:pointer;box-shadow:0 4px 14px #010ecf40}
+button:hover{background:#000bb0}button:disabled{opacity:.6;cursor:default}
+.err{display:none;margin-top:14px;background:#fdecea;color:#b42318;border-radius:10px;padding:10px 12px;font-size:14px}
+.foot{margin-top:18px;font-size:12px;color:#9a9ca4;text-align:center}
+</style>
+</head>
+<body>
+<form class="card" id="f">
+  <img class="logo" src="/brand/logo-light.png" alt="brn dynamics">
+  <h1>Sign in</h1><p>brn. pipeline</p>
+  <label for="email">Email</label><input id="email" type="email" autocomplete="username" required autofocus>
+  <label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+  <div class="err" id="err" role="alert"></div>
+  <button id="go">Sign in</button>
+  <div class="foot">Forgot your password? Ask an admin to reset it.</div>
+</form>
+<script>
+const $=s=>document.querySelector(s);
+$('#f').onsubmit=async e=>{e.preventDefault();const b=$('#go'),err=$('#err');b.disabled=true;b.textContent='Signing in…';err.style.display='none';
+  try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('#email').value,password:$('#password').value})});
+    if(r.ok){location.href='/'+(location.hash||'');return}
+    let t='Could not sign in.';try{t=(await r.json()).detail||t}catch{}err.textContent=t;err.style.display='block';$('#password').select()}
+  catch{err.textContent='Could not reach the server. Check your connection and try again.';err.style.display='block'}
+  b.disabled=false;b.textContent='Sign in'};
+</script>
+</body>
+</html>

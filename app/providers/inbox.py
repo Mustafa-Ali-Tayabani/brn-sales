@@ -18,7 +18,44 @@ from .. import db
 from . import mailbox
 
 MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
-HEADERS = "(BODY.PEEK[HEADER.FIELDS (FROM MESSAGE-ID IN-REPLY-TO REFERENCES)])"
+HEADERS = "(BODY.PEEK[HEADER.FIELDS (FROM MESSAGE-ID IN-REPLY-TO REFERENCES CONTENT-TYPE SUBJECT X-FAILED-RECIPIENTS)])"
+HARD_WORDS = ("user unknown", "no such user", "does not exist", "doesn't exist", "not found", "unknown recipient", "invalid recipient", "mailbox unavailable",
+              "address rejected", "no mailbox", "recipient rejected", "account disabled", "550 ", "551 ", "553 ", "5.1.1", "5.1.0", "5.4.1", "nxdomain", "domain not found")
+SOFT_WORDS = ("mailbox full", "over quota", "quota exceeded", "temporar", "try again", "delayed", "4.2.2", "452 ", "421 ")
+
+
+def is_bounce(hdr, sender):
+    """Is this a mail server telling us an email could not be delivered?"""
+    ctype, subject = (hdr.get("Content-Type") or "").lower(), (hdr.get("Subject") or "").lower()
+    return ("delivery-status" in ctype or sender.startswith(("mailer-daemon", "postmaster"))
+            or any(w in subject for w in ("undeliverable", "undelivered mail", "delivery status notification", "delivery failure", "returned mail", "failure notice")))
+
+
+def bounce_details(msg):
+    """[(address, reason, hard)] from a bounce notice: the machine-readable report when there is one, else the wording."""
+    out = []
+    for part in msg.walk():
+        if part.get_content_type() == "message/delivery-status":
+            for block in part.get_payload() if isinstance(part.get_payload(), list) else []:
+                rcpt = block.get("Final-Recipient") or block.get("Original-Recipient")
+                if rcpt:
+                    status, action = (block.get("Status") or "").strip(), (block.get("Action") or "").strip().lower()
+                    if action in ("delivered", "relayed", "expanded"):
+                        continue
+                    hard = status.startswith("5") or (action == "failed" and not status.startswith("4"))
+                    out.append((rcpt.split(";")[-1].strip().strip("<>").lower(), re.sub(r"\s+", " ", block.get("Diagnostic-Code") or status)[:200], hard))
+    if out:
+        return out
+    text = _text(msg).lower()
+    hard = any(w in text for w in HARD_WORDS) and not any(w in text for w in SOFT_WORDS)
+    found = [a.strip().lower() for a in (msg.get("X-Failed-Recipients") or "").split(",") if "@" in a]
+    if not found:  # no report and no header: look for a lead's address in the wording
+        mine = {mailbox.address(), (db.setting("sender_email") or "").lower()}
+        for a in dict.fromkeys(re.findall(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+", text)):
+            if a not in mine and db.one("SELECT 1 x FROM leads WHERE lower(email)=?", (a,)):
+                found.append(a)
+    reason = next((line.strip()[:200] for line in _text(msg).splitlines() if any(w in line.lower() for w in HARD_WORDS + SOFT_WORDS)), "")
+    return [(a, reason, hard) for a in found]
 
 
 def enabled():
@@ -96,8 +133,8 @@ def _already_logged(lead_id, text):
     return False
 
 
-def poll(handle_reply):
-    """Check the inbox once. Returns the number of lead replies recorded."""
+def poll(handle_reply, handle_bounce=None):
+    """Check the inbox once. Returns the number of lead replies recorded. Bounce notices go to handle_bounce."""
     if not enabled():
         return 0
     mine = {mailbox.address(), (db.setting("sender_email") or "").lower()}
@@ -123,6 +160,13 @@ def poll(handle_reply):
                 if not sender or sender in mine:
                     continue
                 if mid and db.one("SELECT 1 x FROM inbox_seen WHERE message_id=?", (mid,)):
+                    continue
+                if handle_bounce and is_bounce(hdr, sender):
+                    _, raw = box.fetch(num.decode(), "(BODY.PEEK[])")
+                    for address, reason, hard in bounce_details(email.message_from_bytes(raw[0][1])):
+                        handle_bounce(address, reason, hard)
+                    if mid:
+                        db.ex("INSERT OR IGNORE INTO inbox_seen(message_id, lead_id, created_at) VALUES (?,?,?)", (mid, None, db.now()))
                     continue
                 lead = db.one("SELECT id FROM leads WHERE lower(email)=?", (sender,))
                 if not lead and not sender.startswith(("mailer-daemon", "postmaster")):

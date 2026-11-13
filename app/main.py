@@ -12,42 +12,174 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import agent, assistant, compliance, db, email_template
+from . import agent, assistant, auth, compliance, db, email_template
 from urllib.parse import quote
 
-from .providers import channels, enrich, inbox, llm, mailbox, sources
+from .providers import channels, enrich, gcal, inbox, llm, mailbox, sources
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 ADMIN_PW = os.environ.get("BRN_ADMIN_PASSWORD")
 
 
+PUBLIC = ("/webhooks/", "/brand/", "/login", "/api/login", "/book", "/api/book")   # reachable without signing in
+OWN = ("/", "/api/me", "/api/password", "/api/logout")           # anyone signed in, whatever their role
+
+
 @app.middleware("http")
-async def basic_auth(request: Request, call_next):
-    if ADMIN_PW and not request.url.path.startswith(("/webhooks/", "/brand/")):
-        h = request.headers.get("authorization", "")
-        ok = False
-        if h.startswith("Basic "):
-            try:
-                _, pw = base64.b64decode(h[6:]).decode().split(":", 1)
-                ok = secrets.compare_digest(pw, ADMIN_PW)
-            except Exception:
-                ok = False
-        if not ok:
-            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="brn"'})
-    if request.url.path.startswith("/api/mailbox/") and request.url.path != "/api/mailbox/folders" and _mailbox_locked(request):
-        return JSONResponse({"detail": MAILBOX_LOCKED}, status_code=403)
-    return await call_next(request)
+async def gate(request: Request, call_next):
+    """Who is asking, and are they allowed to? See auth.py for the three sign-in states and the roles."""
+    path, user = request.url.path, None
+    if not path.startswith(PUBLIC):
+        mode = auth.mode()
+        if mode == "users":
+            user = auth.session_user(request.cookies.get(auth.COOKIE))
+            if not user:
+                if path.startswith("/api/"):
+                    return JSONResponse({"detail": "Please sign in again."}, status_code=401)
+                return RedirectResponse("/login", status_code=303)
+        elif mode == "basic":
+            h, ok = request.headers.get("authorization", ""), False
+            if h.startswith("Basic "):
+                try:
+                    _, pw = base64.b64decode(h[6:]).decode().split(":", 1)
+                    ok = secrets.compare_digest(pw, ADMIN_PW)
+                except Exception:
+                    ok = False
+            if not ok:
+                return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="brn"'})
+        user = user or auth.IMPLICIT_ADMIN
+        need = auth.required(request.method, path)
+        if path not in OWN and need not in auth.perms(user):
+            return JSONResponse({"detail": f"Your role ({auth.ROLES[user['role']]['label']}) can't do this. It needs permission to: {auth.PERMS[need].lower()}."}, status_code=403)
+        if path.startswith("/api/mailbox/") and path != "/api/mailbox/folders" and _mailbox_locked(request):
+            return JSONResponse({"detail": MAILBOX_LOCKED}, status_code=403)
+    mark = db.actor.set(user)
+    try:
+        return await call_next(request)
+    finally:
+        db.actor.reset(mark)
 
 
-MAILBOX_LOCKED = "The full mailbox is locked because this dashboard has no password. Set BRN_ADMIN_PASSWORD on the server to open it."
+MAILBOX_LOCKED = "The full mailbox is locked because nobody has to sign in to this dashboard. Add your account in Settings > People, or set BRN_ADMIN_PASSWORD on the server, to open it."
 
 
 def _mailbox_locked(request):
-    """Without a dashboard password, anyone with the link could read and send your mail: only allow it on this computer."""
-    return not ADMIN_PW and (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost")
+    """With no sign-in at all, anyone with the link could read and send your mail: only allow it on this computer."""
+    return auth.mode() == "open" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1", "localhost")
+
+
+def _need(perm):
+    if not auth.can(perm):
+        raise HTTPException(403, f"Your role can't do this. It needs permission to: {auth.PERMS[perm].lower()}.")
+
+
+def _public_base(request):
+    """This server's public address, for links other services call back to."""
+    base = os.environ.get("BRN_PUBLIC_URL") or os.environ.get("RAILWAY_PUBLIC_DOMAIN") or ""
+    if base:
+        return (base if base.startswith("http") else f"https://{base}").rstrip("/")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{proto}://{host}"
+
+
+# ---------- signing in, people and roles ----------
+@app.get("/login")
+def login_page():
+    if auth.mode() != "users":
+        return RedirectResponse("/", status_code=303)
+    return FileResponse(os.path.join(STATIC, "login.html"))
+
+
+def _signed_in(response, request, user_id):
+    secure = _public_base(request).startswith("https")
+    response.set_cookie(auth.COOKIE, auth.start_session(user_id), max_age=auth.SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=secure, path="/")
+    return response
+
+
+@app.post("/api/login")
+def login(request: Request, payload: dict = Body(...)):
+    try:
+        u = auth.login(payload.get("email"), payload.get("password"), request.client.host if request.client else "")
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+    return _signed_in(JSONResponse({"ok": True}), request, u["id"])
+
+
+@app.post("/api/logout")
+def logout(request: Request):
+    auth.end_session(request.cookies.get(auth.COOKIE))
+    r = JSONResponse({"ok": True})
+    r.delete_cookie(auth.COOKIE, path="/")
+    return r
+
+
+@app.get("/api/me")
+def me():
+    u = db.actor.get() or auth.IMPLICIT_ADMIN
+    return {"user": {k: u.get(k) for k in ("id", "name", "email", "role")}, "perms": auth.perms(u), "mode": auth.mode(),
+            "role_label": auth.ROLES[u["role"]]["label"], "currency": db.setting("currency") or "USD"}
+
+
+@app.post("/api/password")
+def change_password(payload: dict = Body(...)):
+    u = db.actor.get()
+    if not u or u.get("implicit"):
+        raise HTTPException(400, "There is no account to change yet. Add yours in Settings > People.")
+    full = db.one("SELECT * FROM users WHERE id=?", (u["id"],))
+    if not auth.check_pw(payload.get("current") or "", full["password"]):
+        raise HTTPException(400, "The current password is not right.")
+    try:
+        auth.check_new_password(payload.get("new"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.ex("UPDATE users SET password=? WHERE id=?", (auth.hash_pw(payload["new"]), u["id"]))
+    return {"ok": True}
+
+
+@app.get("/api/users")
+def list_users():
+    return {"users": auth.users(), "mode": auth.mode(), "perms": auth.PERMS,
+            "roles": [{"key": k, **v} for k, v in auth.ROLES.items()]}
+
+
+@app.post("/api/users")
+def add_user(request: Request, payload: dict = Body(...)):
+    first = auth.mode() != "users"
+    try:
+        uid = auth.create(payload.get("name"), payload.get("email"), payload.get("role"), payload.get("password"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.log(None, "system", f"Account added: {payload.get('name')} ({auth.ROLES[payload['role']]['label']})", channel="system")
+    r = JSONResponse({"id": uid, "first": first})
+    return _signed_in(r, request, uid) if first else r  # from now on everyone signs in: keep the person who set it up signed in
+
+
+@app.patch("/api/users/{user_id}")
+def edit_user(user_id: int, payload: dict = Body(...)):
+    try:
+        u = auth.update(user_id, {k: payload[k] for k in ("name", "role", "active", "password") if k in payload}, db.actor.get())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    what = [f"role {auth.ROLES[payload['role']]['label']}" if "role" in payload and payload["role"] != u["role"] else "",
+            ("reactivated" if payload["active"] else "deactivated") if "active" in payload and bool(payload["active"]) != bool(u["active"]) else "",
+            "password reset" if payload.get("password") else ""]
+    db.log(None, "system", f"Account changed: {u['name']} ({', '.join(w for w in what if w) or 'details'})", channel="system")
+    return {"ok": True}
+
+
+@app.delete("/api/users/{user_id}")
+def remove_user(user_id: int):
+    try:
+        u = auth.delete(user_id, db.actor.get())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if u:
+        db.log(None, "system", f"Account deleted: {u['name']}", channel="system")
+    return {"ok": True}
 
 
 @app.get("/")
@@ -114,7 +246,7 @@ def _lead_filters(f):
 
 
 SORTS = {"updated": "l.updated_at DESC", "created": "l.created_at DESC", "score": "l.score DESC", "company": "l.company COLLATE NOCASE",
-         "contacted": "l.last_contacted_at DESC", "next": "l.next_action_at IS NULL, l.next_action_at"}
+         "contacted": "l.last_contacted_at DESC", "value": "COALESCE(l.deal_value,0) DESC", "next": "l.next_action_at IS NULL, l.next_action_at"}
 
 
 @app.get("/api/stats")
@@ -151,7 +283,10 @@ def stats(request: Request):
             "blocked": db.one("SELECT COUNT(*) n FROM activities WHERE status='blocked'")["n"],
             "errors": db.one("SELECT COUNT(*) n FROM activities WHERE status='error' AND created_at>=?", (since,))["n"],
             "unread_mail": db.one(f"SELECT COUNT(DISTINCT a.lead_id) n FROM activities a JOIN leads l ON l.id=a.lead_id WHERE {UNREAD}")["n"],
-            "inbox_unread": None if _mailbox_locked(request) else mailbox.inbox_unread(),
+            "inbox_unread": None if _mailbox_locked(request) or not auth.can("mailbox") else mailbox.inbox_unread(),
+            "meetings_upcoming": db.one("SELECT COUNT(*) n FROM meetings WHERE status='scheduled' AND ends_at>=?", (db.now(),))["n"],
+            "tasks_due": db.one("SELECT COUNT(*) n FROM tasks WHERE done_at IS NULL AND due_at IS NOT NULL AND due_at<=?",
+                                ((datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(timespec="seconds"),))["n"],
         },
         "funnel": [["Leads", total], ["Qualified", qualified], ["Contacted", agg["contacted"] or 0],
                    ["Replied", agg["replies"] or 0], ["Meetings", meetings]],
@@ -168,7 +303,7 @@ def leads(request: Request):
     offset = int(f.get("offset", 0))
     rows = db.q(f"""SELECT l.id, l.company, l.contact_name, l.title, l.email, l.phone, l.website, l.city, l.country, l.industry,
                     l.segment, l.product, l.source, l.stage, l.score, l.step, l.next_action, l.next_action_at, l.emails_sent,
-                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at
+                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at, l.deal_value, l.expected_close
                     FROM leads l WHERE {where} ORDER BY {SORTS.get(f.get('sort'), SORTS['updated'])} LIMIT ? OFFSET ?""",
                 (*args, limit, offset))
     return {"total": total, "rows": rows}
@@ -192,6 +327,8 @@ def lead(lead_id: int):
     l["extra"] = json.loads(l["extra"] or "null")
     l["activities"] = db.q("SELECT * FROM activities WHERE lead_id=? ORDER BY id DESC", (lead_id,))
     l["approvals"] = db.q("SELECT * FROM approvals WHERE lead_id=? ORDER BY id DESC", (lead_id,))
+    l["tasks"] = db.q("SELECT t.*, u.name assignee FROM tasks t LEFT JOIN users u ON u.id=t.assigned_to WHERE t.lead_id=? ORDER BY t.done_at IS NOT NULL, t.due_at IS NULL, t.due_at, t.id DESC LIMIT 30", (lead_id,))
+    l["meetings"] = [_meeting(m) for m in db.q("SELECT m.*, NULL company FROM meetings m WHERE m.lead_id=? ORDER BY m.starts_at DESC", (lead_id,))]
     return l
 
 
@@ -415,12 +552,20 @@ def find_contact(lead_id: int):
     return {"status": "found", "email": fields.get("email"), "phone": fields.get("phone"), "phone_pending": bool(p.get("phone_request")), "note": p.get("note")}
 
 
-EDITABLE = ("stage", "notes", "consent_basis", "email", "phone", "contact_name", "title", "product", "segment", "country", "city", "website")
+EDITABLE = ("stage", "notes", "consent_basis", "email", "phone", "contact_name", "title", "product", "segment", "country", "city", "website",
+            "deal_value", "expected_close")
 
 
 @app.patch("/api/leads/{lead_id}")
 def edit_lead(lead_id: int, payload: dict = Body(...)):
     allowed = {k: v for k, v in payload.items() if k in EDITABLE}
+    if "deal_value" in allowed:
+        try:
+            allowed["deal_value"] = float(str(allowed["deal_value"]).replace(",", "")) if allowed["deal_value"] not in (None, "") else None
+        except ValueError:
+            raise HTTPException(400, "The deal value must be a number.")
+    if "expected_close" in allowed:
+        allowed["expected_close"] = allowed["expected_close"] or None
     if allowed.get("stage") == "in_sequence":
         allowed["next_action_at"] = db.now()
     cur = db.one("SELECT stage FROM leads WHERE id=?", (lead_id,))
@@ -453,6 +598,8 @@ def bulk(payload: dict = Body(...)):
         elif action == "restart":
             db.update_lead(i, stage="new", step=0, next_action=None, next_action_at=None, emails_sent=0, last_contacted_at=None)
         elif action == "delete":
+            _need("leads.delete")
+            db.ex("DELETE FROM meetings WHERE lead_id=? AND status<>'scheduled'", (i,)); db.ex("UPDATE meetings SET lead_id=NULL WHERE lead_id=?", (i,))
             db.ex("DELETE FROM approvals WHERE lead_id=?", (i,)); db.ex("DELETE FROM activities WHERE lead_id=?", (i,))
             db.ex("DELETE FROM leads WHERE id=?", (i,))
         else:
@@ -580,11 +727,11 @@ def mail(filter: str = "all", q: str = None, product: str = None):
     if product:
         w.append("l.product=?"); args.append(product)
     having = {"unread": "unread>0", "replied": "replies>0", "waiting": "sent>0 AND replies=0", "sent": "sent>0"}.get(filter, "1=1")
-    rows = db.q(f"""SELECT l.id, l.company, l.contact_name, l.email, l.product, l.stage,
+    rows = db.q(f"""SELECT * FROM (SELECT l.id, l.company, l.contact_name, l.email, l.product, l.stage,
                     SUM(a.kind='email_sent' AND a.status='ok') sent, SUM(a.kind='email_sent' AND a.status='dry_run') dry_runs,
                     SUM(a.kind='email_reply') replies, SUM({UNREAD}) unread, MAX(a.id) last_id
                     FROM activities a JOIN leads l ON l.id=a.lead_id WHERE {' AND '.join(w)}
-                    GROUP BY l.id HAVING {having} ORDER BY last_id DESC LIMIT 300""", args)
+                    GROUP BY l.id, l.company, l.contact_name, l.email, l.product, l.stage) t WHERE {having} ORDER BY last_id DESC LIMIT 300""", args)
     last = {a["id"]: _message(a) for a in db.q(
         f"SELECT * FROM activities WHERE id IN ({','.join('?' * len(rows))})", [r["last_id"] for r in rows])} if rows else {}
     for r in rows:
@@ -796,6 +943,199 @@ def mb_send(c: dict = Body(...)):
     return _send_composed(c)
 
 
+# ---------- calendar: meetings, with Google Calendar and Meet when connected ----------
+_gcache = {}
+
+
+def _utc(value):
+    """Any ISO time (with or without offset) as a UTC ISO string."""
+    d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _meeting(m):
+    m = dict(m)
+    m["attendees"] = json.loads(m.get("attendees") or "[]")
+    return m
+
+
+def _attendees(value):
+    text = " ".join((a.get("email") or "") if isinstance(a, dict) else str(a or "") for a in value) if isinstance(value, list) else (value or "")
+    out = []
+    for a in re.findall(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+", text):
+        if a.lower() not in out:
+            out.append(a.lower())
+    return out
+
+
+def _google_events(start, end):
+    key = (start, end)
+    hit = _gcache.get(key)
+    if hit and time.time() - hit[0] < 45:
+        return hit[1]
+    events = gcal.list_events(start, end)
+    _gcache.clear(); _gcache[key] = (time.time(), events)
+    return events
+
+
+@app.get("/api/calendar")
+def calendar(request: Request, start: str, end: str):
+    """Meetings between two moments. With Google connected, also that calendar's other events, and any change
+    made to our meetings in Google (moved, cancelled, who accepted) is picked up."""
+    start, end = _utc(start), _utc(end)
+    out = {"google": [], "connected": gcal.connected(), "configured": gcal.configured(), "account": gcal.account(), "can_connect": auth.can("settings")}
+    if out["connected"]:
+        try:
+            events = _google_events(start, end)
+            by_id = {e["id"]: e for e in events}
+            ours = {m["google_event_id"]: m for m in db.q("SELECT * FROM meetings WHERE google_event_id IS NOT NULL")}
+            for m in db.q("SELECT * FROM meetings WHERE google_event_id IS NOT NULL AND status='scheduled' AND starts_at<? AND ends_at>?", (end, start)):
+                e = by_id.get(m["google_event_id"])
+                if not e or e["status"] == "cancelled":
+                    db.ex("UPDATE meetings SET status='cancelled' WHERE id=?", (m["id"],))
+                    db.log(m["lead_id"], "meeting", f"Meeting cancelled in Google Calendar: {m['title']}", channel="calendar")
+                elif not e["all_day"]:
+                    db.ex("UPDATE meetings SET starts_at=?, ends_at=?, title=?, attendees=?, meet_link=COALESCE(?, meet_link) WHERE id=?",
+                          (_utc(e["starts_at"]), _utc(e["ends_at"]), e["title"], json.dumps(e["attendees"]), e["meet_link"], m["id"]))
+            out["google"] = [e for e in events if e["id"] not in ours and e["status"] != "cancelled"]
+        except gcal.CalendarError as e:
+            out["error"] = str(e)
+            out["connected"] = gcal.connected()
+    out["meetings"] = [_meeting(m) for m in db.q("""SELECT m.*, l.company, l.contact_name FROM meetings m LEFT JOIN leads l ON l.id=m.lead_id
+                                                    WHERE m.starts_at<? AND m.ends_at>? ORDER BY m.starts_at""", (end, start))]
+    out["upcoming"] = [_meeting(m) for m in db.q("""SELECT m.*, l.company, l.contact_name FROM meetings m LEFT JOIN leads l ON l.id=m.lead_id
+                                                    WHERE m.status='scheduled' AND m.ends_at>=? ORDER BY m.starts_at LIMIT 12""", (db.now(),))]
+    return out
+
+
+def _meeting_fields(p, old=None):
+    old = old or {}
+    title = (p.get("title") or old.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Give the meeting a title.")
+    try:
+        starts = _utc(p["starts_at"]) if p.get("starts_at") else old["starts_at"]
+    except (KeyError, ValueError):
+        raise HTTPException(400, "Pick a date and time.")
+    if p.get("duration_min") or not old:
+        ends = (datetime.fromisoformat(starts) + timedelta(minutes=max(5, int(p.get("duration_min") or 30)))).isoformat(timespec="seconds")
+    else:  # moved without a new length: keep how long it was
+        ends = (datetime.fromisoformat(starts) + (datetime.fromisoformat(old["ends_at"]) - datetime.fromisoformat(old["starts_at"]))).isoformat(timespec="seconds")
+    return {"title": title, "starts_at": starts, "ends_at": ends, "timezone": p.get("timezone") or old.get("timezone") or "UTC",
+            "attendees": _attendees(p["attendees"]) if "attendees" in p else [a["email"] for a in json.loads(old.get("attendees") or "[]")],
+            "description": p.get("description", old.get("description") or ""), "location": p.get("location", old.get("location") or "")}
+
+
+def book_meeting(f, lead=None, meet=True, meet_link=None, by=None):
+    """Create a meeting (in Google too, with a Meet link, when connected) and update the lead it belongs to."""
+    google = {}
+    if meet and gcal.connected():
+        try:
+            google = gcal.create_event(f)
+        except gcal.CalendarError as e:
+            raise HTTPException(502, str(e))
+        _gcache.clear()
+    who = db.actor.get() or {}
+    mid = db.ex("""INSERT INTO meetings(lead_id, title, starts_at, ends_at, timezone, attendees, description, location, meet_link, google_event_id,
+                   google_link, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (lead and lead["id"], f["title"], f["starts_at"], f["ends_at"], f["timezone"], json.dumps([{"email": a} for a in f["attendees"]]),
+                 f["description"], f["location"], google.get("meet_link") or meet_link or None, google.get("id"), google.get("link"),
+                 by or (None if who.get("implicit") else who.get("name")), db.now()))
+    if lead:
+        db.log(lead["id"], "meeting", f"Meeting booked: {f['title']}" + (" (Google Meet, invitation sent)" if google else "") + (f", by {by}" if by else ""), channel="calendar",
+               payload={"meeting_id": mid, "starts_at": f["starts_at"], "meet_link": google.get("meet_link"), "attendees": f["attendees"]})
+        if lead["stage"] not in ("won", "opted_out"):
+            db.update_lead(lead["id"], stage="meeting_booked", next_action="meeting", next_action_at=f["starts_at"])
+            db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action NOT IN ('reply','followup')", (db.now(), lead["id"]))
+    else:
+        db.log(None, "meeting", f"Meeting booked: {f['title']}", channel="calendar", payload={"meeting_id": mid})
+    return {"id": mid, "meet_link": google.get("meet_link"), "invited": bool(google) and bool(f["attendees"]), "google": bool(google)}
+
+
+@app.post("/api/calendar")
+def schedule_meeting(p: dict = Body(...)):
+    """Book a meeting. With Google connected (and unless meet is false), it is created in Google Calendar with a
+    Meet link and Google emails the invitation to every attendee."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (int(p["lead_id"]),)) if p.get("lead_id") else None
+    return book_meeting(_meeting_fields(p), lead, p.get("meet", True), p.get("meet_link"))
+
+
+@app.patch("/api/calendar/{meeting_id}")
+def change_meeting(meeting_id: int, p: dict = Body(...)):
+    """Move or edit a meeting, or mark it done. Changes go to Google Calendar too, which tells the attendees."""
+    m = db.one("SELECT * FROM meetings WHERE id=?", (meeting_id,))
+    if not m:
+        raise HTTPException(404)
+    if p.get("status") in ("done", "scheduled") and len(p) == 1:
+        db.ex("UPDATE meetings SET status=? WHERE id=?", (p["status"], meeting_id))
+        return {"ok": True}
+    f = _meeting_fields(p, m)
+    if m["google_event_id"] and gcal.connected():
+        try:
+            gcal.update_event(m["google_event_id"], f)
+        except gcal.CalendarError as e:
+            raise HTTPException(502, str(e))
+        _gcache.clear()
+    db.ex("UPDATE meetings SET title=?, starts_at=?, ends_at=?, timezone=?, attendees=?, description=?, location=?, meet_link=COALESCE(?, meet_link), status='scheduled' WHERE id=?",
+          (f["title"], f["starts_at"], f["ends_at"], f["timezone"], json.dumps([{"email": a} for a in f["attendees"]]), f["description"], f["location"],
+           p.get("meet_link") or None, meeting_id))
+    if m["lead_id"]:
+        moved = f["starts_at"] != m["starts_at"]
+        db.log(m["lead_id"], "meeting", f"Meeting {'moved' if moved else 'changed'}: {f['title']}", channel="calendar", payload={"meeting_id": meeting_id, "starts_at": f["starts_at"]})
+        if moved:
+            db.ex("UPDATE leads SET next_action_at=? WHERE id=? AND next_action='meeting'", (f["starts_at"], m["lead_id"]))
+    return {"ok": True}
+
+
+@app.delete("/api/calendar/{meeting_id}")
+def cancel_meeting(meeting_id: int):
+    """Cancel a meeting. It stays on record as cancelled; Google removes the event and tells the attendees."""
+    m = db.one("SELECT * FROM meetings WHERE id=?", (meeting_id,))
+    if not m:
+        raise HTTPException(404)
+    if m["google_event_id"] and gcal.connected():
+        try:
+            gcal.delete_event(m["google_event_id"])
+        except gcal.CalendarError as e:
+            raise HTTPException(502, str(e))
+        _gcache.clear()
+    db.ex("UPDATE meetings SET status='cancelled' WHERE id=?", (meeting_id,))
+    db.log(m["lead_id"], "meeting", f"Meeting cancelled: {m['title']}", channel="calendar", payload={"meeting_id": meeting_id})
+    return {"ok": True}
+
+
+@app.get("/oauth/google/start")
+def google_start(request: Request):
+    if not gcal.configured():
+        raise HTTPException(400, "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server first.")
+    return RedirectResponse(gcal.auth_url(_public_base(request) + "/oauth/google/callback"))
+
+
+@app.get("/oauth/google/callback")
+def google_callback(request: Request, code: str = None, state: str = None, error: str = None):
+    if error or not code:
+        return RedirectResponse("/?google=" + quote(error or "cancelled") + "#settings", status_code=303)
+    try:
+        email = gcal.finish(code, state, _public_base(request) + "/oauth/google/callback")
+    except gcal.CalendarError as e:
+        return RedirectResponse("/?google=" + quote(str(e)) + "#settings", status_code=303)
+    db.log(None, "system", f"Google Calendar connected ({email or 'account'})", channel="system")
+    return RedirectResponse("/?google=ok#settings", status_code=303)
+
+
+@app.post("/api/settings/google/disconnect")
+def google_disconnect():
+    gcal.disconnect()
+    db.log(None, "system", "Google Calendar disconnected", channel="system")
+    return {"ok": True}
+
+
+@app.get("/api/settings/google")
+def google_status(request: Request):
+    return {"configured": gcal.configured(), "connected": gcal.connected(), "account": gcal.account(),
+            "redirect_uri": _public_base(request) + "/oauth/google/callback"}
+
+
 # ---------- approvals ----------
 @app.get("/api/approvals")
 def approvals(state: str = "pending"):
@@ -859,8 +1199,8 @@ def decide(approval_id: int, payload: dict = Body(...)):
 
 # ---------- settings & compliance ----------
 @app.get("/api/settings")
-def get_settings():
-    s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings")}
+def get_settings(request: Request):
+    s = {r["key"]: r["value"] for r in db.q("SELECT * FROM settings") if not r["key"].startswith("secret_")}
     for k in ("sequence", "products", "discovery_queries"):
         try:
             s[k] = json.loads(s[k])
@@ -869,8 +1209,10 @@ def get_settings():
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
     s["email_via"] = channels.email_provider()
     s["logo_effective"] = email_template.logo_url()
+    s["booking_url"] = _public_base(request) + "/book"
+    s["google"] = {"configured": gcal.configured(), "connected": gcal.connected(), "account": gcal.account()}
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
-                      "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
+                      "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "calendar": gcal.connected(), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
 
 
@@ -966,7 +1308,7 @@ def check_inbox():
     if not inbox.enabled():
         raise HTTPException(400, "Mailbox not connected. Set IMAP_HOST, SMTP_USER and SMTP_PASSWORD.")
     try:
-        return {"replies": inbox.poll(agent.handle_reply)}
+        return {"replies": inbox.poll(agent.handle_reply, agent.handle_bounce)}
     except Exception as e:
         db.log(None, "system", f"Inbox check failed: {e}", channel="email", status="error")
         raise HTTPException(502, f"Could not read the mailbox: {e}")
@@ -1077,13 +1419,17 @@ def _loop():
     n = 0
     while True:
         try:
-            if db.setting("agent_enabled") != "1":  # stopped: nothing runs at all
+            jobs.run()  # meeting reminders, follow-ups and task reminders: these keep running when the agent is stopped
+        except Exception as e:
+            db.log(None, "system", f"Reminder error: {e}", channel="system", status="error")
+        try:
+            if db.setting("agent_enabled") != "1":  # stopped: no research, outreach, inbox reading or lead searches
                 n += 1
                 time.sleep(60)
                 continue
             agent.tick()
             if n % 5 == 0 and inbox.enabled():  # read replies every 5 minutes
-                inbox.poll(agent.handle_reply)
+                inbox.poll(agent.handle_reply, agent.handle_bounce)
             if n % 60 == 0:  # hourly: auto-discovery runs at most once a day
                 _auto_discover()
         except Exception as e:
@@ -1091,6 +1437,9 @@ def _loop():
         n += 1
         time.sleep(60)
 
+
+from . import jobs, more  # noqa: E402  (they build on what is defined above)
+app.include_router(more.router)
 
 if os.environ.get("BRN_SCHEDULER", "1") == "1":
     threading.Thread(target=_loop, daemon=True).start()
