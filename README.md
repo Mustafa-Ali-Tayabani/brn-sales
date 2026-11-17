@@ -116,6 +116,20 @@ because many small businesses publish nothing but a shared address.
 (and again after a top-up). What is left (the balance minus what the agent has spent since) shows at the bottom of the menu
 on every page and turns red under $2.
 
+**Countries.** A lead's country is what is known about it: the country given with it, else its phone number's country
+code, else the ending of its web or email address (.pk, .co.uk), else the country a map search was limited to. When
+nothing says where it is, it shows as "Country unknown" instead of an assumed one. The Leads table shows the country with
+its flag, the Country filter includes Unknown, and Reports has a "By country" table (leads, contacted, replied, meetings,
+won). Under Settings > Rules, "Only bring in leads from these countries" takes names or codes ("Pakistan, UAE, GB"):
+searches look there first, a lead found elsewhere is not added, and one already in the list is skipped. Leads of unknown
+country are let through, and so is any lead a person added by hand. "Never contact leads in these countries" is the
+opposite list.
+
+**Where a lead came from.** Each lead carries a "Found via" tag (Google Maps, Asked online, LinkedIn post, LinkedIn
+profile, Job ad, Reddit post, Imported file, Added by hand, Website enquiry, Booking page) and, when its contact details
+were looked up, a second tag naming who supplied them: Apollo, Hunter or Public pages. The Source filter uses the same
+names.
+
 ## Owners and decision-makers
 
 A company with only info@ is half a lead. Each pipeline card shows how many of its live leads have a named person and how

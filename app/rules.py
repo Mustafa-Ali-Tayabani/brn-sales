@@ -13,7 +13,7 @@ import time
 
 import httpx
 
-from . import db
+from . import countries, db
 from .providers import sources
 
 TYPOS = {"gmial.com": "gmail.com", "gamil.com": "gmail.com", "gmai.com": "gmail.com", "gmail.co": "gmail.com", "gmail.con": "gmail.com", "gnail.com": "gmail.com",
@@ -51,7 +51,9 @@ BUILTIN = [
      "about": "If someone at the same email domain is already being contacted or has replied, the next lead from that company is paused."},
     {"key": "no_name", "name": "Hold leads without a contact name", "outcome": "review", "default": False,
      "about": "Emails that open with \"Hi there\" get fewer replies. Paused until a name is added."},
-    {"key": "countries", "name": "Never contact leads in these countries", "outcome": "skip", "default": False, "value": "", "hint": "Country codes, separated by commas, e.g. DE, FR, GB",
+    {"key": "only_countries", "name": "Only bring in leads from these countries", "outcome": "skip", "default": False, "value": "", "hint": "Countries, separated by commas, e.g. Pakistan, Saudi Arabia, UAE, United Kingdom",
+     "about": "Searches look in these countries first, a lead found anywhere else is not added, and one already in the list is skipped. A lead whose country cannot be told (no phone, a .com address) is let through, marked Unknown."},
+    {"key": "countries", "name": "Never contact leads in these countries", "outcome": "skip", "default": False, "value": "", "hint": "Countries, separated by commas, e.g. Germany, France, GB",
      "about": "Use for places where you do not sell, or where the law makes cold outreach unwise."},
     {"key": "keywords", "name": "Skip leads containing these words", "outcome": "skip", "default": False, "value": "", "hint": "Words or names, separated by commas, e.g. competitor name, student, freelance",
      "about": "Checked against the company, contact name, job title, email and website."},
@@ -83,12 +85,29 @@ def save(payload):
     cur = state()
     for key, v in (payload.get("builtin") or {}).items():
         if key in cur["builtin"]:
-            cur["builtin"][key] = {"on": bool(v.get("on")), "value": str(v.get("value") or "").strip()}
+            value = str(v.get("value") or "").strip()
+            if key in ("countries", "only_countries"):   # "Pakistan, uae" is kept as "PK, AE": what a lead is stored with
+                value = ", ".join(countries.codes(value))
+            cur["builtin"][key] = {"on": bool(v.get("on")), "value": value}
     if "custom" in payload:
         cur["custom"] = [{"field": c["field"], "test": c["test"], "value": str(c.get("value") or "").strip(), "outcome": c["outcome"], "on": bool(c.get("on", True))}
                          for c in payload["custom"] if c.get("field") in FIELDS and c.get("test") in TESTS and c.get("outcome") in OUTCOMES][:50]
     db.set_setting("rules", json.dumps(cur, ensure_ascii=False))
     return cur
+
+
+def wanted_countries():
+    """The countries leads are brought in from (codes), or [] when leads from anywhere are welcome."""
+    b = state()["builtin"]["only_countries"]
+    return countries.codes(b["value"]) if b["on"] else []
+
+
+def unwanted_country(code):
+    """Is this (known) country one that leads are not brought in from?"""
+    b = state()["builtin"]
+    want = countries.codes(b["only_countries"]["value"]) if b["only_countries"]["on"] else []
+    never = countries.codes(b["countries"]["value"]) if b["countries"]["on"] else []
+    return bool(code) and ((bool(want) and code not in want) or code in never)
 
 
 def _words(text):
@@ -239,8 +258,13 @@ def check(lead, network=True, rules=None, verify=True, early=False):
             return hit("vendor", f'It looks like a provider of similar services ("{why}"), so a competitor rather than a buyer.')
     if on("no_name") and not (lead.get("contact_name") or "").strip():
         return hit("no_name", "There is no contact name for this lead.")
-    if on("countries") and (lead.get("country") or "").strip().lower() in _words(val("countries")):
-        return hit("countries", f"Leads in {lead.get('country')} are not contacted.")
+    where = countries.code(lead.get("country"))
+    from .agent import CHOSEN_SOURCES   # a lead a person added themselves is their choice, whatever country it is in
+    if (on("only_countries") and where and countries.codes(val("only_countries")) and where not in countries.codes(val("only_countries"))
+            and (lead.get("source") or "") not in CHOSEN_SOURCES):
+        return hit("only_countries", f"It is in {countries.name(where)}, which is not one of the countries you bring leads from.")
+    if on("countries") and where and where in countries.codes(val("countries")):
+        return hit("countries", f"Leads in {countries.name(where)} are not contacted.")
     if on("keywords"):
         hay = " ".join(str(lead.get(k) or "") for k in ("company", "contact_name", "title", "email", "website")).lower()
         word = next((w for w in _words(val("keywords")) if w in hay), None)

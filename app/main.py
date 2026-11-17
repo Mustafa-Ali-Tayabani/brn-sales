@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 
 from zoneinfo import ZoneInfo
 
-from . import agent, assistant, auth, compliance, db, email_template, invites, quality, rules
+from . import agent, assistant, auth, compliance, countries, db, email_template, invites, quality, rules
 from urllib.parse import quote
 
 from .providers import channels, enrich, inbox, intent, llm, mailbox, sources, voice
@@ -230,6 +230,21 @@ def brand(name: str):
 REPLIED_STAGES = ("replied", "meeting_booked", "won", "nurture", "lost", "opted_out")
 
 
+FROM = {"google_places": "Google Maps", "places": "Google Maps", "reddit": "Reddit post", "hiring": "Job ad", "web": "Web search", "linkedin": "LinkedIn profile",
+        "manual": "Added by hand", "csv": "Imported file", "file": "Imported file", "assistant": "Added by the assistant", "booking": "Booking page",
+        "website": "Website enquiry", "inbound": "Wrote to us", "similar": "Similar company"}
+
+
+def came_from(lead, extra):
+    """Where a lead was found, in plain words, for the tag on each lead."""
+    src = (lead.get("source") or "").lower()
+    if src == "intent":
+        return "LinkedIn post" if extra.get("via_linkedin") or "linkedin.com/" in str((extra.get("intent") or {}).get("url") or "") else "Asked online"
+    if src.startswith("similar"):
+        return "Similar company"
+    return FROM.get(src) or FROM.get(src.split(":")[0].strip()) or (lead.get("source") or "Unknown").replace("_", " ").capitalize()
+
+
 # A lead "came from LinkedIn" when it was added from a profile, or found through a public LinkedIn post.
 LINKEDIN_SQL = "leads.source='linkedin' OR leads.extra LIKE ? OR leads.extra LIKE ? OR leads.extra LIKE ?"
 LINKEDIN_ARGS = ["%linkedin.com/posts/%", "%linkedin.com/feed/%", '%"via_linkedin": true%']
@@ -249,6 +264,8 @@ def _lead_filters(f):
         if f.get(key):
             if key == "product" and f[key] == "__none":
                 w.append("l.product IS NULL")
+            elif key == "country" and f[key] == "__none":
+                w.append("(l.country IS NULL OR l.country='' OR l.country='--')")
             else:
                 multi(col, f[key])
     es = f.get("email_status")
@@ -358,12 +375,14 @@ def leads(request: Request):
                 (*args, limit, offset))
     for r in rows:  # why each lead is worth contacting, without sending the whole research blob to the page
         r["signal"] = agent.signal(r)
-        x = r.pop("extra", None)
+        try:
+            x = json.loads(r.pop("extra", None) or "{}") or {}
+        except ValueError:
+            x = {}
+        r["country_name"] = countries.name(r["country"]) if countries.code(r["country"]) else None
+        r["from"] = came_from(r, x)
+        r["contact_via"] = x.get("contact_via") or ("Apollo" if x.get("match_confidence") is not None or x.get("phone_request") else None)
         if f.get("linkedin"):  # the LinkedIn page shows the profile and the post each lead came from
-            try:
-                x = json.loads(x or "{}") or {}
-            except ValueError:
-                x = {}
             r["extra"] = {"linkedin": x.get("linkedin"), "intent": {k: (x.get("intent") or {}).get(k) for k in ("url", "quote", "posted")} if x.get("intent") else None}
     return {"total": total, "rows": rows}
 
@@ -373,7 +392,8 @@ def facets():
     def counts(col):
         return db.q(f"SELECT {col} value, COUNT(*) n FROM leads WHERE {col} IS NOT NULL AND {col}<>'' GROUP BY {col} ORDER BY n DESC")
     return {"stage": counts("stage"), "product": counts("product"), "segment": counts("segment"),
-            "country": counts("country"), "source": counts("source"),
+            "country": [{**c, "name": countries.name(c["value"])} for c in counts("country")] + [{"value": "__none", "name": "Unknown", "n": db.one("SELECT COUNT(*) n FROM leads WHERE country IS NULL OR country='' OR country='--'")["n"]}],
+            "source": [{**c, "name": came_from({"source": c["value"]}, {})} for c in counts("source")],
             "products": list(db.products().values())}
 
 
@@ -399,6 +419,9 @@ STATUS_MAP = {"new": "new", "contacted": "completed", "replied": "replied", "int
               "won": "won", "lost": "lost", "closed": "lost", "unsubscribed": "opted_out", "do not contact": "opted_out"}
 
 
+SKIPPED_COUNTRY = {}   # country -> leads not added since the last import report, because of the country rules
+
+
 def _insert(row, source="manual", defaults=None):
     d = defaults or {}
     email = (row.get("email") or "").strip().lower() or None
@@ -413,6 +436,12 @@ def _insert(row, source="manual", defaults=None):
         pid = (row.get("extra") or {}).get("place_id")
         if pid and db.one("SELECT 1 x FROM leads WHERE extra LIKE ?", (f'%"place_id": "{pid}"%',)):
             return None
+    # where the lead is: what the row says, else what its phone or web address shows, else what the search was limited to. Never assumed.
+    by_hand = (row.get("source") or source) in agent.CHOSEN_SOURCES
+    country = countries.code(row.get("country")) or countries.guess(row) or countries.code(d.get("country"))
+    if not by_hand and rules.unwanted_country(country):
+        SKIPPED_COUNTRY[country] = SKIPPED_COUNTRY.get(country, 0) + 1
+        return None  # not a country leads are brought in from (Settings > Rules)
     t = db.now()
     stage = STATUS_MAP.get(str(row.get("status") or "new").strip().lower(), "new")
     if row.get("date_contacted") and stage == "new":
@@ -427,7 +456,7 @@ def _insert(row, source="manual", defaults=None):
                 source, consent_basis, notes, stage, last_contacted_at, created_at, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (row.get("company"), row.get("contact_name"), row.get("title"), email, row.get("phone"), row.get("website"),
-                 row.get("city"), (row.get("country") or d.get("country") or "SA").upper()[:2], row.get("industry"),
+                 row.get("city"), country, row.get("industry"),
                  row.get("segment") or d.get("segment"), product, json.dumps(extra, ensure_ascii=False, default=str) if extra else None,
                  row.get("source") or source, row.get("consent_basis") or d.get("consent_basis") or "legitimate_interest_b2b",
                  row.get("notes"), stage, row.get("date_contacted"), t, t))
@@ -440,8 +469,12 @@ def _import(rows, source, payload):
     defaults = {k: payload.get(k) for k in ("product", "country", "consent_basis", "segment") if payload.get(k)}
     ids = [_insert(r, source, defaults) for r in rows]
     added = [i for i in ids if i]
-    db.log(None, "system", f"Imported {len(added)} leads from {source} ({len(ids) - len(added)} duplicates skipped)", channel="system")
-    return {"imported": added, "skipped": len(ids) - len(added), "rows": len(ids)}
+    away = sum(SKIPPED_COUNTRY.values())
+    where = ", ".join(f"{n} in {countries.name(c)}" for c, n in sorted(SKIPPED_COUNTRY.items(), key=lambda x: -x[1])[:5])
+    SKIPPED_COUNTRY.clear()
+    db.log(None, "system", f"Imported {len(added)} leads from {source} ({len(ids) - len(added) - away} duplicates skipped"
+           + (f"; {away} left out because of the country rules: {where}" if away else "") + ")", channel="system")
+    return {"imported": added, "skipped": len(ids) - len(added), "rows": len(ids), "other_countries": away}
 
 
 @app.post("/api/leads")
@@ -604,7 +637,7 @@ def find_contact(lead_id: int):
     fields = {k: p[k] for k in ("email", "phone", "title", "contact_name", "city") if p.get(k) and not lead.get(k)}
     if fields.get("email") and db.one("SELECT 1 x FROM leads WHERE lower(email)=? AND id<>?", (fields["email"], lead_id)):
         fields.pop("email")
-    extra.update({k: v for k, v in {"linkedin": p.get("linkedin"), "email_status": p.get("email_status"), "phone_request": p.get("phone_request"),
+    extra.update({k: v for k, v in {"contact_via": "Apollo", "linkedin": p.get("linkedin"), "email_status": p.get("email_status"), "phone_request": p.get("phone_request"),
                                     "company_line": (p.get("company_line") and "phone" in fields) or None}.items() if v})
     if lead["stage"] == "needs_contact" and (fields.get("email") or fields.get("phone")):
         fields["stage"] = "new"
@@ -1330,6 +1363,25 @@ def check_inbox():
         raise HTTPException(502, f"Could not read the mailbox: {e}")
 
 
+def _where(qd):
+    """Where a search should look first: the country set on the search itself, else the countries leads are brought in from."""
+    return qd.get("country") or ", ".join(countries.name(c) for c in rules.wanted_countries()[:6])
+
+
+def fix_countries():
+    """Leads saved before countries were worked out from evidence: fill in the country where the phone number or the
+    web address shows it. A lead with nothing to go on becomes Unknown instead of keeping a country that was assumed."""
+    done = 0
+    for l in db.q("SELECT id, country, phone, website, email, source FROM leads"):
+        seen, cur = countries.guess(l), countries.code(l["country"])
+        assumed = l["source"] in ("intent", "hiring", "reddit") or not cur   # these sources never knew the country: it was filled in with a default
+        new = seen if (seen and assumed) else (None if assumed and not seen and l["source"] in ("intent", "hiring", "reddit") else cur)
+        if new != l["country"]:
+            db.ex("UPDATE leads SET country=? WHERE id=?", (new, l["id"]))
+            done += 1
+    return done
+
+
 def _request_leads(need, country, limit, linkedin=False):
     """Public requests for something we sell, as lead rows. A request whose page loads but does not contain the quoted
     words is dropped: only what can be checked is kept."""
@@ -1348,7 +1400,7 @@ def _request_leads(need, country, limit, linkedin=False):
                 person = {}
         rows.append({"company": person.get("company") or it["who"], "contact_name": person.get("contact_name") or (it["who"] if it.get("profile") else None),
                      "title": person.get("title") or it.get("title"), "website": person.get("website") or it["website"] or it["url"], "email": person.get("email") or it["email"],
-                     "country": person.get("country") or (country if country and country != "--" else None),
+                     "country": person.get("country") or it.get("country"),   # only what the person finder or the page says: the search's preferred country proves nothing
                      "source": "intent", "consent_basis": "legitimate_interest_b2b" if it["website"] or it["email"] else "public_post", "notes": f'They wrote: "{it["quote"]}"',
                      "extra": {"intent": {"level": "asked", "quote": it["quote"], "url": it["url"], "posted": it["posted"], "where": it["where"],
                                           "checked": "the quote was found on the page" if ok else "the page could not be opened to check the quote"},
@@ -1448,10 +1500,10 @@ def discover_pipeline(key, sources_only=None):
             for n, qd in enumerate(asks[:4]):
                 qd = {"query": qd} if isinstance(qd, str) else qd
                 try:
-                    rows = _request_leads(qd["query"], qd.get("country") or "", int(qd.get("limit") or 8))
+                    rows = _request_leads(qd["query"], _where(qd), int(qd.get("limit") or 8))
                     if src.get("linkedin") and n < 2:   # an extra search of public LinkedIn posts, for the first two phrases
-                        rows += _request_leads(qd["query"], qd.get("country") or "", 6, linkedin=True)
-                    res = _import(rows, f"intent: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or "US"})
+                        rows += _request_leads(qd["query"], _where(qd), 6, linkedin=True)
+                    res = _import(rows, f"intent: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or None})
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
                     out["errors"].append(f"People asking for '{qd.get('query')}': {e}")
@@ -1469,7 +1521,7 @@ def discover_pipeline(key, sources_only=None):
                     rows = sources.enrich(rows)
                 except Exception as e:
                     out["notes"].append(f"Could not look up the hiring companies' websites: {e}")
-            res = _import(rows, "hiring", {"product": key, "segment": "Hiring for it", "country": "US"})
+            res = _import(rows, "hiring", {"product": key, "segment": "Hiring for it"})
             out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
         except Exception as e:
             out["errors"].append(f"Companies hiring: {e}")
@@ -1559,7 +1611,16 @@ def _loop():
 from . import jobs, more  # noqa: E402  (they build on what is defined above)
 app.include_router(more.router)
 
-threading.Thread(target=lambda: quality.backfill(), daemon=True).start()   # grade leads that have none yet
+def _startup():
+    quality.backfill()   # grade leads that have none yet
+    if db.setting("countries_fixed") != "1":   # once: countries that were assumed are replaced by what the lead shows
+        n = fix_countries()
+        db.set_setting("countries_fixed", "1")
+        if n:
+            db.log(None, "system", f"Countries checked against each lead's phone and web address: {n} corrected", channel="system")
+
+
+threading.Thread(target=_startup, daemon=True).start()
 
 if os.environ.get("BRN_SCHEDULER", "1") == "1":
     threading.Thread(target=_loop, daemon=True).start()

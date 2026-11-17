@@ -112,9 +112,23 @@ def reports(days: int = 30, product: str = None):
         "by_signal": [{"name": k, **v, "rate": _rate(v["replies"], v["sent"])} for k, v in sorted(how.items(), key=lambda x: -x[1]["sent"])],
         "by_person": [{"name": k, "sent": v["sent"], "replies": v["replies"], "rate": _rate(v["replies"], v["sent"]), "meetings": v.get("meetings", 0)}
                       for k, v in sorted(person.items(), key=lambda x: -(x[1]["sent"] + x[1].get("meetings", 0)))],
-        "forecast": forecast(product), "funnel": funnel(product),
+        "forecast": forecast(product), "funnel": funnel(product), "countries": by_country(product),
         "pipelines": [{"key": k, "name": p["name"], "partner": bool(p.get("partner"))} for k, p in prods.items()], "product": product or "",
     }
+
+
+def by_country(product=None):
+    """Leads per country (all time): how many there are, how many were contacted, replied, and reached a meeting or a win."""
+    out = {}
+    for l in db.q("SELECT country, stage, emails_sent, last_contacted_at, replied_at FROM leads" + (" WHERE product=?" if product else ""), [product] if product else []):
+        c = M.countries.code(l["country"]) or ""
+        o = out.setdefault(c, {"code": c, "name": M.countries.name(c) if c else "Unknown", "leads": 0, "contacted": 0, "replied": 0, "meetings": 0, "won": 0})
+        o["leads"] += 1
+        o["contacted"] += bool(l["emails_sent"] or l["last_contacted_at"])
+        o["replied"] += bool(l["replied_at"])
+        o["meetings"] += l["stage"] in ("meeting_booked", "won")
+        o["won"] += l["stage"] == "won"
+    return sorted(out.values(), key=lambda o: -o["leads"])
 
 
 def funnel(product=None, linkedin=False):
@@ -499,8 +513,8 @@ def linkedin_search(p: dict = Body(...)):
         try:
             for qd in asks:
                 try:
-                    rows = M._request_leads(qd["query"], qd.get("country") or "", 8, linkedin=True)
-                    res = M._import(rows, f"LinkedIn posts: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or "US"})
+                    rows = M._request_leads(qd["query"], M._where(qd), 8, linkedin=True)
+                    res = M._import(rows, f"LinkedIn posts: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or None})
                     LI["added"] += len(res["imported"]); LI["skipped"] += res["skipped"]
                 except Exception as e:
                     LI["errors"].append(f"{qd['query']}: {str(e)[:200]}")

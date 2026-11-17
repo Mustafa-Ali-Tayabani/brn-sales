@@ -187,7 +187,7 @@ Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-
     ex = _extra(lead)
     if product_key == "gym_club" or (not product_key and "gym" in ind):
         fit = any(k in ind for k in ("gym", "fitness", "club", "sport", "yoga", "crossfit", "studio", "pilates"))
-        score = (80 if fit else 35) + (10 if lead.get("country") in ("SA", "KW") else 0)
+        score = (80 if fit else 35) + (10 if _home_market(lead.get("country")) else 0)
         pains = ["manual membership renewals", "no-shows in classes", "branch reporting in spreadsheets"] if fit else ["unclear"]
         hooks = ["Arabic/English member app", "automated renewals and payment reminders"]
         reason = "industry matches ICP" if fit else "industry outside ICP"
@@ -202,7 +202,7 @@ Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-
     else:
         score = 65 if (lead.get("email") or lead.get("phone")) else 40
         pains, hooks, reason = ["unclear"], ["custom software and AI automation"], "generic fit"
-    return {"summary": f"{lead['company']} is a {lead.get('segment') or lead.get('industry') or 'business'} in {lead.get('city') or lead.get('country')}.",
+    return {"summary": f"{lead['company']} is a {lead.get('segment') or lead.get('industry') or 'business'} in {lead.get('city') or lead.get('country') or 'a place not yet known'}.",
             "pain_points": pains, "hooks": hooks, "score": min(score, 100), "score_reason": reason, "language": "en", "_engine": "template"}
 
 
@@ -465,6 +465,14 @@ Return JSON: {{"summary": str, "reply_draft": str, "score": int 0-100, "score_re
     }
 
 
+def _home_market(country):
+    """The built-in scoring gives a little extra to leads in the countries you sell in: the ones under Settings > Rules >
+    "Only bring in leads from these countries" when that is on, else Saudi Arabia and Kuwait. A lead whose country is not
+    known is not marked down for it."""
+    from .. import rules
+    return not country or country == "--" or country in (rules.wanted_countries() or ["SA", "KW"])
+
+
 def over_budget():
     budget = float(db.setting("ai_daily_budget") or 0)
     return budget > 0 and spent()["c"] >= budget
@@ -499,7 +507,7 @@ are looking for this: "{need}".{place}
 {"Search PUBLIC LinkedIn posts only (linkedin.com/posts/... and linkedin.com/feed/update/...): people writing that they are looking for a provider, an agency, a freelancer or recommendations. Use web search with site:linkedin.com." if linkedin else "Good places: forum and community posts, Q&A sites, requests for proposals and tenders, project briefs, freelance or job-board gigs, social posts that are publicly readable (LinkedIn included), local business groups. Use web search."}
 Only include an item when the BUYER states the need. Never include providers advertising their services, agency websites, listicles,
 directories of vendors, or news articles. Do not guess: if you cannot quote their words from the page, leave it out.
-Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","website":"their own website or null","email":"only if shown publicly on that page, else null",
+Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","country":"the country they are in, only if the page or their profile shows it, else null","website":"their own website or null","email":"only if shown publicly on that page, else null",
 "url":"the exact page where they said it","quote":"their words, copied exactly, at most 200 characters","posted":"YYYY-MM-DD or null","where":"name of the site",
 "profile":"the author's LinkedIn profile URL (linkedin.com/in/...) if the page shows it, else null","title":"their job title and company if shown, else null"}}]}}""")
     out, seen = [], set()
@@ -510,6 +518,7 @@ Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","website":"
         seen.add(url)
         out.append({"who": str(it["who"])[:120], "website": (it.get("website") or "").strip() or None, "email": (it.get("email") or "").strip().lower() or None,
                     "url": url, "quote": quote[:300], "posted": (it.get("posted") or "")[:10] or None, "where": str(it.get("where") or "")[:60],
+                    "country": str(it.get("country") or "")[:60] or None,
                     "profile": (it.get("profile") or "").strip() if "linkedin.com/in/" in str(it.get("profile") or "") else None, "title": str(it.get("title") or "")[:120] or None})
     return out[:int(limit)]
 

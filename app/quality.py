@@ -135,7 +135,7 @@ def _finder_person(lead, manual=False):
         return {"found": False, "detail": f"{p['contact_name']} at {domain} is already a lead."}
     if lead.get("email"):
         x["generic_email"] = lead["email"]
-    x.update({k: v for k, v in {"email_status": p.get("email_status"), "linkedin": p.get("linkedin") or x.get("linkedin")}.items() if v})
+    x.update({k: v for k, v in {"email_status": p.get("email_status"), "linkedin": p.get("linkedin") or x.get("linkedin"), "contact_via": p.get("via")}.items() if v})
     x.pop("email_bounced", None); x.pop("email_check", None)
     fields = {"contact_name": p["contact_name"], "title": p.get("title") or lead.get("title"), "email": p["email"], "extra": json.dumps(x, ensure_ascii=False)}
     if lead.get("stage") == "needs_contact":
@@ -187,7 +187,7 @@ def _web_person(lead, x):
         fields["email"] = email
     if p.get("phone") and not lead.get("phone"):
         fields["phone"] = p["phone"]
-    x.update({k: v for k, v in {"linkedin": p.get("linkedin") or x.get("linkedin"), "person_source": p["source"],
+    x.update({k: v for k, v in {"linkedin": p.get("linkedin") or x.get("linkedin"), "person_source": p["source"], "contact_via": "Apollo" if email and "Apollo" in via else "Public pages",
                                 "person_checked": "the name was found on that page" if checked else "the page could not be opened to check the name"}.items() if v})
     if lead.get("stage") == "needs_contact" and (email or fields.get("phone") or lead.get("email")):
         fields["stage"] = "new"
