@@ -155,13 +155,19 @@ def funnel(product=None, linkedin=False):
     out_stages = ("disqualified", "needs_contact", "new")
     contacted = [r for r in rows if r["emails_sent"] or r["last_contacted_at"]]
     replied = [r for r in contacted if r["replied_at"]] + [r for r in rows if r["replied_at"] and not (r["emails_sent"] or r["last_contacted_at"])]
-    good = set()
+    good, real, wrote = set(), set(), set()
     for a in db.q("SELECT lead_id, payload FROM activities WHERE kind='email_reply'"):
         try:
-            if json.loads(a["payload"] or "{}").get("intent") in POSITIVE:
-                good.add(a["lead_id"])
+            intent = json.loads(a["payload"] or "{}").get("intent")
         except ValueError:
-            pass
+            intent = None
+        wrote.add(a["lead_id"])
+        if intent != "auto_reply":
+            real.add(a["lead_id"])
+        if intent in POSITIVE:
+            good.add(a["lead_id"])
+    robot = wrote - real   # leads whose every message was automatic: they have not replied
+    replied = [r for r in replied if r["id"] not in robot]
     positive = [r for r in replied if r["id"] in good]   # the same meaning as "Positive replies" in the period figures
     meeting = [r for r in rows if r["stage"] in ("meeting_booked", "won") or r["id"] in met]
     steps = [("Leads found", len(rows)), ("Worth contacting", sum(r["stage"] not in out_stages for r in rows)), ("Contacted", len(contacted) + sum(1 for r in replied if r not in contacted)),
@@ -548,6 +554,109 @@ def linkedin_search(p: dict = Body(...)):
 
     threading.Thread(target=run, daemon=True).start()
     return dict(LI)
+
+
+# ---------- do the connections really work? ----------
+def _try(what, fn, unset=None):
+    """One service, tried for real: {"key", "ok": True / False / None (not set), "detail"}."""
+    if unset:
+        return {"key": what, "ok": None, "detail": unset}
+    try:
+        return {"key": what, "ok": True, "detail": fn() or "Works."}
+    except Exception as e:
+        text = llm.explain(e)[:500]
+        if isinstance(e, OSError) and not isinstance(e, RuntimeError):   # the server could not be reached at all, or refused the sign-in
+            text = ("The sign-in was refused: check the user name and password. " if "auth" in type(e).__name__.lower() or "authentication" in text.lower()
+                    else "The server could not be reached: check the host name and port. ") + f"({text})"
+        return {"key": what, "ok": False, "detail": text}
+
+
+@router.get("/api/connections/check")
+def connections_check():
+    """Try each connected service with one small, free (or near-free) request and say whether it answered."""
+    import imaplib, smtplib, ssl
+    import httpx
+    env = os.environ.get
+    ch, enrich = M.channels, M.enrich
+    out = []
+
+    def claude():
+        llm._client.messages.create(model=llm.model(), max_tokens=16, messages=[{"role": "user", "content": "Reply with the word ok."}])
+        return f"Answered ({llm.model()})."
+    out.append(_try("claude", claude, None if llm.enabled() else "No ANTHROPIC_API_KEY on the server."))
+
+    def email():
+        if ch.email_provider() == "resend":
+            r = httpx.get("https://api.resend.com/domains", headers={"Authorization": f"Bearer {env('RESEND_API_KEY')}"}, timeout=20)
+            if r.status_code == 401 and "restricted" in r.text.lower():
+                return "Resend accepted the key (a sending-only key, which is fine)."
+            if r.status_code >= 400:
+                raise RuntimeError(f"Resend refused the key: {r.text[:200]}")
+            names = [d.get("name") + (" (not verified yet)" if d.get("status") != "verified" else "") for d in (r.json().get("data") or [])]
+            return "Resend accepted the key. Sending domains: " + (", ".join(names) or "none set up yet, so emails cannot go out from your own address") + "."
+        port = int(env("SMTP_PORT", "587"))
+        with (smtplib.SMTP_SSL(env("SMTP_HOST"), port, context=ssl.create_default_context(), timeout=15) if port == 465 else smtplib.SMTP(env("SMTP_HOST"), port, timeout=15)) as s:
+            if port != 465:
+                s.starttls(context=ssl.create_default_context())
+            s.login(env("SMTP_USER"), env("SMTP_PASSWORD"))
+        return f"Signed in to {env('SMTP_HOST')} as {env('SMTP_USER')}."
+    out.append(_try("email", email, None if ch.email_provider() else "No RESEND_API_KEY or SMTP_* on the server."))
+    paused = ch.paused()
+    if paused and out[-1]["ok"]:
+        out[-1].update(ok=False, detail=f"The key works, but sending is stopped until tomorrow: {paused[1]}")
+
+    def inbox():
+        box = M.mailbox.connect()
+        try:
+            n = box.select("INBOX", readonly=True)[1][0].decode()
+        finally:
+            try:
+                box.logout()
+            except Exception:
+                pass
+        return f"Signed in. {n} emails in the inbox."
+    out.append(_try("inbox", inbox, None if M.inbox.enabled() else "No IMAP_HOST on the server."))
+
+    def apollo():
+        people = M.prospect.apollo.check()[1]
+        if not people["ok"]:
+            raise RuntimeError(people["detail"])
+        return people["detail"] + " Searching for companies needs a paid Apollo plan and was not tried (it costs a credit)."
+    for k in ("people", "enrich"):
+        out.append(_try(k, apollo, None if enrich.enabled() else ("No APOLLO_API_KEY on the server." if k == "enrich" or not env("HUNTER_API_KEY") else None)) if enrich.enabled() or k == "enrich" or not env("HUNTER_API_KEY")
+                   else {"key": k, "ok": None, "detail": ""})
+
+    def hunter():
+        r = httpx.get("https://api.hunter.io/v2/account", params={"api_key": env("HUNTER_API_KEY")}, timeout=20)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Hunter refused the key (error {r.status_code}).")
+        d = (r.json().get("data") or {}).get("requests") or {}
+        left = lambda k: (d.get(k) or {}).get("available", 0) - (d.get(k) or {}).get("used", 0)
+        return f"Works. Left this month: {left('searches')} searches, {left('verifications')} mailbox checks."
+    h = _try("verify", hunter, None if env("HUNTER_API_KEY") else "No HUNTER_API_KEY on the server.")
+    out.append(h)
+    if not enrich.enabled() and env("HUNTER_API_KEY"):
+        out = [({**h, "key": "people"} if o["key"] == "people" else o) for o in out]
+
+    def vapi():
+        voice._call("GET", "/assistant?limit=1")
+        return "Vapi accepted the key." + ("" if voice.ready() else " The caller is not set up yet: press \"Set up the AI caller\" and choose a number.")
+    v = _try("voice", vapi, None if voice.enabled() else "No VAPI_API_KEY on the server.")
+    if v["ok"] and not voice.ready():
+        v["ok"] = "half"
+    out.append(v)
+
+    if not env("GOOGLE_PLACES_API_KEY"):
+        out.append({"key": "places", "ok": None, "detail": "No GOOGLE_PLACES_API_KEY on the server."})
+    elif db.setting("places_error"):
+        out.append({"key": "places", "ok": False, "detail": db.setting("places_error")})
+    elif db.setting("places_ok_at"):
+        out.append({"key": "places", "ok": True, "detail": f"The last map search worked ({db.setting('places_ok_at')[:10]})."})
+    else:
+        out.append({"key": "places", "ok": "half", "detail": "The key is set but no map search has run since. Press \"Find leads now\" on a pipeline that has Google Maps searches; a refusal will show here."})
+    out.append({"key": "meet", "ok": True if M.invites.meet_links() else None, "detail": "" if M.invites.meet_links() else "Paste a Google Meet link under Meetings & booking."})
+    db.set_setting("connections_checked", json.dumps({"at": db.now(), "results": out}))
+    return {"at": db.now(), "results": out}
 
 
 # ---------- Apollo ----------

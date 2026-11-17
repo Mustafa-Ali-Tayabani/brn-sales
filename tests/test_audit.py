@@ -195,3 +195,81 @@ class WebsiteForm(Case):
         db.set_setting("inbound_key", "s3cret")
         self.assertEqual(client.post("/api/inbound", json=self.GOOD).status_code, 403)
         self.assertEqual(client.post("/api/inbound", json={**self.GOOD, "key": "s3cret"}).status_code, 200)
+
+
+class DeveloperList(Case):
+    def test_code_is_never_stored_as_an_email_whichever_search_found_it(self):
+        for src in ("web", "google_places", "intent", "apollo", "manual"):
+            i = main._insert({"company": f"Code {src}", "email": "bootstrap@4.6.0", "website": f"https://code-{src}.test"}, src)
+            l = db.one("SELECT email, extra FROM leads WHERE id=?", (i,))
+            self.assertIsNone(l["email"], src); self.assertEqual(json.loads(l["extra"])["bad_email"], "bootstrap@4.6.0")
+        agent.tick(force=True)
+        self.assertTrue({l["stage"] for l in db.q("SELECT stage FROM leads")} <= {"needs_contact", "reply_manually"})   # none is researched for an email it does not have
+        self.assertEqual(db.one("SELECT COUNT(*) n FROM leads WHERE email IS NOT NULL")["n"], 0)
+        self.assertEqual(SENT, [])
+
+    def test_a_lead_only_in_replied_because_of_an_automatic_message_goes_back(self):
+        def lead(name, text, intent="interested", step=1):
+            i = main._insert({"company": name, "contact_name": "Al", "email": f"al@{name.split()[0].lower()}.test", "product": "gym_club"})
+            db.log(i, "email_sent", "intro: Hi", channel="email", payload={"action": "intro"})
+            db.log(i, "email_reply", f"Reply ({intent}): x", channel="email", payload={"text": text, "intent": intent})
+            db.update_lead(i, stage="replied", step=step, replied_at=db.now(), next_action="human_followup")
+            return i
+        auto = "Subject: Automatic reply\n\nI am out of the office until Monday."
+        a = lead("Away Co", auto); b = lead("Real Co", "Subject: Re\n\nSounds useful, tell me more."); c = lead("Done Co", auto, step=9)
+        d = lead("Both Co", auto); db.log(d, "email_reply", "Reply (interested): x", channel="email", payload={"text": "Yes please, tell me more.", "intent": "interested"})
+        e = lead("Earlier Co", auto, intent="auto_reply")                                 # re-filed by the previous version, stage left behind
+        f = lead("Acted Co", auto); db.update_lead(f, stage="meeting_booked")
+        self.assertEqual(main.fix_auto_replies(), 4)
+        st = lambda n: (self.lead(n)["stage"], self.lead(n)["replied_at"] is None)
+        self.assertEqual((st("Away Co"), st("Earlier Co"), st("Done Co")), (("in_sequence", True), ("in_sequence", True), ("completed", True)))
+        self.assertEqual((st("Real Co"), st("Both Co"), st("Acted Co")[0]), (("replied", False), ("replied", False), "meeting_booked"))   # a person answered, or someone acted: left alone
+        self.assertGreater(self.lead("Away Co")["next_action_at"], db.now())               # the next email is drafted tomorrow, not this minute
+        self.assertIn("automatic one, not a reply", self.timeline("Away Co", "stage_change")[-1])
+        self.assertEqual({s["name"]: s["leads"] for s in client.get("/api/reports").json()["funnel"]["steps"]}["Replied"], 2)
+
+    def test_connected_means_tried_and_working(self):
+        r = {x["key"]: x for x in client.get("/api/connections/check").json()["results"]}
+        self.assertEqual((r["claude"]["ok"], r["inbox"]["ok"], r["verify"]["ok"], r["voice"]["ok"], r["places"]["ok"], r["meet"]["ok"]), (None, None, None, None, None, None))
+        self.assertTrue(r["enrich"]["ok"]); self.assertIn("paid Apollo plan", r["enrich"]["detail"])   # the stand-in Apollo answers
+        self.ap.no_people_search = True
+        r = {x["key"]: x for x in client.get("/api/connections/check").json()["results"]}
+        self.assertEqual((r["enrich"]["ok"], r["people"]["ok"]), (False, False)); self.assertIn("master key", r["enrich"]["detail"])
+        self.assertFalse(r["email"]["ok"])                                                 # smtp.test does not exist: a key being there is not enough
+        class Client:
+            class messages:
+                @staticmethod
+                def create(**k):
+                    raise RuntimeError("Error code: 400 - {'error': {'message': 'Your credit balance is too low to access the Anthropic API.'}}")
+        llm._client = Client
+        try:
+            c = {x["key"]: x for x in client.get("/api/connections/check").json()["results"]}["claude"]
+        finally:
+            llm._client = None
+        self.assertEqual(c["ok"], False); self.assertIn("credit has run out", c["detail"])
+        db.set_setting("places_error", "Google refused the map search: no billing account.")
+        import os
+        os.environ["GOOGLE_PLACES_API_KEY"] = "k"
+        try:
+            pl = {x["key"]: x for x in client.get("/api/connections/check").json()["results"]}["places"]
+        finally:
+            os.environ.pop("GOOGLE_PLACES_API_KEY")
+        self.assertEqual((pl["ok"], pl["detail"]), (False, "Google refused the map search: no billing account."))
+        self.assertEqual(len(client.get("/api/settings").json()["connections_checked"]["results"]), len(r))   # the last test result is kept for the page
+
+    def test_errors_are_kept_whole(self):
+        long = "Error code: 400 - {'error': {'message': '" + "the request was refused because " + "x" * 300 + " end of message'}}"
+        self.assertTrue(llm.explain(long).endswith("end of message"))
+        llm._note_error(RuntimeError(long))
+        self.assertTrue(db.setting("llm_error").endswith("end of message"))
+        llm._cooldown_until = 0
+
+    def test_website_form_can_be_tied_to_your_site(self):
+        db.set_setting("inbound_site", "brndynamics.com")
+        body = {"name": "Sara", "email": "sara@realco.test", "company": "Real Co", "message": "Hello"}
+        try:
+            self.assertEqual(client.post("/api/inbound", json=body).status_code, 403)
+            self.assertEqual(client.post("/api/inbound", json=body, headers={"origin": "https://evil.test"}).status_code, 403)
+            self.assertEqual(client.post("/api/inbound", json=body, headers={"origin": "https://www.brndynamics.com"}).status_code, 200)
+        finally:
+            db.set_setting("inbound_site", "")

@@ -621,7 +621,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
         <pre id="inboundCode" style="user-select:all;margin:0"></pre><p class="hint">Fields: name, email (required), company, phone, message, product (a pipeline key, optional). Give this to whoever maintains the website.</p></div>
       <div class="card"><h3>AI phone calls</h3><div id="voiceCard"></div></div>
       <div class="card"><h3>Services</h3><table id="prov"></table>
-        <div class="row" style="margin-top:12px"><button onclick="testEmail(this)">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
+        <div class="row" style="margin-top:12px"><button class="pri" onclick="connCheck(this)" title="Tries each service with one small request, so you see what really works">Test all connections</button><button onclick="testEmail(this)">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
      </div>
 
      <div class="setpane" data-tab="compliance" data-nosave><h2>Do not contact</h2><p class="lead">Addresses and domains that are never contacted, and the safeguards that always apply.</p>
@@ -1502,6 +1502,18 @@ function toggleize(){Object.entries(TG).forEach(([id,t])=>{const sel=document.ge
     row.onclick=flip;row.onkeydown=e=>{if(e.key==' '||e.key=='Enter'){e.preventDefault();flip()}}}
   const isOn=sel.value==on;row.classList.toggle('on',isOn);row.setAttribute('aria-checked',isOn);
   row.innerHTML=`<div class="agentsw ${isOn?'on':''}"><span class="tg"></span></div><div><b>${t.title}</b><small>${isOn?t.d1:t.d0}</small></div><span class="st">${isOn?'On':'Off'}</span>`})}
+let PROV=null;
+function provRender(chk){const s=PROV;if(!s)return;const res={};((chk||{}).results||[]).forEach(r=>res[r.key]=r);
+  const rows=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['Google Meet links for meetings','meet','Paste them under Meetings & booking'],['Finding a named person at a company','people','APOLLO_API_KEY or HUNTER_API_KEY'],['Checking that a mailbox exists','verify','HUNTER_API_KEY'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']];
+  const tag=k=>{const r=res[k],set=s.providers[k]||(k=='voice'&&s.providers.voice_key);
+    if(k=='places'&&s.providers.places_error&&!r)return `<span class="tag blocked">key set, Google refuses</span><br><small style="color:#b54708">${esc(s.providers.places_error)}</small>`;
+    if(r&&r.ok===true)return `<span class="tag ok">works</span>${r.detail?`<br><small class="muted">${esc(r.detail)}</small>`:''}`;
+    if(r&&r.ok===false)return `<span class="tag blocked">not working</span><br><small style="color:#b54708">${esc(r.detail)}</small>`;
+    if(r&&r.ok==='half')return `<span class="tag pending_approval">not finished</span><br><small class="muted">${esc(r.detail)}</small>`;
+    if(!set)return `<span class="tag blocked">not set</span>${r&&r.detail?`<br><small class="muted">${esc(r.detail)}</small>`:''}`;
+    return k=='voice'&&!s.providers.voice?'<span class="tag pending_approval">key works, finish the set-up below</span>':'<span class="tag g" title="A key is set. Press Test all connections to find out whether it works.">key set, not tested</span>'};
+  $('#prov').innerHTML=rows.map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td>${tag(k)}</td></tr>`).join('')+(chk&&chk.at?`<tr><td colspan="2" class="muted" style="font-size:12px">Tested ${fmt(chk.at)}. "Works" means the service answered a real request just then.</td></tr>`:'<tr><td colspan="2" class="muted" style="font-size:12px">"Key set" only means a key is there. Press Test all connections to see whether each one works.</td></tr>')}
+async function connCheck(b){const t=b.textContent;b.disabled=true;b.textContent='Testing…';try{provRender(await api('/api/connections/check'))}finally{b.disabled=false;b.textContent=t}}
 async function loadApollo(){if(!$('#apolloUse'))return;const u=await api('/api/apollo/usage'),k=u.labels;
   $('#apolloUse').innerHTML=!u.connected?'<p class="muted" style="margin:0">Apollo is not connected: the app has not received a key. Add <b>APOLLO_API_KEY</b> under the brn-sales service in Railway Variables, then press <b>Deploy</b> so the change is applied.</p>'
    :`<div class="kpis" style="margin-bottom:8px"><div class="kpi"><span>Used today</span><b>${u.today}${u.cap?' / '+u.cap:''}</b><span>${u.cap?'daily cap':'no daily cap'}</span></div><div class="kpi"><span>Used this month</span><b>${u.month}</b></div>${Object.keys(k).map(x=>`<div class="kpi"><span>${k[x][0].toUpperCase()+k[x].slice(1)}</span><b>${u.month_by_kind[x]}</b><span>this month · ${u.today_by_kind[x]} today</span></div>`).join('')}</div>
@@ -1513,8 +1525,7 @@ async function loadSettings(){if(setDirtyFlag)return;loadApollo();setTab(setCur)
   api('/api/stats').then(st=>{$('#agNow').textContent='Right now: '+agentNow(st.agent).toLowerCase();$('#agNow').className='tag '+(st.agent.active?'ok':st.agent.on?'pending_approval':'blocked')});
   $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;$('#logoNote').textContent=s.logo_effective?'Leave empty to use the built-in brn dynamics logo. Emails load it from '+s.logo_effective:'No public address for this server is known, so emails show the name as text instead of the logo. Paste a logo address to fix that.';
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
-  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['Google Meet links for meetings','meet','Paste them under Meetings & booking'],['Finding a named person at a company','people','APOLLO_API_KEY or HUNTER_API_KEY'],['Checking that a mailbox exists','verify','HUNTER_API_KEY'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
-   .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td>${k=='places'&&s.providers.places_error?`<span class="tag pending_approval">key set, Google refuses</span><br><small style="color:#b54708">${esc(s.providers.places_error)}</small>`:k=='voice'&&!s.providers.voice&&s.providers.voice_key?'<span class="tag pending_approval">key works, finish the set-up below</span>':`<span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span>`}</td></tr>`).join('');
+  PROV=s;provRender(s.connections_checked);
   $('#inboundCode').textContent=`fetch("${s.app_url}/api/inbound", {\n  method: "POST",\n  headers: {"Content-Type": "application/json"},\n  body: JSON.stringify({name, email, company, phone, message})\n})`;
   setDirty(false);setTab(setCur);
   const u=await api('/api/ai/usage');

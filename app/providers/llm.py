@@ -126,7 +126,7 @@ def _note_error(e):
     elif "invalid x-api-key" in low or "authentication" in low:
         short = "The Anthropic API key is not valid. Check ANTHROPIC_API_KEY in Railway Variables."
     else:
-        short = msg[:300]
+        short = explain(e)[:700]   # the whole reason, in plain words where it is a known one
     db.set_setting("llm_error", short)
     db.set_setting("llm_error_at", db.now())
 

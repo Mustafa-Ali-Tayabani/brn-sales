@@ -165,6 +165,7 @@ def google_places(query, country="SA", limit=20, only_without_website=False, rev
         raise
     if db.setting("places_error"):
         db.set_setting("places_error", "")
+    db.set_setting("places_ok_at", db.now())
     return rows
 
 

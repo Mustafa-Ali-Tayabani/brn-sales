@@ -448,6 +448,9 @@ SKIPPED_COUNTRY = {}   # country -> leads not added since the last import report
 def _insert(row, source="manual", defaults=None):
     d = defaults or {}
     email = (row.get("email") or "").strip().lower() or None
+    if email and sources.junk_email(email):   # bootstrap@5.3.0, you@company.com: not a mailbox, whichever search brought it
+        row = {**row, "extra": {**(row.get("extra") or {}), "bad_email": email}}
+        email = None
     if email and db.one("SELECT 1 x FROM leads WHERE lower(email)=?", (email,)):
         return None  # duplicate
     if not email:  # discovered leads often have no email: dedupe by website, phone or place
@@ -1350,6 +1353,10 @@ def get_settings(request: Request):
     s["logo_effective"] = email_template.logo_url()
     s["booking_url"] = _public_base(request) + "/book"
     s["app_url"] = _public_base(request)
+    try:
+        s["connections_checked"] = json.loads(s.get("connections_checked") or "null")
+    except ValueError:
+        s["connections_checked"] = None
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
                       "voice_key": voice.enabled(), "places_error": db.setting("places_error") or None, "voice": voice.ready(), "enrich": enrich.enabled(), "meet": bool(invites.meet_links()), "people": bool(enrich.people_finder()), "verify": bool(enrich.verifier()), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
@@ -1493,6 +1500,29 @@ def fix_countries():
     return done
 
 
+def after_auto_reply(lead_id):
+    """An automatic message had been filed as this lead's reply. If no person ever answered and nobody has acted on the
+    lead since, put it back in its sequence (the next email is drafted tomorrow) and take the "replied" mark off."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    if not lead or lead["stage"] not in ("replied", "reply_manually", "nurture"):
+        return False
+    for a in db.q("SELECT payload FROM activities WHERE lead_id=? AND kind='email_reply'", (lead_id,)):
+        try:
+            if json.loads(a["payload"] or "{}").get("intent") != "auto_reply":
+                return False   # a person did answer: the status is right
+        except ValueError:
+            return False
+    if db.one("SELECT 1 x FROM meetings WHERE lead_id=? AND status<>'cancelled'", (lead_id,)) or lead["source"] in ("website", "booking", "inbound"):
+        return False
+    seq = db.sequence_for(lead)
+    done = (lead["step"] or 0) >= len(seq)
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(timespec="seconds")
+    db.ex("UPDATE leads SET replied_at=NULL WHERE id=?", (lead_id,))
+    db.update_lead(lead_id, stage="completed" if done else "in_sequence", next_action=None if done else f"step_{lead['step'] or 0}", next_action_at=None if done else tomorrow)
+    db.log(lead_id, "stage_change", "Back " + ("to Sequence done" if done else "in its sequence") + ": the only message from this lead was an automatic one, not a reply.", channel="agent")
+    return True
+
+
 def fix_auto_replies():
     """Messages recorded as replies before automatic ones were recognised: re-read each, and mark the automatic ones.
     Reports then stop counting them. A lead's status is left as it is: a person may have acted on it since."""
@@ -1509,6 +1539,8 @@ def fix_auto_replies():
             db.ex("UPDATE activities SET payload=?, summary=? WHERE id=?", (json.dumps(p, ensure_ascii=False), f"Automatic message, not a reply: {what} (was filed as {was})", a["id"]))
             db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action='reply'", (db.now(), a["lead_id"]))
             done += 1
+    for r in db.q("SELECT DISTINCT lead_id FROM activities WHERE kind='email_reply' AND payload LIKE ?", ('%"intent": "auto_reply"%',)):   # also the ones re-filed by an earlier version
+        after_auto_reply(r["lead_id"])
     return done
 
 
@@ -1574,6 +1606,10 @@ def inbound(request: Request, p: dict = Body(...)):
         return {"ok": True}
     key = db.setting("inbound_key") or os.environ.get("BRN_INBOUND_KEY") or ""
     if key and (p.get("key") or request.headers.get("x-inbound-key") or "") != key:
+        raise HTTPException(403, "This form is not allowed to send here.")
+    site = (db.setting("inbound_site") or os.environ.get("BRN_INBOUND_SITE") or "").strip().lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").strip("/")
+    came = re.sub(r"^https?://(www\.)?", "", (request.headers.get("origin") or request.headers.get("referer") or "").lower()).split("/")[0].split(":")[0]
+    if site and not (came == site or came.endswith("." + site)):
         raise HTTPException(403, "This form is not allowed to send here.")
     ip, now = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else ""), time.time()
     recent = [t for t in _inbound.get(ip, []) if now - t < 3600]
@@ -1807,9 +1843,9 @@ def _startup():
         db.set_setting("countries_fixed", "1")
         if n:
             db.log(None, "system", f"Countries checked against each lead's phone and web address: {n} corrected", channel="system")
-    if db.setting("auto_replies_fixed") != "1":   # once: out-of-office, ticket and survey messages that were filed as real replies
+    if db.setting("auto_replies_fixed") != "2":   # once: out-of-office, ticket and survey messages that were filed as real replies
         n = fix_auto_replies()
-        db.set_setting("auto_replies_fixed", "1")
+        db.set_setting("auto_replies_fixed", "2")
         if n:
             db.log(None, "system", f"Clean-up: {n} automatic messages (out of office, tickets, surveys) were filed as replies. They no longer count as replies in Reports.", channel="system")
     if db.setting("junk_emails_fixed") != "1":   # once: addresses that are really bits of page code or examples
