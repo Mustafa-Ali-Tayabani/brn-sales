@@ -17,14 +17,14 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from . import agent, assistant, auth, compliance, db, email_template, invites
 from urllib.parse import quote
 
-from .providers import channels, enrich, inbox, llm, mailbox, sources
+from .providers import channels, enrich, inbox, intent, llm, mailbox, sources
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 ADMIN_PW = os.environ.get("BRN_ADMIN_PASSWORD")
 
 
-PUBLIC = ("/webhooks/", "/brand/", "/login", "/api/login", "/book", "/api/book")   # reachable without signing in
+PUBLIC = ("/webhooks/", "/brand/", "/login", "/api/login", "/book", "/api/book", "/api/inbound")   # reachable without signing in
 OWN = ("/", "/api/me", "/api/password", "/api/logout")           # anyone signed in, whatever their role
 
 
@@ -32,7 +32,7 @@ OWN = ("/", "/api/me", "/api/password", "/api/logout")           # anyone signed
 async def gate(request: Request, call_next):
     """Who is asking, and are they allowed to? See auth.py for the three sign-in states and the roles."""
     path, user = request.url.path, None
-    if path.startswith("/api/book"):  # public, and callable from a page on your own website
+    if path.startswith(("/api/book", "/api/inbound")):  # public, and callable from a page on your own website
         cors = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS"}
         if request.method == "OPTIONS":
             return Response(status_code=204, headers=cors)
@@ -255,6 +255,13 @@ def _lead_filters(f):
         w.append("l.emails_sent>0 AND l.replied_at IS NULL")
     elif es == "no_email":
         w.append("(l.email IS NULL OR l.email='')")
+    sig = f.get("signal")
+    if sig in ("asked", "hiring", "inbound"):
+        w.append("l.extra LIKE ?"); a.append(f'%"level": "{sig}"%')
+    elif sig == "any":
+        w.append("(l.extra LIKE ? OR l.extra LIKE ? OR l.extra LIKE ? OR l.source='reddit')"); a += ['%"level": "asked"%', '%"level": "hiring"%', '%"level": "inbound"%']
+    elif sig == "none":
+        w.append("(l.extra IS NULL OR (l.extra NOT LIKE ? AND l.extra NOT LIKE ? AND l.extra NOT LIKE ?)) AND COALESCE(l.source,'')<>'reddit'"); a += ['%"level": "asked"%', '%"level": "hiring"%', '%"level": "inbound"%']
     if f.get("has") == "email":
         w.append("l.email IS NOT NULL AND l.email<>''")
     elif f.get("has") == "phone":
@@ -331,9 +338,12 @@ def leads(request: Request):
     offset = int(f.get("offset", 0))
     rows = db.q(f"""SELECT l.id, l.company, l.contact_name, l.title, l.email, l.phone, l.website, l.city, l.country, l.industry,
                     l.segment, l.product, l.source, l.stage, l.score, l.step, l.next_action, l.next_action_at, l.emails_sent,
-                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at, l.deal_value, l.expected_close
+                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at, l.deal_value, l.expected_close, l.extra
                     FROM leads l WHERE {where} ORDER BY {SORTS.get(f.get('sort'), SORTS['updated'])} LIMIT ? OFFSET ?""",
                 (*args, limit, offset))
+    for r in rows:  # why each lead is worth contacting, without sending the whole research blob to the page
+        r["signal"] = agent.signal(r)
+        r.pop("extra", None)
     return {"total": total, "rows": rows}
 
 
@@ -354,6 +364,7 @@ def lead(lead_id: int):
     l["research"] = json.loads(l["research"] or "null")
     l["extra"] = json.loads(l["extra"] or "null")
     l["activities"] = db.q("SELECT * FROM activities WHERE lead_id=? ORDER BY id DESC", (lead_id,))
+    l["signal"] = agent.signal({**l, "extra": l["extra"] or {}})
     l["approvals"] = db.q("SELECT * FROM approvals WHERE lead_id=? ORDER BY id DESC", (lead_id,))
     l["tasks"] = db.q("SELECT t.*, u.name assignee FROM tasks t LEFT JOIN users u ON u.id=t.assigned_to WHERE t.lead_id=? ORDER BY t.done_at IS NOT NULL, t.due_at IS NULL, t.due_at, t.id DESC LIMIT 30", (lead_id,))
     l["meetings"] = [_meeting(m) for m in db.q("SELECT m.*, NULL company FROM meetings m WHERE m.lead_id=? ORDER BY m.starts_at DESC", (lead_id,))]
@@ -1272,6 +1283,57 @@ def check_inbox():
         raise HTTPException(502, f"Could not read the mailbox: {e}")
 
 
+def _request_leads(need, country, limit):
+    """Public requests for something we sell, as lead rows. A request whose page loads but does not contain the quoted
+    words is dropped: only what can be checked is kept."""
+    rows = []
+    for it in llm.find_requests(need, country, limit):
+        ok = intent.verify(it["quote"], it["url"])
+        if ok is False:
+            continue
+        rows.append({"company": it["who"], "website": it["website"] or it["url"], "email": it["email"], "country": country if country and country != "--" else None,
+                     "source": "intent", "consent_basis": "legitimate_interest_b2b" if it["website"] or it["email"] else "public_post", "notes": f'They wrote: "{it["quote"]}"',
+                     "extra": {"intent": {"level": "asked", "quote": it["quote"], "url": it["url"], "posted": it["posted"], "where": it["where"],
+                                          "checked": "the quote was found on the page" if ok else "the page could not be opened to check the quote"}, "found_by": need}})
+    with_site = [r for r in rows if r["extra"]["intent"]["url"] != r["website"] and not r.get("email")]
+    if with_site:
+        sources.enrich(with_site)   # their own site may publish a contact email
+    return rows
+
+
+_inbound = {}
+
+
+@app.post("/api/inbound")
+def inbound(request: Request, p: dict = Body(...)):
+    """An enquiry from your own website's contact form. The person becomes a lead marked "Wrote to us", their message is
+    logged like a reply, and an answer is drafted for approval. Public: call it from the form's page."""
+    if p.get("hp"):   # a hidden field only scripts fill in
+        return {"ok": True}
+    ip, now = (request.client.host if request.client else ""), time.time()
+    recent = [t for t in _inbound.get(ip, []) if now - t < 3600]
+    if len(recent) >= 5:
+        raise HTTPException(429, "Too many messages from here in the last hour. Please try again later.")
+    name, email = (p.get("name") or "").strip()[:120], (p.get("email") or "").strip().lower()[:200]
+    message = (p.get("message") or "").strip()[:3000]
+    if not re.fullmatch(r"[\w.+'-]+@[\w-]+(\.[\w-]+)+", email):
+        raise HTTPException(400, "Please enter a valid email address.")
+    _inbound[ip] = recent + [now]
+    product = p.get("product") if p.get("product") in db.products() else None
+    lead = db.one("SELECT * FROM leads WHERE lower(email)=?", (email,))
+    if not lead:
+        lid = _insert({"company": (p.get("company") or "").strip()[:160] or name or email.split("@")[1], "contact_name": name or None, "email": email,
+                       "phone": (p.get("phone") or "").strip()[:40] or None, "source": "website", "consent_basis": "opt_in", "segment": "Wrote to us", "product": product,
+                       "extra": {"intent": {"level": "inbound", "quote": message[:300], "where": "Website contact form", "posted": db.now()[:10]}}}, "website")
+        lead = db.one("SELECT * FROM leads WHERE id=?", (lid,))
+    if message:
+        agent.handle_reply(lead["id"], f"Subject: Website enquiry\n\n{message}", {"from": email, "subject": "Website enquiry"})
+    if db.one("SELECT stage FROM leads WHERE id=?", (lead["id"],))["stage"] not in ("replied", "meeting_booked", "won", "opted_out"):
+        db.update_lead(lead["id"], stage="replied", next_action="human_followup", next_action_at=None, replied_at=db.now())
+    db.ex("INSERT INTO tasks(lead_id, title, due_at, created_by, created_at) VALUES (?,?,?,?,?)", (lead["id"], f"Answer the website enquiry from {name or email}", db.now(), "Agent", db.now()))
+    return {"ok": True}
+
+
 def discover_pipeline(key, sources_only=None):
     """Finds new leads for one pipeline from its sources (Google Places, Reddit) and imports them into it."""
     p = db.products().get(key)
@@ -1313,7 +1375,42 @@ def discover_pipeline(key, sources_only=None):
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
                     out["errors"].append(f"{qd.get('query')}: {e}")
-    if not places and not web and not src.get("reddit"):
+    asks = src.get("intent")
+    if asks is None:  # not set up yet for this pipeline: start from the phrases it already searches Reddit for
+        asks = [{"query": q} for q in (src.get("reddit") or [])[:2]]
+    if asks and sources_only in (None, "intent"):
+        if not llm.enabled():
+            out["notes"].append("ANTHROPIC_API_KEY is not set, so the search for people asking was skipped.")
+        elif llm.over_budget():
+            out["notes"].append("Today's Claude budget is used up, so the search for people asking was skipped.")
+        else:
+            for qd in asks[:4]:
+                qd = {"query": qd} if isinstance(qd, str) else qd
+                try:
+                    rows = _request_leads(qd["query"], qd.get("country") or "", int(qd.get("limit") or 8))
+                    res = _import(rows, f"intent: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or "US"})
+                    out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
+                except Exception as e:
+                    out["errors"].append(f"People asking for '{qd.get('query')}': {e}")
+    jobs = src.get("hiring") or []
+    if jobs and sources_only in (None, "hiring"):
+        try:
+            rows, errs = intent.hiring([j if isinstance(j, str) else j.get("query", "") for j in jobs], limit=20)
+            out["errors"] += errs[:2]
+            rows = [r for r in rows if not db.one("SELECT 1 x FROM leads WHERE lower(company)=? AND source LIKE 'hiring%'", (r["company"].lower(),))]
+            if rows and llm.enabled() and not llm.over_budget():  # a job ad names the company, not its website: look that up, then its published email
+                try:
+                    sites = llm.find_websites([r["company"] for r in rows])
+                    for r in rows:
+                        r["website"] = sites.get(r["company"])
+                    rows = sources.enrich(rows)
+                except Exception as e:
+                    out["notes"].append(f"Could not look up the hiring companies' websites: {e}")
+            res = _import(rows, "hiring", {"product": key, "segment": "Hiring for it", "country": "US"})
+            out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
+        except Exception as e:
+            out["errors"].append(f"Companies hiring: {e}")
+    if not places and not web and not src.get("reddit") and not asks and not jobs:
         out["notes"].append("This pipeline has no sources yet. Add web searches, Places searches or Reddit phrases in Settings > Pipelines.")
     ps = db.setting("pipeline_runs", json.loads) or {}
     ps[key] = {"at": db.now(), "imported": out["imported"], "errors": len(out["errors"])}

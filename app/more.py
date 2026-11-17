@@ -57,17 +57,18 @@ def reports(days: int = 30, product: str = None):
     since = _iso(datetime.now(timezone.utc) - timedelta(days=days))
     prods = db.products()
     lw, largs = ("AND l.product=?", [product]) if product else ("", [])
-    rows = db.q(f"""SELECT a.id, a.lead_id, a.kind, a.summary, a.payload, a.created_at, a.actor, l.product FROM activities a JOIN leads l ON l.id=a.lead_id
+    rows = db.q(f"""SELECT a.id, a.lead_id, a.kind, a.summary, a.payload, a.created_at, a.actor, l.product, l.source, l.extra FROM activities a JOIN leads l ON l.id=a.lead_id
                     WHERE ((a.kind='email_sent' AND a.status='ok') OR a.kind IN ('email_reply','email_bounce')) AND a.created_at>=? {lw} ORDER BY a.id""", (since, *largs))
     blank = lambda: {"sent": 0, "replies": 0, "positive": 0}
-    step, variant, pipe, person = {}, {}, {}, {}
+    step, variant, pipe, person, how = {}, {}, {}, {}, {}
     totals = {"sent": 0, "replies": 0, "positive": 0, "bounced": 0, "leads_emailed": set(), "leads_replied": set()}
     last = {}   # lead -> the email a reply would be answering
     for a in rows:
         p = json.loads(a["payload"] or "{}")
         if a["kind"] == "email_sent":
             act = _action(a, p)
-            keys = [(step, act), (pipe, a["product"] or ""), (person, a["actor"] or "Agent (sent automatically)")]
+            keys = [(step, act), (pipe, a["product"] or ""), (person, a["actor"] or "Agent (sent automatically)"),
+                    (how, agent.SIGNALS.get(agent.signal(a)) or "Fits the profile (no signal)")]
             if p.get("variant") in ("A", "B"):
                 keys.append((variant, (act, p["variant"])))
             for table, key in keys:
@@ -107,6 +108,7 @@ def reports(days: int = 30, product: str = None):
         "by_step": [{"action": k, "name": STEP_NAMES.get(k, k), **v, "rate": _rate(v["replies"], v["sent"])} for k, v in sorted(step.items(), key=lambda x: order.index(x[0]) if x[0] in order else 99)],
         "by_variant": [{"action": k[0], "name": STEP_NAMES.get(k[0], k[0]), "variant": k[1], **v, "rate": _rate(v["replies"], v["sent"])}
                        for k, v in sorted(variant.items(), key=lambda x: (order.index(x[0][0]) if x[0][0] in order else 99, x[0][1]))],
+        "by_signal": [{"name": k, **v, "rate": _rate(v["replies"], v["sent"])} for k, v in sorted(how.items(), key=lambda x: -x[1]["sent"])],
         "by_person": [{"name": k, "sent": v["sent"], "replies": v["replies"], "rate": _rate(v["replies"], v["sent"]), "meetings": v.get("meetings", 0)}
                       for k, v in sorted(person.items(), key=lambda x: -(x[1]["sent"] + x[1].get("meetings", 0)))],
         "forecast": forecast(product),
@@ -246,6 +248,13 @@ def rewrite_draft(approval_id: int, p: dict = Body(...)):
         g["all"] = (g["all"] + "\n" if g["all"] else "") + "- " + feedback
         db.set_setting("email_guidance", json.dumps(g, ensure_ascii=False))
     return {"subject": new["subject"], "body": new["body"], "remembered": bool(p.get("remember"))}
+
+
+# ---------- lead sources ----------
+@router.post("/api/pipelines/suggest")
+def suggest_sources(p: dict = Body(...)):
+    """Search phrases that find buyers with a current need, for the pipeline being edited."""
+    return llm.suggest_sources(p.get("name") or "", p.get("pitch") or "", p.get("icp") or "")
 
 
 # ---------- rules ----------

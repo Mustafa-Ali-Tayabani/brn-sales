@@ -14,6 +14,7 @@ import time
 import httpx
 
 from . import db
+from .providers import sources
 
 TYPOS = {"gmial.com": "gmail.com", "gamil.com": "gmail.com", "gmai.com": "gmail.com", "gmail.co": "gmail.com", "gmail.con": "gmail.com", "gnail.com": "gmail.com",
          "gmaill.com": "gmail.com", "hotmial.com": "hotmail.com", "hotmai.com": "hotmail.com", "hotmail.con": "hotmail.com", "outlok.com": "outlook.com",
@@ -37,6 +38,8 @@ BUILTIN = [
      "about": "Addresses like noreply@ or donotreply@ are never read by anyone."},
     {"key": "disposable", "name": "Skip throwaway email services", "outcome": "skip", "default": True,
      "about": "Temporary inboxes such as Mailinator. Nobody real is behind them."},
+    {"key": "vendor", "name": "Skip companies that sell services like ours", "outcome": "skip", "default": True,
+     "about": "Software houses, web and app agencies, IT service firms and marketing agencies are competitors or resellers, not buyers. Judged from the company's own website and name. Pipelines marked as selling to tech companies are exempt."},
     {"key": "role", "name": "Hold shared mailboxes for review", "outcome": "review", "default": False,
      "about": "Addresses like info@, sales@ or support@ go to a shared inbox instead of a person. Paused so you can find a named contact first."},
     {"key": "free", "name": "Hold free email providers for review", "outcome": "review", "default": False,
@@ -178,6 +181,14 @@ def check(lead, network=True, rules=None):
                                   stage IN ('in_sequence','awaiting_approval','replied','meeting_booked') LIMIT 1""", (lead["id"], f"%@{domain}"))
                 if other:
                     return hit("one_per_company", f"Someone else at {domain} ({other['contact_name'] or other['company']}) is already being contacted.")
+    if on("vendor") and not db.products().get(lead.get("product") or "", {}).get("sells_to_tech"):
+        try:
+            extra = json.loads(lead.get("extra") or "{}") or {}
+        except ValueError:
+            extra = {}
+        why = extra.get("vendor") or sources.looks_like_vendor(lead.get("company"), lead.get("industry"), lead.get("segment") if lead.get("source") != "hiring" else "")
+        if why and not (extra.get("intent") or {}).get("level") in ("asked", "inbound"):   # someone who asked us is a buyer, whatever they do
+            return hit("vendor", f'It looks like a provider of similar services ("{why}"), so a competitor rather than a buyer.')
     if on("no_name") and not (lead.get("contact_name") or "").strip():
         return hit("no_name", "There is no contact name for this lead.")
     if on("countries") and (lead.get("country") or "").strip().lower() in _words(val("countries")):

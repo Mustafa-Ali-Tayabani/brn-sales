@@ -56,6 +56,27 @@ your own; admin always has everything.
 Every request is checked on the server (`app/auth.py`), the activity log records who did what, and passwords are stored
 only as salted hashes. `BRN_ADMIN_PASSWORD` keeps working as a recovery password for admin accounts.
 
+## Finding leads who need it now
+
+A business that fits a profile is not a lead; one with a reason to talk today is. Each lead carries a **buying signal**:
+
+| Signal | Where it comes from |
+|---|---|
+| Asked for it | Claude searches the web for people who said in public that they need what a pipeline sells. Each result is checked: the page is fetched and the quoted words must be on it, or it is dropped. Reddit posts count too. |
+| Wrote to us | Your website's contact form (`POST /api/inbound`, see Settings > Connections) and the booking page. |
+| Hiring for it | Companies advertising a job for the skill, read from public job boards (Remotive, RemoteOK, Arbeitnow). |
+| Shows the problem | A website scan found faults, or a business has no website. |
+
+Set the searches per pipeline in Settings > Pipelines ("What a buyer says when they need this", "Jobs a company advertises");
+**Suggest searches** drafts them from the pitch. The Leads page filters by signal, a lead's page shows the quote and the
+link, and Reports compares reply rates by signal.
+
+Two things keep poor leads out. The rule **Skip companies that sell services like ours** reads each company's own home
+page and name, and drops software houses, agencies and IT firms (pipelines marked as selling to tech companies are
+exempt). And Settings > Agent & sending > **Who the agent contacts** can be set to leads with a signal only: profile
+matches from map and web search are then kept under Nurture instead of being emailed. Scoring also now rewards
+evidence of a current need over a profile match. Set `BRN_SITE_CHECK=0` to switch off the home-page read.
+
 ## Email coach
 
 The **Email coach** page is where you tell the agent how your emails should be written, the way you would brief a new
@@ -185,6 +206,7 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes, records them once and lets the agent act on them
 * `app/providers/mailbox.py`: the Mailbox page's IMAP client (folders, reading, drafts, moving, Sent copies)
 * `app/auth.py`: accounts, sign-in sessions, roles and what each may do
+* `app/providers/intent.py`: buying signals (verified public requests, hiring ads)
 * `app/invites.py`: Meet links and emailed meeting invitations (.ics)
 * `app/rules.py`: lead rules
 * `app/more.py`: reports and forecast, tasks, templates, the booking page, the Resend webhook

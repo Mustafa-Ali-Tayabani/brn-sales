@@ -338,6 +338,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
     <div class="fbox">
       <div class="fgrid">
         <div><label>Status</label><select id="f-stage" onchange="loadLeads(0)"></select></div>
+        <div><label>Buying signal</label><select id="f-signal" onchange="loadLeads(0)"><option value="">Any lead</option><option value="any">Has a signal</option><option value="asked">Asked for it</option><option value="hiring">Hiring for it</option><option value="inbound">Wrote to us</option><option value="none">No signal (profile match only)</option></select></div>
         <div><label>Email</label><select id="f-email_status" onchange="loadLeads(0)">
           <option value="">Any</option><option value="never">Not emailed yet</option><option value="sent">Emailed</option>
           <option value="no_reply">Emailed, no reply</option><option value="replied">Replied</option><option value="no_email">No email address</option></select></div>
@@ -456,6 +457,8 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
           <div><label>Lowest fit score to contact</label><input id="s-min_score" type="number" min="0" max="100"></div><div><label>Currency for deal values</label><input id="s-currency" placeholder="USD"></div></div>
         <label>Pipeline for leads that have none</label><select id="s-default_product"></select></div>
       <div class="card"><h3>Finding leads</h3>
+        <label>Who the agent contacts</label><select id="s-lead_quality" style="width:100%"><option value="fit">Anyone who fits a pipeline's ideal customer</option><option value="signal">Only leads with a sign they need it now (asked, hiring, a problem found, or wrote to us)</option></select>
+        <p class="hint">With the second option, leads found by map or web search that show no such sign are kept under Nurture and not emailed. Leads you add or import yourself are always contacted.</p>
         <label>Automatic lead search</label><select id="s-auto_discovery" style="width:100%"><option value="1">On: once a day, each pipeline searches its own sources</option><option value="0">Off: only when I click "Find leads now"</option></select>
         <label>Extra Google Maps searches, daily</label><textarea id="s-discovery" placeholder="gyms in Riyadh | SA | 20"></textarea><p class="hint">One per line: what to search | country code | how many.</p></div>
      </div>
@@ -516,7 +519,9 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
      </div>
 
      <div class="setpane" data-tab="connections" data-nosave><h2>Connections</h2><p class="lead">The outside services this app talks to. They are switched on with variables on the server.</p>
-      <div class="card"><table id="prov"></table>
+      <div class="card"><h3>Your website's contact form</h3><p class="muted" style="margin:-6px 0 8px">People who write to you are the best leads. Have the form on your website send its fields here: each enquiry becomes a lead marked "Wrote to us", with an answer drafted for your approval.</p>
+        <pre id="inboundCode" style="user-select:all;margin:0"></pre><p class="hint">Fields: name, email (required), company, phone, message, product (a pipeline key, optional). Give this to whoever maintains the website.</p></div>
+      <div class="card"><h3>Services</h3><table id="prov"></table>
         <div class="row" style="margin-top:12px"><button onclick="testEmail(this)">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
      </div>
 
@@ -651,7 +656,7 @@ function logParams(){return ['q','kind','status','channel','product','date_from'
 async function loadLog(){const r=await api('/api/activities?limit=1000&'+logParams());$('#gcount').textContent=r.length+(r.length==1000?'+':'')+' events';$('#log').innerHTML=logHead+r.map(logRow).join('')}
 function exportLog(){location.href='/api/export/activities.csv?'+logParams()}
 
-const FKEYS=['stage','segment','email_status','country','source','score_min','score_max','created_from','created_to','contacted_from','contacted_to','replied_from','sort'];
+const FKEYS=['stage','segment','email_status','country','source','score_min','score_max','created_from','created_to','contacted_from','contacted_to','replied_from','sort','signal'];
 function leadFilters(){const f={};if($('#lq').value)f.q=$('#lq').value;if(lProduct)f.product=lProduct;FKEYS.forEach(k=>{const v=$('#f-'+k).value;if(v)f[k]=v});return f}
 const qs=o=>Object.entries(o).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
 function clearFilters(){$('#lq').value='';lProduct='';FKEYS.forEach(k=>$('#f-'+k).value=k=='sort'?'updated':'');loadFacets();loadLeads(0)}
@@ -663,7 +668,7 @@ async function loadLeads(p){if(p!==undefined)page=p;const r=await api('/api/lead
   <td class="cell2"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(l.company)}<div><b>${esc(l.company)}</b>${l.website?`<small>${esc(l.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</small>`:''}</div></div></td>
   <td>${prodTag(l.product)}<br><span class="muted">${esc(l.segment||l.industry||'')}</span></td>
   <td class="cell2">${l.contact_name?esc(l.contact_name)+'<small>':'<small style="color:inherit">'}${esc(l.email||l.phone||'No contact yet')}</small></td>
-  <td>${esc(l.city||'')} ${esc(l.country||'')}</td><td>${l.score??'–'}</td><td>${stageTag(l.stage)}${l.deal_value?`<br><span class="muted">${money(l.deal_value)}</span>`:''}</td>
+  <td>${esc(l.city||'')} ${esc(l.country||'')}</td><td>${l.score??'–'}</td><td>${stageTag(l.stage)}${l.signal?'<br>'+sigTag(l.signal):''}${l.deal_value?`<br><span class="muted">${money(l.deal_value)}</span>`:''}</td>
   <td>${l.emails_sent?`<span class="tag ok">${l.emails_sent} sent</span>`:'<span class="muted">none</span>'}${l.replied_at?'<br><span class="tag replied">replied</span>':''}</td>
   <td class="muted">${fdate(l.last_contacted_at)}</td><td class="muted">${esc(l.next_action||'')} ${fmt(l.next_action_at)}</td></tr>`).join('');
   const pages=Math.ceil(r.total/PAGE);$('#pager').innerHTML=pages>1?`<button class="sm" ${page==0?'disabled':''} onclick="loadLeads(${page-1})">← Prev</button><span class="muted">Page ${page+1} of ${pages}</span><button class="sm" ${page+1>=pages?'disabled':''} onclick="loadLeads(${page+1})">Next →</button>`:'';updBulk()}
@@ -676,7 +681,7 @@ async function bulkDo(action,value){if(action.startsWith('set_')&&!value)return 
   const r=await api('/api/leads/bulk',{method:'POST',body});alertBanner(`Updated ${r.updated} leads`);sel.clear();$('#bulkAll').checked=false;loadFacets();refresh()}
 
 async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=l.research||{},x=l.extra||{};window.LEAD=l;l.meetings.forEach(m=>{m.company=l.company;m.contact_name=l.contact_name;MEET[m.id]=m});
-  const issues=x.issues||[];const xr=Object.entries(x).filter(([k])=>!['issues'].includes(k));
+  const issues=x.issues||[];const xr=Object.entries(x).filter(([k])=>!['issues','intent'].includes(k)),it=x.intent||null;
   $('#drawer').innerHTML=`<div class="row"><h2 style="flex:1">${esc(l.company)}</h2><button onclick="$('#drawer').classList.remove('open')">Close</button></div>
   <div class="qa">${quickActions(l)}</div>
   <div class="row" style="margin:10px 0">${stageTag(l.stage)} ${prodTag(l.product)} ${l.segment?`<span class="tag g">${esc(l.segment)}</span>`:''}<span class="muted">score ${l.score??'–'} · ${l.emails_sent} emails sent${l.replied_at?' · replied '+fdate(l.replied_at):''}</span></div>
@@ -694,6 +699,10 @@ async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=
    <div class="row" style="margin-top:8px">${l.website?`<a class="btn" href="${esc(l.website)}" target="_blank" rel="noopener">Open the post ↗</a>`:''}<button onclick="navigator.clipboard.writeText($('#rdraft').value);toast('Reply copied')">Copy reply</button>
    <button class="pri" onclick="markReplied(${l.id})">I replied</button></div></div>`:''}
   ${r.summary&&!r.reply_draft?`<div class="card"><h3>Agent research</h3><p>${esc(r.summary)}</p><p class="muted"><b>Pain points:</b> ${esc((r.pain_points||[]).join('; '))}<br><b>Hooks:</b> ${esc((r.hooks||[]).join('; '))}<br><b>Why this score:</b> ${esc(r.score_reason)}</p></div>`:''}
+  ${it||x.vendor?`<div class="card" style="border-color:${x.vendor&&!it?'#f3c5c0':'#bfe6cf'}"><h3>Why this lead ${sigTag(l.signal)}</h3>
+    ${it&&it.quote?`<p style="margin:0 0 8px;font-size:15px">${it.level=='hiring'?'They are advertising a job for:':it.level=='inbound'?'They wrote to us:':'They said:'} <b>“${esc(it.quote)}”</b></p>`:''}
+    ${it?`<p class="muted" style="margin:0;font-size:13px">${[it.where,it.posted&&fdate(it.posted),it.checked].filter(Boolean).map(esc).join(' · ')}${it.url?` · <a href="${esc(it.url)}" target="_blank" rel="noopener">See where ↗</a>`:''}</p>`:''}
+    ${x.vendor?`<p class="muted" style="margin:${it?'8px':'0'} 0 0;font-size:13px">Its own website describes it as a provider of similar services (“${esc(x.vendor)}”), so it may be a competitor rather than a buyer.</p>`:''}</div>`:''}
   ${xr.length||issues.length?`<div class="card"><h3>Imported data</h3><div class="kv">${xr.map(([k,v])=>`<span>${esc(k.replace(/_/g,' '))}</span><div>${/^https?:\/\//.test(v)?`<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`:esc(typeof v=='object'?JSON.stringify(v):v)}</div>`).join('')}</div>
     ${issues.length?`<table style="margin-top:10px"><tr><th>Severity</th><th>Problem</th><th>Fix</th></tr>${issues.map(i=>`<tr><td class="sev-${esc(i.severity)}">${esc(i.severity||'')}</td><td>${esc(i.problem||'')}</td><td class="muted">${esc(i.suggested_fix||'')}</td></tr>`).join('')}</table>`:''}</div>`:''}
   ${l.meetings.length?`<div class="card"><h3>Meetings</h3>${l.meetings.map(m=>`<div class="cup" onclick="showMeeting(${m.id})"><div class="cdate"><b>${new Date(m.starts_at).getDate()}</b>${new Date(m.starts_at).toLocaleDateString([], {month:'short'})}</div><div style="flex:1;min-width:0"><div style="font-weight:600">${esc(m.title)}</div><small class="muted">${new Date(m.starts_at).toLocaleDateString([], {weekday:'short'})} ${hm(m.starts_at)} · <span class="tag ${{scheduled:'ok',done:'g',cancelled:'error'}[m.status]}">${m.status}</span></small></div>${m.meet_link&&m.status=='scheduled'?`<a class="btn sm" href="${esc(m.meet_link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Join</a>`:''}</div>`).join('')}</div>`:''}
@@ -825,6 +834,9 @@ async function saveMeeting(){const date=$('#mt-date').value,time=$('#mt-time').v
    const lid=MF_.lead_id;await refresh();if($('#drawer').classList.contains('open')&&lid)openLead(lid)}
   finally{const x=$('#mtBtn');if(x){x.disabled=false;x.textContent=MF_.id?'Save changes':'Book meeting'}}}
 function schedLead(){const l=window.LEAD;openMeeting({lead_id:l.id,company:l.company,title:'Intro call: '+l.company,attendees:l.email||''})}
+/* ---- why a lead is worth contacting ---- */
+const SIG={asked:['ok','Asked for it'],inbound:['ok','Wrote to us'],hiring:['replied','Hiring for it'],problem:['pending_approval','Shows the problem']};
+const sigTag=k=>SIG[k]?`<span class="tag ${SIG[k][0]}">${SIG[k][1]}</span>`:'';
 /* ---- money ---- */
 let CUR='USD';const money=v=>v==null||v===''?'–':new Intl.NumberFormat([], {style:'currency',currency:CUR,maximumFractionDigits:0}).format(+v);
 const pct=v=>v==null?'–':v+'%';
@@ -842,7 +854,9 @@ async function loadReports(){const r=await api('/api/reports?days='+repDays),t=r
     <div class="card"><h3>By email step</h3>${tbl(['Step','Sent','Replies','Positive','Reply rate'],r.by_step.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${x.sent}</td><td>${x.replies}</td><td>${x.positive}</td><td>${pct(x.rate)}${bar(x.rate)}</td></tr>`),'No emails sent in this period')}</div></div>
    <div class="grid2e"><div class="card"><h3>Subject line test (A vs B)</h3>${tbl(['Step','Version','Sent','Replies','Reply rate'],r.by_variant.map(x=>`<tr><td>${esc(x.name)}</td><td><span class="tag ${x.variant=='A'?'g':''}">${x.variant}</span></td><td>${x.sent}</td><td>${x.replies}</td><td>${pct(x.rate)}${bar(x.rate)}</td></tr>`),'No test results yet. Each outreach email gets one of two subject lines; results appear here.')}
       <p class="muted" style="font-size:12px;margin:10px 0 0">Treat a difference as real only after a few dozen emails per version.</p></div>
-    <div class="card"><h3>By person</h3>${tbl(['Who approved or sent','Emails','Replies','Reply rate','Meetings booked'],r.by_person.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${x.sent}</td><td>${x.replies}</td><td>${pct(x.rate)}</td><td>${x.meetings}</td></tr>`),'Nothing in this period')}</div></div>
+    <div class="card"><h3>By buying signal</h3>${tbl(['Why the lead was contacted','Sent','Replies','Positive','Reply rate'],r.by_signal.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${x.sent}</td><td>${x.replies}</td><td>${x.positive}</td><td>${pct(x.rate)}${bar(x.rate)}</td></tr>`),'No emails sent in this period')}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Shows whether leads with a reason to buy now answer more often than plain profile matches.</p></div></div>
+   <div class="grid2e"><div class="card"><h3>By person</h3>${tbl(['Who approved or sent','Emails','Replies','Reply rate','Meetings booked'],r.by_person.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${x.sent}</td><td>${x.replies}</td><td>${pct(x.rate)}</td><td>${x.meetings}</td></tr>`),'Nothing in this period')}</div></div>
    <div class="psec">Forecast (all open deals, not limited to the period)</div>
    <div class="kpis">${tile('Open deals',f.open_deals,money(f.open_value))}${tile('Likely to close',money(f.weighted),'value x chance by stage')}${tile('Won so far',money(f.won_value),f.won_deals+' deals')}</div>
    ${f.no_value?`<div class="banner"><span><b>${f.no_value} ${f.no_value==1?'lead that has':'leads that have'} replied or booked a meeting ${f.no_value==1?'has':'have'} no deal value.</b> Open the lead and enter one so the forecast counts it.</span><button class="sm x" onclick="filterStage('replied')">Show them</button></div>`:''}
@@ -920,7 +934,7 @@ function seqFromText(){try{SEQ=JSON.parse($('#s-sequence').value);seqRender()}ca
 /* ---- pipeline editor ---- */
 let PL=[];const lines=(a)=>(a||[]).map(x=>typeof x=='string'?x:[x.query,x.country||'',x.limit||''].join(' | ')).join('\n');
 const unlines=(t,objs)=>t.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{if(!objs)return l;const[query,country,limit]=l.split('|').map(x=>x.trim());return{query,country:(country||'SA').toUpperCase(),limit:+limit||20}});
-function plRender(){$('#plList').innerHTML=PL.map((p,i)=>{const s=p.sources||{},src=[(s.places||[]).length&&(s.places.length+' map search'+(s.places.length>1?'es':'')),(s.web||[]).length&&(s.web.length+' web search'+(s.web.length>1?'es':'')),(s.reddit||[]).length&&(s.reddit.length+' intent phrase'+(s.reddit.length>1?'s':''))].filter(Boolean).join(' · ')||'no lead sources yet';
+function plRender(){$('#plList').innerHTML=PL.map((p,i)=>{const s=p.sources||{},src=[(s.intent||[]).length&&(s.intent.length+' search'+(s.intent.length>1?'es':'')+' for people asking'),(s.hiring||[]).length&&(s.hiring.length+' hiring signal'+(s.hiring.length>1?'s':'')),(s.places||[]).length&&(s.places.length+' map search'+(s.places.length>1?'es':'')),(s.web||[]).length&&(s.web.length+' web search'+(s.web.length>1?'es':'')),(s.reddit||[]).length&&(s.reddit.length+' intent phrase'+(s.reddit.length>1?'s':''))].filter(Boolean).join(' · ')||'no lead sources yet';
    return `<div class="trow"><div style="flex:1;min-width:0"><div class="tt">${esc(p.name)} <span class="tag ${p.type=='service'?'g':'p'}">${esc(p.type||'product')}</span>${p.sequence?' <span class="tag g">own sequence</span>':''}</div><small class="muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.pitch||'')}</small><small class="muted">${src}</small></div><button class="sm" onclick="plEdit(${i})">Edit</button></div>`}).join('')
   +`<div class="row" style="margin-top:12px"><button onclick="plEdit(-1)">+ Add a pipeline</button></div>`}
 function plSync(){$('#s-products').value=JSON.stringify(PL,null,1);setDirty();plRender()}
@@ -930,7 +944,11 @@ function plEdit(i){const p=i<0?{name:'',type:'product',pitch:'',icp:'',sources:{
    <label>Pitch (what the agent says you offer)</label><textarea id="pl-pitch" style="min-height:80px">${esc(p.pitch||'')}</textarea>
    <label>Ideal customer</label><input id="pl-icp" style="width:100%" value="${esc(p.icp||'')}">
    <label>Its own button link in emails (optional)</label><input id="pl-link" style="width:100%" value="${esc(p.booking_link||'')}" placeholder="Leave empty to use the general one">
-   <h3 style="font-size:14px;margin:18px 0 0">Where to find leads</h3><p class="hint">One search per line: what to search | country code | how many.</p>
+   <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-tech" ${p.sells_to_tech?'checked':''}> This is sold to software and IT companies (don't skip them as competitors)</label>
+   <h3 style="font-size:14px;margin:18px 0 0">Leads who need this now</h3><p class="hint">These bring people with a reason to talk today. <a style="cursor:pointer;text-decoration:underline" onclick="plSuggest(this)">Suggest searches from the pitch</a></p>
+   <label>What a buyer says when they need this</label><textarea id="pl-intent" style="min-height:72px" placeholder="need someone to fix my wordpress site | US | 8">${esc(lines(s.intent))}</textarea><p class="hint">The agent searches the web for people who said this in public, and keeps only those whose words it can find on the page. One per line: their words | country code | how many.</p>
+   <label>Jobs a company advertises when it needs this</label><textarea id="pl-hiring" style="min-height:56px" placeholder="wordpress developer">${esc(lines(s.hiring))}</textarea><p class="hint">Read from public job boards. A company hiring for the work may prefer a ready service. One job title per line.</p>
+   <h3 style="font-size:14px;margin:18px 0 0">Businesses that fit the profile</h3><p class="hint">Larger numbers, but nothing says they need this now. One search per line: what to search | country code | how many.</p>
    <label>Google Maps searches</label><textarea id="pl-places" style="min-height:64px" placeholder="salons in Riyadh | SA | 20">${esc(lines(s.places))}</textarea>
    <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-nosite" ${s.only_without_website?'checked':''}> Keep only businesses with no website</label>
    <label>Web searches (finds businesses and their published emails)</label><textarea id="pl-web" style="min-height:64px" placeholder="dentists in Austin TX | US | 15">${esc(lines(s.web))}</textarea>
@@ -942,8 +960,12 @@ function plSave(i){const name=$('#pl-name').value.trim();if(!name)return alertBa
   if(i<0){let k=p.key,n=2;while(PL.some(x=>x.key==p.key))p.key=k+'_'+n++}
   Object.assign(p,{name,type:$('#pl-type').value,pitch:$('#pl-pitch').value.trim(),icp:$('#pl-icp').value.trim()});
   if($('#pl-link').value.trim())p.booking_link=$('#pl-link').value.trim();else delete p.booking_link;
-  p.sources={...(p.sources||{}),places:unlines($('#pl-places').value,true),web:unlines($('#pl-web').value,true),reddit:unlines($('#pl-reddit').value,false),only_without_website:$('#pl-nosite').checked,wordpress_only:$('#pl-wp').checked};
+  if($('#pl-tech').checked)p.sells_to_tech=true;else delete p.sells_to_tech;
+  p.sources={...(p.sources||{}),intent:$('#pl-intent').value.split('\n').map(l=>l.split('|').map(x=>x.trim())).filter(x=>x[0]).map(([query,country,limit])=>({query,country:(country||'').toUpperCase(),limit:Math.min(+limit||8,15)})),hiring:unlines($('#pl-hiring').value,false),places:unlines($('#pl-places').value,true),web:unlines($('#pl-web').value,true),reddit:unlines($('#pl-reddit').value,false),only_without_website:$('#pl-nosite').checked,wordpress_only:$('#pl-wp').checked};
   if(i<0)PL.push(p);closeModal();plSync()}
+async function plSuggest(a){a.textContent='Thinking…';try{const r=await api('/api/pipelines/suggest',{method:'POST',body:{name:$('#pl-name').value,pitch:$('#pl-pitch').value,icp:$('#pl-icp').value}});
+  const add=(id,items)=>{const have=$(id).value.split('\n').map(x=>x.trim()).filter(Boolean);items.forEach(x=>{if(!have.some(h=>h.toLowerCase().startsWith(x.toLowerCase())))have.push(x)});$(id).value=have.join('\n')};
+  add('#pl-intent',r.asks);add('#pl-hiring',r.hiring);toast(r.ai?'Suggestions added. Edit them to sound like your buyers.':'Claude is not available, so these are plain starting points. Edit them.')}finally{a.textContent='Suggest searches from the pitch'}}
 async function plDel(i){if(!await ask('Delete the pipeline "'+PL[i].name+'"? Its leads stay, but without a pipeline.'))return;PL.splice(i,1);closeModal();plSync()}
 
 /* ---- rules ---- */
@@ -1233,7 +1255,7 @@ async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}
 async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content=appContent(id);if(b){b.disabled=true;b.textContent='Sending…'}
   try{await api('/api/approvals/'+id,{method:'POST',body});toast(ok?'Sent':'Skipped')}finally{appSel.delete(id);appsDirty=false;refresh()}}
 
-const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product','currency','ab_subjects','meeting_reminder_min','meeting_followup','agent_schedule','agent_start','agent_end','agent_timezone','meet_links'];
+const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product','currency','ab_subjects','meeting_reminder_min','meeting_followup','agent_schedule','agent_start','agent_end','agent_timezone','meet_links','lead_quality'];
 async function loadSettings(){if(setDirtyFlag)return;setTab(setCur);loadPeople();renderTemplates();loadRules();const s=await api('/api/settings');bookingCard(s);
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
   SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');SEQ=s.sequence||[];$('#s-sequence').value=JSON.stringify(SEQ,null,1);seqRender();PL=s.products||[];$('#s-products').value=JSON.stringify(PL,null,1);plRender();
@@ -1243,6 +1265,7 @@ async function loadSettings(){if(setDirtyFlag)return;setTab(setCur);loadPeople()
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
   $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['Google Meet links for meetings','meet','Paste them under Meetings & booking'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
+  $('#inboundCode').textContent=`fetch("${s.app_url}/api/inbound", {\n  method: "POST",\n  headers: {"Content-Type": "application/json"},\n  body: JSON.stringify({name, email, company, phone, message})\n})`;
   setDirty(false);setTab(setCur);
   const u=await api('/api/ai/usage');
   $('#usage').innerHTML=`<div class="kpis" style="margin-bottom:8px"><div class="kpi"><span>Today</span><b>${usd(u.today)}</b></div><div class="kpi"><span>This month</span><b>${usd(u.month)}</b></div>
@@ -1268,7 +1291,7 @@ const SCOL={new:'#9aa0b4',needs_contact:'#e3a33b',reply_manually:'#6E7BFF',in_se
 let pbKey=null,PIPES=[];
 async function loadPipelines(){const r=await api('/api/pipelines');PIPES=r.pipelines;if(pbKey)return loadBoard();
   const card=p=>{const st=p.stages||{},tot=p.total||0,src=p.sources||{};
-   const srcTxt=[(src.web||[]).length?`${src.web.length} web search${src.web.length>1?'es':''}${src.wordpress_only?' (WordPress only)':''}`:'',(src.places||[]).length?`${src.places.length} map search${src.places.length>1?'es':''}${src.only_without_website?' (no-website only)':''}`:'',(src.reddit||[]).length?`${src.reddit.length} intent phrase${src.reddit.length>1?'s':''}`:''].filter(Boolean).join(' · ')||'no sources yet';
+   const srcTxt=[(src.intent||[]).length?`${src.intent.length} search${src.intent.length>1?'es':''} for people asking`:'',(src.hiring||[]).length?`${src.hiring.length} hiring signal${src.hiring.length>1?'s':''}`:'',(src.web||[]).length?`${src.web.length} web search${src.web.length>1?'es':''}${src.wordpress_only?' (WordPress only)':''}`:'',(src.places||[]).length?`${src.places.length} map search${src.places.length>1?'es':''}${src.only_without_website?' (no-website only)':''}`:'',(src.reddit||[]).length?`${src.reddit.length} intent phrase${src.reddit.length>1?'s':''}`:''].filter(Boolean).join(' · ')||'no sources yet';
    return `<div class="pcard" onclick="openBoard('${p.key}')"><div class="row"><h3 style="flex:1">${esc(p.name)}</h3><span class="tag ${p.type=='service'?'g':'p'}">${p.type}</span></div>
     <div class="row"><span class="n">${tot}</span><span class="muted">leads · ${st.in_sequence||0} active · ${(st.replied||0)+(st.meeting_booked||0)} replied/meeting${st.reply_manually?` · <b style="color:var(--blue)">${st.reply_manually} to reply</b>`:''}</span></div>
     <div class="sbar">${tot?KCOLS.filter(k=>st[k]).map(k=>`<i title="${SL[k]}: ${st[k]}" style="width:${st[k]/tot*100}%;background:${SCOL[k]}"></i>`).join(''):''}</div>
@@ -1296,7 +1319,7 @@ function renderBoard(){const q=($('#bq').value||'').toLowerCase();const rows=BOA
   const card=l=>{const sc=l.score==null?'':`<span class="sc ${l.score>=70?'hi':l.score>=55?'md':'lo'}">${l.score}</span>`;
    return `<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('id',${l.id});this.classList.add('drag')" ondragend="this.classList.remove('drag')" onclick="openLead(${l.id})">
     <div class="t">${avatar(l.company)}<div style="min-width:0;flex:1"><div class="nm">${esc(l.company)}</div><div class="sub">${esc(l.contact_name||l.email||l.phone||'No contact yet')}</div></div></div>
-    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${l.deal_value?`<span class="tag g">${money(l.deal_value)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}${sc}</div></div>`};
+    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${sigTag(l.signal)}${l.deal_value?`<span class="tag g">${money(l.deal_value)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}${sc}</div></div>`};
   $('#board').innerHTML=cols.map(k=>{const L=by[k]||[];return `<div class="kcol" style="--c:${SCOL[k]}" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
    <div class="kh"><h4>${SL[k]}</h4><span class="cnt">${L.length}</span></div>
    <div class="kb">${L.slice(0,100).map(card).join('')||'<div class="kempty">Drop leads here</div>'}${L.length>100?`<div class="muted" style="font-size:12px;text-align:center;padding:6px">+${L.length-100} more in the list view</div>`:''}</div></div>`}).join('')}

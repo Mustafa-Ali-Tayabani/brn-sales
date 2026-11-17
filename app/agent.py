@@ -60,6 +60,24 @@ def _iso(dt):
     return dt.isoformat(timespec="seconds")
 
 
+def check_site(lead):
+    """Read the lead's home page once: what the company says it does, and whether it sells services like ours."""
+    try:
+        extra = json.loads(lead.get("extra") or "{}") or {}
+    except ValueError:
+        extra = {}
+    if not lead.get("website") or "vendor" in extra or lead.get("source") in ("reddit", "intent"):
+        return lead
+    from .providers import sources
+    facts = sources.site_summary(lead["website"])
+    if not facts:
+        return lead
+    extra.update({k: v for k, v in facts.items() if v or k == "vendor"})
+    lead = {**lead, "extra": json.dumps(extra, ensure_ascii=False)}
+    db.update_lead(lead["id"], extra=lead["extra"])
+    return lead
+
+
 def scan_website(lead):
     """Fixify leads: scan the lead's website once and store the confirmed problems in lead.extra.issues, so the
     research and email steps can use real, specific findings. Skipped if the lead already has issues (imported
@@ -88,8 +106,30 @@ def scan_website(lead):
         return lead
 
 
-def research_lead(lead):
+SIGNALS = {"asked": "Asked for it", "inbound": "Wrote to us", "hiring": "Hiring for it", "problem": "Shows the problem"}
+CHOSEN_SOURCES = ("manual", "csv", "file", "linkedin", "assistant", "booking", "website", "inbound")  # added by a person, or came to us: always worth contacting
+
+
+def signal(lead):
+    """Why this lead might need us now: asked, inbound, hiring, problem, or None for a plain profile match."""
+    try:
+        extra = json.loads(lead.get("extra") or "{}") if isinstance(lead.get("extra"), str) or lead.get("extra") is None else (lead.get("extra") or {})
+    except ValueError:
+        extra = {}
+    level = (extra.get("intent") or {}).get("level")
+    if level in SIGNALS:
+        return level
     if lead.get("source") == "reddit":
+        return "asked"
+    if lead.get("source") in ("booking", "website", "inbound") or lead.get("replied_at"):
+        return "inbound"
+    if extra.get("issues") or extra.get("top_issue") or extra.get("has_website") is False:
+        return "problem"
+    return None
+
+
+def research_lead(lead):
+    if lead.get("source") == "reddit" or (lead.get("source") == "intent" and not (lead.get("email") or lead.get("phone"))):
         s = _settings(lead)
         draft = llm.intent_reply(lead, s)
         db.update_lead(lead["id"], stage="reply_manually", score=draft.get("score", 70),
@@ -105,6 +145,11 @@ def research_lead(lead):
         db.log(lead["id"], "stage_change", "Needs contact details: no email or phone yet. Add one and move it back to 'new'.")
         return
     lead = scan_website(lead)
+    lead = check_site(lead)
+    hit = rules.check(lead, network=False)
+    if hit:  # the website shows this is a competitor, not a buyer
+        rules.apply(lead, hit)
+        return
     s = _settings(lead)
     try:
         r = llm.research(lead, s["offer"], s["icp"], s.get("product_key"))
@@ -112,11 +157,25 @@ def research_lead(lead):
         db.log(lead["id"], "research", f"Research failed: {e}", status="error")
         return
     score = int(r.get("score") or 0)
+    why = signal(lead)
+    if r.get("_engine") == "template" and why in ("asked", "inbound", "hiring"):  # built-in scoring knows nothing about intent: a stated need outranks a profile match
+        score = max(score, {"asked": 90, "inbound": 92, "hiring": 78}[why])
+        r["score"], r["score_reason"] = score, f"{SIGNALS[why].lower()}; {r.get('score_reason', '')}".strip("; ")
+    if r.get("buyer") is False:  # Claude judged it a provider of similar services
+        rules.apply(lead, {"rule": "vendor", "name": "Skip companies that sell services like ours", "outcome": "skip",
+                           "reason": r.get("score_reason") or "It looks like a provider of similar services, not a buyer."})
+        db.update_lead(lead["id"], research=json.dumps(r, ensure_ascii=False), score=score)
+        return
+
     db.update_lead(lead["id"], research=json.dumps(r, ensure_ascii=False), score=score)
     db.log(lead["id"], "research", r.get("summary", ""), payload=r)
     if score < int(db.setting("min_score")):
         db.update_lead(lead["id"], stage="disqualified", next_action=None, next_action_at=None)
         db.log(lead["id"], "stage_change", f"Disqualified (score {score}): {r.get('score_reason', '')}", status="ok")
+    elif db.setting("lead_quality") == "signal" and not why and str(lead.get("source") or "").split(":")[0].strip() not in CHOSEN_SOURCES:
+        # it fits the profile, but nothing says it needs this now: keep it, don't email it
+        db.update_lead(lead["id"], stage="nurture", next_action=None, next_action_at=None)
+        db.log(lead["id"], "stage_change", f"Kept under Nurture, not contacted (score {score}): it fits the profile but shows no sign of needing this now. Start outreach by hand if you know better.")
     else:
         db.update_lead(lead["id"], stage="in_sequence", step=0, next_action="step_0", next_action_at=_iso(datetime.now(timezone.utc)))
         db.log(lead["id"], "stage_change", f"Qualified (score {score}), sequence started")

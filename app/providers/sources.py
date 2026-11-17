@@ -233,6 +233,37 @@ def site_facts(url):
     return out
 
 
+VENDOR_PHRASES = ("software development company", "software development agency", "software development services", "custom software development",
+                  "web development company", "web development agency", "web development services", "app development company", "app development agency",
+                  "mobile app development", "website development company", "digital agency", "digital marketing agency", "marketing agency", "seo agency",
+                  "seo company", "web design agency", "web design company", "design agency", "creative agency", "ux agency", "ui/ux design agency",
+                  "it services", "it solutions", "it consulting", "it outsourcing", "software house", "software agency", "development agency",
+                  "offshore development", "staff augmentation", "dedicated developers", "hire developers", "outsourcing company", "branding agency")
+VENDOR_NAMES = ("infotech", "softwares", "web solutions", "it solutions", "technolabs", "software solutions", "digital agency", "web agency", "dev studio")
+
+
+def looks_like_vendor(*texts):
+    """Words on a company's own site or in its name that say it sells software, web, design or marketing services:
+    a competitor or reseller for a service business, not a buyer. Returns the phrase that gave it away, or None."""
+    hay = " ".join(str(t or "") for t in texts).lower()
+    return next((p for p in VENDOR_PHRASES + VENDOR_NAMES if p in hay), None)
+
+
+def site_summary(url):
+    """A company's home page in a few words: its title, its description, and whether it reads like a service provider.
+    One request, never raises. Returns {} when the page cannot be read."""
+    if not url or os.environ.get("BRN_SITE_CHECK") == "0":
+        return {}
+    st, page = _get(url if url.startswith("http") else "https://" + url)
+    if not page:
+        return {}
+    title = _re.search(r"(?is)<title[^>]*>(.*?)</title>", page)
+    desc = _re.search(r'(?is)<meta[^>]+(?:name|property)=["\'](?:description|og:description)["\'][^>]+content=["\'](.*?)["\']', page)
+    out = {"site_title": _re.sub(r"\s+", " ", title.group(1)).strip()[:160] if title else "", "site_description": _re.sub(r"\s+", " ", desc.group(1)).strip()[:300] if desc else ""}
+    out["vendor"] = looks_like_vendor(out["site_title"], out["site_description"]) or ""
+    return out
+
+
 def enrich(rows, wordpress_only=False, workers=5):
     """Adds the published email and a WordPress flag to discovered businesses (in place); optionally drops non-WordPress sites."""
     with _TPE(workers) as ex:

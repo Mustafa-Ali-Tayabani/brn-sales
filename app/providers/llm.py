@@ -177,7 +177,11 @@ def research(lead, offer, icp, product_key=None):
 Ideal customer: {icp}
 Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 If the lead data includes website scan results (health score, issues), use the most concrete issue as the main hook.
-Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "language": "ar"|"en"}}""", 800, "research")
+If the data includes "intent" (they asked for this, or are hiring for it), that is the hook: refer to what they said or the role they advertise.
+Score how likely they are to BUY this now, not how well they match a description: 85+ only with evidence of a current need (a request,
+a job ad, a concrete problem), 55-70 for a plain profile match, below 30 when the lead is itself a provider of similar services
+(agency, software house, consultancy, freelancer): those are competitors, not buyers, so also set "buyer" to false.
+Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "buyer": true|false, "language": "ar"|"en"}}""", 800, "research")
         except Exception as e:
             _note_error(e)
     ind = f"{lead.get('industry') or ''} {lead.get('segment') or ''}".lower()
@@ -439,6 +443,80 @@ Return JSON: {{"summary": str, "reply_draft": str, "score": int 0-100, "score_re
                         "give a free quick opinion, no strings attached."),
         "score": 55, "score_reason": "asks publicly for a service we offer", "_engine": "template",
     }
+
+
+def over_budget():
+    budget = float(db.setting("ai_daily_budget") or 0)
+    return budget > 0 and spent()["c"] >= budget
+
+
+def _web_json(prompt, max_uses=5, max_tokens=3000):
+    """Ask Claude something it needs web search for, and return the JSON object it ends with."""
+    if _client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY is not set, so web search is unavailable")
+    msgs, text = [{"role": "user", "content": prompt}], ""
+    for _ in range(4):  # a long search can pause: continue it
+        msg = _client.messages.create(model=model(), max_tokens=max_tokens, messages=msgs,
+                                      tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}])
+        if getattr(msg, "usage", None) is not None:
+            _record("discovery", msg.usage)
+        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        if getattr(msg, "stop_reason", None) != "pause_turn":
+            break
+        msgs = [msgs[0], {"role": "assistant", "content": msg.content}]
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        raise RuntimeError("web search returned no list")
+    return json.loads(m.group(0))
+
+
+def find_requests(need, country="", limit=10):
+    """People and businesses who said in public that they need this. Each comes with the page and their own words,
+    so it can be checked. Returns [{who, website, email, url, quote, posted, where}]."""
+    place = f" Prefer {country}." if country and country != "--" else ""
+    data = _web_json(f"""Find up to {int(limit)} RECENT public requests (last 60 days) where a business or person says, in their own words, that they
+are looking for this: "{need}".{place}
+Good places: forum and community posts, Q&A sites, requests for proposals and tenders, project briefs, freelance or job-board gigs,
+social posts that are publicly readable, local business groups. Use web search.
+Only include an item when the BUYER states the need. Never include providers advertising their services, agency websites, listicles,
+directories of vendors, or news articles. Do not guess: if you cannot quote their words from the page, leave it out.
+Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","website":"their own website or null","email":"only if shown publicly on that page, else null",
+"url":"the exact page where they said it","quote":"their words, copied exactly, at most 200 characters","posted":"YYYY-MM-DD or null","where":"name of the site"}}]}}""")
+    out, seen = [], set()
+    for it in data.get("requests") or []:
+        url, quote = (it.get("url") or "").strip(), (it.get("quote") or "").strip()
+        if not url.startswith("http") or not quote or url in seen or not it.get("who"):
+            continue
+        seen.add(url)
+        out.append({"who": str(it["who"])[:120], "website": (it.get("website") or "").strip() or None, "email": (it.get("email") or "").strip().lower() or None,
+                    "url": url, "quote": quote[:300], "posted": (it.get("posted") or "")[:10] or None, "where": str(it.get("where") or "")[:60]})
+    return out[:int(limit)]
+
+
+def find_websites(companies):
+    """The official website of each named company: {name: url}. Names it is not sure about are left out."""
+    if not companies:
+        return {}
+    data = _web_json(f"""Find the official website of each of these companies. Use web search. If you are not confident which company is meant,
+leave it out rather than guess. Companies: {json.dumps(companies[:20], ensure_ascii=False)}
+Reply with ONLY JSON: {{"sites":[{{"company":"name exactly as given","url":"https://..."}}]}}""", max_uses=6, max_tokens=1500)
+    return {x["company"]: x["url"] for x in data.get("sites") or [] if isinstance(x, dict) and str(x.get("url", "")).startswith("http") and x.get("company") in companies}
+
+
+def suggest_sources(name, pitch, icp):
+    """Searches that find people who need this pipeline's offer: what buyers say, and what roles they hire for."""
+    if _usable("intent"):
+        try:
+            out = _ask_json(SYSTEM, f"""We sell: {name}. Pitch: {pitch}. Ideal customer: {icp}.
+Give search phrases that find BUYERS with a current need, not providers.
+"asks": 4 short phrases a buyer would type or post when they need this (their words, e.g. "need someone to fix my wordpress site").
+"hiring": 3 job titles a company advertises when it needs this work done (e.g. "wordpress developer"). Lower case, 2-4 words each.
+Return JSON: {{"asks": [str], "hiring": [str]}}""", 400, "intent")
+            return {"asks": [str(x)[:80] for x in out.get("asks") or []][:5], "hiring": [str(x)[:50] for x in out.get("hiring") or []][:4], "ai": True}
+        except Exception as e:
+            _note_error(e)
+    base = (name or "this").lower()
+    return {"asks": [f"looking for {base}", f"need help with {base}", f"recommend a {base} provider"], "hiring": [], "ai": False}
 
 
 def discover_businesses(query, country="US", limit=15):
