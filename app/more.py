@@ -61,6 +61,16 @@ def reports(days: int = 30, product: str = None):
     rows = db.q(f"""SELECT a.id, a.lead_id, a.kind, a.summary, a.payload, a.created_at, a.actor, l.product, l.source, l.extra FROM activities a JOIN leads l ON l.id=a.lead_id
                     WHERE ((a.kind='email_sent' AND a.status='ok') OR a.kind IN ('email_reply','email_bounce')) AND a.created_at>=? {lw} ORDER BY a.id""", (since, *largs))
     blank = lambda: {"sent": 0, "replies": 0, "positive": 0}
+    approved = {}   # lead -> [(id of the "Approved ..." entry, who)]: an email sent right after one was approved by a person, not sent by the agent alone
+    for ap in db.q("SELECT id, lead_id, actor FROM activities WHERE kind='approval' AND summary LIKE ? AND created_at>=? ORDER BY id", ("Approved %", since)):
+        approved.setdefault(ap["lead_id"], []).append((ap["id"], ap["actor"]))
+    def sender(a, p):
+        if a["actor"]:
+            return a["actor"]
+        by = next((who for aid, who in reversed(approved.get(a["lead_id"], [])) if 0 < a["id"] - aid <= 6), False)
+        if by is not False or p.get("manual"):
+            return by or "Approved by hand (shared sign-in)"
+        return "Agent (sent automatically)"
     step, variant, pipe, person, how = {}, {}, {}, {}, {}
     totals = {"sent": 0, "replies": 0, "positive": 0, "bounced": 0, "leads_emailed": set(), "leads_replied": set()}
     last = {}   # lead -> the email a reply would be answering
@@ -68,7 +78,7 @@ def reports(days: int = 30, product: str = None):
         p = json.loads(a["payload"] or "{}")
         if a["kind"] == "email_sent":
             act = _action(a, p)
-            keys = [(step, act), (pipe, a["product"] or ""), (person, a["actor"] or "Agent (sent automatically)"),
+            keys = [(step, act), (pipe, a["product"] or ""), (person, sender(a, p)),
                     (how, agent.SIGNALS.get(agent.signal(a)) or "Fits the profile (no signal)")]
             if p.get("variant") in ("A", "B"):
                 keys.append((variant, (act, p["variant"])))
@@ -77,6 +87,8 @@ def reports(days: int = 30, product: str = None):
             totals["sent"] += 1; totals["leads_emailed"].add(a["lead_id"])
             last[a["lead_id"]] = {"keys": keys, "answered": False}
         elif a["kind"] == "email_reply":
+            if p.get("intent") == "auto_reply":
+                continue   # an out-of-office, a ticket robot or a survey is not a reply
             totals["leads_replied"].add(a["lead_id"])
             e = last.get(a["lead_id"])
             if e and not e["answered"]:   # one answer per email
@@ -143,7 +155,14 @@ def funnel(product=None, linkedin=False):
     out_stages = ("disqualified", "needs_contact", "new")
     contacted = [r for r in rows if r["emails_sent"] or r["last_contacted_at"]]
     replied = [r for r in contacted if r["replied_at"]] + [r for r in rows if r["replied_at"] and not (r["emails_sent"] or r["last_contacted_at"])]
-    positive = [r for r in replied if r["stage"] in ("replied", "meeting_booked", "won") or r["id"] in met]
+    good = set()
+    for a in db.q("SELECT lead_id, payload FROM activities WHERE kind='email_reply'"):
+        try:
+            if json.loads(a["payload"] or "{}").get("intent") in POSITIVE:
+                good.add(a["lead_id"])
+        except ValueError:
+            pass
+    positive = [r for r in replied if r["id"] in good]   # the same meaning as "Positive replies" in the period figures
     meeting = [r for r in rows if r["stage"] in ("meeting_booked", "won") or r["id"] in met]
     steps = [("Leads found", len(rows)), ("Worth contacting", sum(r["stage"] not in out_stages for r in rows)), ("Contacted", len(contacted) + sum(1 for r in replied if r not in contacted)),
              ("Replied", len(replied)), ("Replied positively", len(positive)), ("Meeting", len(meeting)), ("Won", sum(r["stage"] == "won" for r in rows))]

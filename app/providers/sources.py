@@ -208,6 +208,40 @@ from concurrent.futures import ThreadPoolExecutor as _TPE
 _EMAIL = _re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 _JUNK = ("example.", "sentry", "wixpress", "domain.com", "email.com", "yourdomain", "godaddy", "shopify.com",
          "wordpress.", "schema.org", "w3.org", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js", "@2x")
+_PLACEHOLDER_NAMES = ("you", "your", "yourname", "your.name", "your-name", "name", "firstname", "first.last", "firstname.lastname", "email", "your.email", "youremail",
+                      "user", "username", "someone", "somebody", "example", "test", "sample", "john.doe", "jane.doe", "johndoe", "janedoe", "abc", "xyz", "mail")
+_PLACEHOLDER_DOMAINS = ("example.com", "example.org", "example.net", "company.com", "yourcompany.com", "mycompany.com", "domain.com", "yourdomain.com", "mydomain.com",
+                        "email.com", "website.com", "yoursite.com", "site.com", "test.com", "acme.com", "sentry.io", "wixpress.com", "address.com", "mail.com", "xyz.com")
+_FREE_MAIL = ("gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "hotmail.com", "outlook.com", "live.com", "msn.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com")
+
+
+def junk_email(address):
+    """Why this string is not somebody's email address, or None when it could be one. Catches what a web page's code
+    looks like to an address finder (bootstrap@5.3.0, lodash@4.17.21, logo@2x.png) and the placeholders pages show
+    in forms and examples (you@company.com, name@example.com)."""
+    a = (address or "").strip().lower()
+    if a.count("@") != 1:
+        return None   # not shaped like an address at all: other checks say so
+    local, domain = a.split("@")
+    labels = domain.split(".")
+    if len(labels) < 2 or not _re.fullmatch(r"[a-z]{2,24}", labels[-1]) or all(_re.fullmatch(r"[\dv]+", l) for l in labels) or _re.fullmatch(r"v?\d+(\.\d+)*[a-z-]*", domain):
+        return "it is a package name with a version number, not an address"
+    if labels[-1] in ("png", "jpg", "jpeg", "gif", "webp", "svg", "css", "js", "json", "map", "woff", "woff2", "ttf", "ico", "html", "php", "min"):
+        return "it is a file name, not an address"
+    if domain in _PLACEHOLDER_DOMAINS or labels[-2] in ("example", "yourdomain", "yourcompany", "domain"):
+        return "it is a placeholder from an example, not a real address"
+    if local in _PLACEHOLDER_NAMES:
+        return "it is a placeholder from a form or an example, not a real address"
+    return None
+
+
+def _visible(html):
+    """A page without the parts that are code: scripts, styles, comments and the addresses of files it loads. Links
+    that start an email (mailto:) are kept."""
+    html = _re.sub(r"(?is)<(script|style|noscript|svg|template)\b.*?</\1\s*>|<!--.*?-->", " ", html)
+    return _re.sub(r"""(?is)\s(?:src|href|srcset|content|action|poster|data-[\w-]+|integrity)\s*=\s*("[^"]*"|'[^']*')""", lambda m: m.group(0) if "mailto:" in m.group(0).lower() else " ", html)
+
+
 _CONTACT_PATHS = ("", "/contact", "/contact-us", "/contact-us/", "/about", "/about-us", "/pages/contact")
 
 
@@ -239,15 +273,19 @@ def site_facts(url):
             m = _re.search(r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']WordPress\s*([\d.]*)', html, _re.I)
             out["wordpress"] = bool(m) or "/wp-content/" in html or "/wp-includes/" in html
             out["wp_version"] = m.group(1) if m else ""
-        for e in _re.findall(r"mailto:([^\"'?>\s]+)", html) + _EMAIL.findall(html):
-            e = e.strip().strip(".,;:").lower()
-            if _EMAIL.fullmatch(e) and not any(j in e for j in _JUNK):
+        text = _visible(html)   # what a visitor reads, not the page's code
+        for e in _re.findall(r"mailto:([^\"'?>\s]+)", text) + _EMAIL.findall(text):
+            e = _up.unquote(e).strip().strip(".,;:").lower()
+            if _EMAIL.fullmatch(e) and not any(j in e for j in _JUNK) and not junk_email(e):
                 found.append(e)
         if found and i >= 1:
             break
-    if found:  # prefer an address on the business's own domain
-        own = [e for e in found if e.split("@")[-1].removeprefix("www.").endswith(host)]
-        out["email"] = (own or found)[0]
+    # only an address on the business's own domain, or a free mailbox a small business might really use (gmail and the
+    # like): an address at some other company's domain is somebody else's (a supplier, a sample, a quoted article)
+    own = [e for e in found if e.split("@")[-1].removeprefix("www.").endswith(host)]
+    free = [e for e in found if e.split("@")[-1] in _FREE_MAIL]
+    if own or free:
+        out["email"] = (own or free)[0]
     return out
 
 

@@ -122,6 +122,9 @@ def email_problem(address):
     if " " in a or a.count("@") != 1:
         return "it has spaces in it" if " " in a else "it needs exactly one @"
     local, domain = a.rsplit("@", 1)
+    junk = sources.junk_email(a)   # picked up from a page's code or an example: bootstrap@5.3.0, you@company.com
+    if junk:
+        return junk
     if not EMAIL_RE.match(a) or ".." in a or local.startswith(".") or local.endswith(".") or domain.startswith("-"):
         return "it is not a complete address"
     if domain.lower() in TYPOS:

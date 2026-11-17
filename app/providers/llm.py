@@ -54,6 +54,24 @@ def _usable(task="research"):
     return True
 
 
+class Unavailable(RuntimeError):
+    """Claude is set up to write this, but cannot right now. The caller waits instead of using the built-in wording."""
+
+
+def writer_down(task="email"):
+    """Why Claude cannot write right now although it is meant to, or None (it can, or it was never meant to: no key,
+    AI mode off, or a task that economy mode leaves to the built-in wording)."""
+    mode = db.setting("ai_mode") or "economy"
+    if _client is None or mode == "off" or (mode == "economy" and task not in ECONOMY_TASKS):
+        return None
+    if time.time() < _cooldown_until:
+        return "Claude is not answering at the moment" + (f" ({db.setting('llm_error')})" if db.setting("llm_error") else "")
+    budget = float(db.setting("ai_daily_budget") or 0)
+    if budget > 0 and spent()["c"] >= budget:
+        return "today's Claude budget is used up"
+    return None
+
+
 def _record(task, usage):
     m = model()
     pin, pout = PRICES.get(m, PRICES["claude-opus-5-5"])
@@ -92,7 +110,8 @@ def status():
     return {"configured": enabled(), "model": model(), "error": db.setting("llm_error") or None,
             "error_at": db.setting("llm_error_at") or None, "cooling_down": enabled() and time.time() < _cooldown_until,
             "ai_mode": r["mode"], "today": r["today"], "budget": r["budget"], "balance_left": r["balance_left"],
-            "over_budget": r["budget"] > 0 and r["today"] >= r["budget"]}
+            "over_budget": r["budget"] > 0 and r["today"] >= r["budget"],
+            "waiting": db.one("SELECT COUNT(*) n FROM leads WHERE next_action='waiting_for_claude' AND stage='in_sequence'")["n"]}
 
 
 def _note_error(e):
@@ -252,6 +271,9 @@ Return JSON: {{"observations": [str, up to 4], "suggestions": [{{"text": "the in
 
 
 def write_email(lead, research_, action, settings):
+    down = writer_down("email")
+    if down:
+        raise Unavailable(down)
     if _usable("email"):
         try:
             return _ask_json(SYSTEM, f"""Write a cold B2B email.
@@ -260,49 +282,64 @@ Product: {settings.get('product_name', '')}. Offer: {settings['offer']}
 Sender: {settings['sender_name']}.
 Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 Research: {json.dumps(research_, ensure_ascii=False)}
-Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated by blank lines.
-Start with a greeting ("Hi <first name>," or "Hi there," if no name). Do NOT add a sign-off, signature, links or the booking URL:
+Rules: under 110 words, no hype, no fake claims, plain text paragraphs separated by blank lines. Never say we looked at, checked, scanned or
+researched anything unless the lead data above contains the result, and never offer a report that is not in the data.
+Start with a greeting ("Hi <first name>," or "Hello," if no name). Do NOT add a sign-off, signature, links or the booking URL:
 the branded template adds a call-to-action button and signature. Write in {research_.get('language', 'en')}.{house_style(settings)}
 Return JSON: {{"subject": str, "subject_b": "a clearly different subject line for the same email, to compare which gets more replies", "body": str, "cta": "short button label, 2-4 words"}}""", 800, "email")
         except Exception as e:
             _note_error(e)
-    name = (lead.get("contact_name") or "there").split(" ")[0]
-    company = lead["company"]
-    key = settings.get("product_key")
-    pains = research_.get("pain_points") or []
+            raise Unavailable(f"Claude could not write the email: {e}")
+    return template_email(lead, research_, action, settings)
+
+
+def _short_offer(settings):
+    """A few words saying what the product is, taken from the pitch, to go in brackets after its name. Empty when the
+    pitch does not offer a clean one."""
+    pitch = (settings.get("offer") or "").strip()
+    text = pitch.split(":", 1)[1] if ":" in pitch[:60] else pitch
+    text = re.split(r"(?<=[a-z0-9])[.;!?](\s|$)", text.strip())[0].strip().rstrip(".")
+    if not (12 <= len(text) <= 110) or "\n" in text:
+        return ""
+    return text[0].lower() + text[1:] if text[1:2].islower() else text   # "Custom software" -> "custom software", but "AI-assisted" stays
+
+
+def template_email(lead, research_, action, settings):
+    """The built-in wording, used only when Claude is not set up or is switched off. Short, uses the first name when
+    there is one, and claims nothing that did not happen: no "I ran a check", no report, no customer story."""
+    first = (lead.get("contact_name") or "").strip().split(" ")[0]
+    hi = f"Hi {first}," if first else "Hello,"
+    company, sender = lead.get("company") or "your company", settings.get("sender_name") or "brn dynamics"
+    key, product = settings.get("product_key"), settings.get("product_name") or ""
+    found = [i.get("problem") for i in _extra(lead).get("issues", []) if isinstance(i, dict) and i.get("problem")]   # only what a real scan recorded
     if key == "fixify":
-        issue = pains[0] if pains and pains[0] != "unclear" else "a few things slowing the site down"
-        bodies = {
-            "intro": f"Hi {name},\n\nI ran a quick health check on the {company} website and noticed: {issue}.\n\n"
-                     f"Fixify is our WordPress care plan: one fixed monthly fee covers security, backups, speed, SEO and fixes like this one, so you never have to chase a developer.\n\nWant me to send the full report?",
-            "follow_up_1": f"Hi {name},\n\nFollowing up on the website check for {company}. Small issues like \"{issue}\" quietly cost visitors and Google ranking. Happy to walk you through the full list in 15 minutes.",
-            "follow_up_2": f"Hi {name},\n\nOne free tip whatever you decide: compress your largest images and turn on page caching. On most small business sites that alone halves load time.",
-            "breakup": f"Hi {name},\n\nI'll stop reaching out after this. If you ever want the website report for {company}, just reply and I'll send it over.",
-        }
-        subjects = {"intro": f"Quick website check for {company}", "follow_up_1": "re: your website check", "follow_up_2": "a free speed tip", "breakup": "closing the loop"}
-        ctas = {"intro": "Get the free report", "breakup": "Get the report"}
+        if found:
+            bodies = {"intro": f"When our scan of the {company} website ran, it flagged this: {found[0]}.\n\nFixify is our WordPress care plan: one fixed monthly fee covers security, backups, speed and fixes like that one.\n\nWould you like the details of what it found?",
+                      "follow_up_1": f"Following up on the note about the {company} website ({found[0]}). Happy to go through it with you in 15 minutes.",
+                      "follow_up_2": "One tip whatever you decide: compress your largest images and turn on page caching. On most small business sites that is the quickest speed gain.",
+                      "breakup": f"I'll stop writing after this. If you want what the scan found for {company}, just reply."}
+            subjects, ctas = {"intro": f"Something on the {company} website", "follow_up_1": "re: your website", "follow_up_2": "a free speed tip", "breakup": "closing the loop"}, {"intro": "See what it found"}
+        else:
+            bodies = {"intro": f"I'm writing from {sender}. Fixify is our WordPress care plan: one fixed monthly fee covers security, backups, speed and fixes, so nobody at {company} has to chase a developer.\n\nWould a short call be useful?",
+                      "follow_up_1": "A short follow-up on my note about looking after your WordPress site for a fixed monthly fee. Is that something you handle in-house today?",
+                      "follow_up_2": "One tip whatever you decide: compress your largest images and turn on page caching. On most small business sites that is the quickest speed gain.",
+                      "breakup": "I'll stop writing after this. If website upkeep becomes a chore, I'm one reply away."}
+            subjects, ctas = {"intro": f"Looking after the {company} website", "follow_up_1": "re: your website", "follow_up_2": "a free speed tip", "breakup": "closing the loop"}, {}
     elif key == "gym_club":
-        bodies = {
-            "intro": f"Hi {name},\n\nRunning {company} across members, classes and renewals usually means a lot of manual follow-up. "
-                     f"BRN Gym Club handles memberships, billing reminders, access control and an Arabic/English member app in one place.\n\n"
-                     f"Would it be useful if I showed you how a gym in {lead.get('city') or 'the region'} cut missed renewals with it?",
-            "follow_up_1": f"Hi {name},\n\nQuick follow-up. Gyms we work with usually recover renewals they were losing to reminders that never went out. Open to a 15 minute call this week?",
-            "follow_up_2": f"Hi {name},\n\nOne idea even if we never work together: send renewal reminders 10, 3 and 0 days before expiry over WhatsApp. It is the single biggest lever we see.",
-            "breakup": f"Hi {name},\n\nI will stop reaching out after this one. If member management becomes a priority at {company}, I'm one reply away.",
-        }
-        subjects = {"intro": f"{company} renewals", "follow_up_1": "re: renewals", "follow_up_2": "a renewal idea for you", "breakup": "closing the loop"}
-        ctas = {"intro": "See a 15-min demo"}
+        bodies = {"intro": f"Running {company} across members, classes and renewals usually means a lot of manual follow-up. BRN Gym Club handles memberships, billing reminders, access control and an Arabic/English member app in one place.\n\nWould a 15-minute demo be useful?",
+                  "follow_up_1": "A short follow-up. Renewal reminders that go out on time are usually the quickest win for a gym. Open to a 15-minute call this week?",
+                  "follow_up_2": "One idea even if we never work together: send renewal reminders 10, 3 and 0 days before expiry, over WhatsApp. It is simple and it works.",
+                  "breakup": f"I'll stop writing after this one. If member management becomes a priority at {company}, I'm one reply away."}
+        subjects, ctas = {"intro": f"{company} renewals", "follow_up_1": "re: renewals", "follow_up_2": "a renewal idea for you", "breakup": "closing the loop"}, {"intro": "See a 15-min demo"}
     else:
-        offer = settings["offer"].split(":")[0]
-        bodies = {
-            "intro": f"Hi {name},\n\nI'm reaching out from brn dynamics. We help businesses like {company} with {offer.lower()}.\n\nWould a short call to see if there's a fit be useful?",
-            "follow_up_1": f"Hi {name},\n\nQuick follow-up on my last note. Happy to share examples of what we've built for similar teams.",
-            "follow_up_2": f"Hi {name},\n\nSharing one idea we see work often: automate the most repetitive weekly task first. It usually pays back within a month.",
-            "breakup": f"Hi {name},\n\nI'll stop reaching out after this one. If it becomes a priority, I'm one reply away.",
-        }
-        subjects = {"intro": f"Idea for {company}", "follow_up_1": "re: quick idea", "follow_up_2": "one idea for you", "breakup": "closing the loop"}
-        ctas = {}
-    return {"subject": subjects.get(action, company), "body": bodies.get(action, bodies["intro"]),
+        what = _short_offer(settings)
+        about = f"{product} ({what})" if product and what else product or what or "software and automation for businesses"
+        bodies = {"intro": f"I'm writing from {sender}. We make {about}, and I thought it could be relevant to {company}.\n\nWould a short call to find out be useful?",
+                  "follow_up_1": f"A short follow-up on my note about {product or 'what we do'}. Is this something {company} is looking at this year?",
+                  "follow_up_2": f"A last thought on {product or 'this'}: if now is not the time, tell me when to come back and I will.",
+                  "breakup": "I'll stop writing after this one. If it becomes a priority, I'm one reply away."}
+        subjects, ctas = {"intro": f"{product or 'An idea'} for {company}", "follow_up_1": "re: my note", "follow_up_2": "one more thought", "breakup": "closing the loop"}, {}
+    return {"subject": subjects.get(action, company), "body": f"{hi}\n\n{bodies.get(action, bodies['intro'])}",
             "cta": ctas.get(action, "Book a 15-min call"), "_engine": "template"}
 
 
@@ -329,12 +366,49 @@ and aim to book a 15 minute demo. Return JSON: {{"opening": str, "talking_points
     }
 
 
+AUTO_WORDS = {
+    "an automatic reply": ("automatic reply", "auto-reply", "autoreply", "auto reply", "automated response", "automated reply", "automatically generated", "this is an automated",
+                           "do not reply to this", "please do not reply", "no-reply", "noreply", "out of office", "out of the office", "on annual leave", "on vacation", "on leave until",
+                           "away from the office", "limited access to email", "i am currently away", "i'm currently away", "will respond as soon as", "will get back to you as soon as",
+                           "we have received your", "we've received your", "thank you for contacting", "thanks for contacting", "thank you for your email", "thank you for reaching out to",
+                           "your request has been received", "your message has been received", "ticket has been", "ticket number", "ticket #", "case number", "reference number", "support request"),
+    "a survey or feedback request": ("rate your conversation", "rate our service", "rate your experience", "how did we do", "take our survey", "short survey", "satisfaction survey",
+                                     "customer satisfaction", "your feedback matters", "share your feedback", "how would you rate"),
+    "a routing notice, not an answer": ("for job applications", "for recruitment", "careers page", "send your cv", "send your resume", "hr department", "human resources department",
+                                        "forwarded to the relevant department", "forwarded your email to", "has been forwarded to", "please contact the relevant department",
+                                        "for sales enquiries please", "for sales inquiries please", "this mailbox is not monitored", "this inbox is not monitored", "no longer monitored",
+                                        "no longer with the company", "no longer works", "has left the company", "address is no longer in use"),
+}
+
+
+# polite openers that robots and people both use: on their own they mark an automatic message, next to real interest they do not
+AUTO_WEAK = ("thank you for contacting", "thanks for contacting", "thank you for your email", "thank you for reaching out to", "we have received your", "we've received your",
+             "will respond as soon as", "will get back to you as soon as", "reference number", "support request", "has been forwarded to", "forwarded your email to")
+AUTO_HUMAN = ("interested", "let's talk", "lets talk", "call me", "a call", "meeting", "demo", "pricing", "price", "quote", "how much", "send me", "tell me more", "more details", "more information", "?")
+
+
+def auto_reply(text):
+    """Is this message something nobody wrote in answer to us: an out-of-office or ticket robot, a survey, or a notice
+    that mail was routed elsewhere? Returns what it is, or None."""
+    t = " ".join((text or "").lower().split())
+    what, word = next(((what, w) for what, words in AUTO_WORDS.items() for w in words if w in t), (None, None))
+    if what and word in AUTO_WEAK and any(h in t.replace(word, " ") for h in AUTO_HUMAN):
+        return None   # a person can open with "thanks for contacting us" too: when they go on to show interest, it is their reply
+    return what
+
+
 def classify_reply(text):
     """Classify an inbound email reply or call outcome."""
+    auto = auto_reply(text)
+    if auto:   # decided before Claude is asked: these are common, cost nothing to spot, and must never count as interest
+        return {"intent": "auto_reply", "summary": f"Not a person's answer: {auto}"}
     if _usable("reply"):
         try:
-            return _ask_json(SYSTEM, f"""Classify this prospect reply: {text!r}
-Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsubscribe"|"wrong_person"|"question", "summary": str}}""", 300, "reply")
+            return _ask_json(SYSTEM, f"""Classify this reply to our outreach email: {text!r}
+"auto_reply" is anything a person did not write in answer to us: out-of-office and other automatic replies, ticket or "we received your
+message" robots, surveys and "rate your conversation" requests, and notices that the message was passed to recruitment or another department.
+"interested" needs a person showing interest in what we offered; a polite acknowledgement is not interest.
+Return JSON: {{"intent": "interested"|"meeting"|"not_now"|"not_interested"|"unsubscribe"|"wrong_person"|"question"|"auto_reply", "summary": str}}""", 300, "reply")
         except Exception as e:
             _note_error(e)
     t = text.lower()

@@ -1384,6 +1384,47 @@ def fix_countries():
     return done
 
 
+def fix_auto_replies():
+    """Messages recorded as replies before automatic ones were recognised: re-read each, and mark the automatic ones.
+    Reports then stop counting them. A lead's status is left as it is: a person may have acted on it since."""
+    done = 0
+    for a in db.q("SELECT id, lead_id, payload FROM activities WHERE kind='email_reply'"):
+        try:
+            p = json.loads(a["payload"] or "{}")
+        except ValueError:
+            continue
+        what = llm.auto_reply(p.get("text") or "") if p.get("intent") not in ("auto_reply", "unsubscribe") else None
+        if what:
+            was = p.get("intent")
+            p.update(intent="auto_reply", summary=f"Not a person's answer: {what}", was=was)
+            db.ex("UPDATE activities SET payload=?, summary=? WHERE id=?", (json.dumps(p, ensure_ascii=False), f"Automatic message, not a reply: {what} (was filed as {was})", a["id"]))
+            db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action='reply'", (db.now(), a["lead_id"]))
+            done += 1
+    return done
+
+
+def fix_junk_emails():
+    """Addresses that were picked up from a page's code or an example (bootstrap@5.3.0, you@company.com) are not
+    anyone's mailbox. They are taken off the lead (kept in its notes for the record), drafts waiting for them are
+    dropped, and the lead waits under Needs contact. Leads that answered, or are closed, are left alone."""
+    done = 0
+    for l in db.q("SELECT id, email, stage, extra FROM leads WHERE email IS NOT NULL AND email<>'' AND replied_at IS NULL"):
+        why = sources.junk_email(l["email"])
+        if not why or l["stage"] in ("won", "lost", "opted_out", "meeting_booked", "replied", "reply_manually"):
+            continue
+        try:
+            x = json.loads(l["extra"] or "{}") or {}
+        except ValueError:
+            x = {}
+        x["bad_email"] = l["email"]
+        db.ex("UPDATE leads SET email=NULL WHERE id=?", (l["id"],))
+        db.update_lead(l["id"], extra=json.dumps(x, ensure_ascii=False), stage="needs_contact", next_action=None, next_action_at=None)
+        db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending'", (db.now(), l["id"]))
+        db.log(l["id"], "blocked", f"The address {l['email']} was removed: {why}. The lead waits under Needs contact.", channel="agent", status="blocked", payload={"bad_email": l["email"]})
+        done += 1
+    return done
+
+
 def _request_leads(need, country, limit, linkedin=False):
     """Public requests for something we sell, as lead rows. A request whose page loads but does not contain the quoted
     words is dropped: only what can be checked is kept."""
@@ -1631,6 +1672,16 @@ def _startup():
         db.set_setting("countries_fixed", "1")
         if n:
             db.log(None, "system", f"Countries checked against each lead's phone and web address: {n} corrected", channel="system")
+    if db.setting("auto_replies_fixed") != "1":   # once: out-of-office, ticket and survey messages that were filed as real replies
+        n = fix_auto_replies()
+        db.set_setting("auto_replies_fixed", "1")
+        if n:
+            db.log(None, "system", f"Clean-up: {n} automatic messages (out of office, tickets, surveys) were filed as replies. They no longer count as replies in Reports.", channel="system")
+    if db.setting("junk_emails_fixed") != "1":   # once: addresses that are really bits of page code or examples
+        n = fix_junk_emails()
+        db.set_setting("junk_emails_fixed", "1")
+        if n:
+            db.log(None, "system", f"Clean-up: {n} leads had an address that is not a real mailbox (page code or a placeholder). They now wait under Needs contact.", channel="system")
 
 
 threading.Thread(target=_startup, daemon=True).start()

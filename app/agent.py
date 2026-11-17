@@ -324,6 +324,13 @@ def run_step(lead, at):
 
     try:
         content = _draft(lead, step)
+    except llm.Unavailable as e:
+        # Claude writes the outreach here and cannot right now: wait for it instead of sending the built-in wording
+        retry = at + timedelta(hours=1) if "budget" not in str(e) else (at + timedelta(days=1)).replace(hour=0, minute=5, second=0, microsecond=0)
+        if lead.get("next_action") != "waiting_for_claude":
+            db.log(lead["id"], "system", f"Not drafted yet: {e}. The email will be written when Claude is available again.", channel="agent")
+        db.update_lead(lead["id"], next_action="waiting_for_claude", next_action_at=_iso(retry))
+        return
     except Exception as e:
         db.log(lead["id"], "system", f"Drafting failed: {e}", status="error")
         db.update_lead(lead["id"], next_action_at=_iso(at + timedelta(hours=1)))
@@ -438,6 +445,9 @@ def handle_reply(lead_id, text, meta=None):
     meta = dict(meta or {})
     already_read = meta.pop("already_read", False)
     intent = llm.classify_reply(text)
+    if intent.get("intent") == "auto_reply":   # nobody answered: it is kept in the lead's mail, but the lead is not marked as replied and nothing is drafted
+        db.log(lead_id, "email_reply", f"Automatic message, not a reply: {intent.get('summary', '')}", channel="email", payload={"text": text, **meta, **intent})
+        return intent
     db.log(lead_id, "email_reply", f"Reply ({intent.get('intent')}): {intent.get('summary', '')}", channel="email", payload={"text": text, **meta, **intent})
     lead = db.one("SELECT stage FROM leads WHERE id=?", (lead_id,)) or {}
     db.update_lead(lead_id, replied_at=meta.get("received_at") or db.now())
