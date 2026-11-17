@@ -130,6 +130,52 @@ profile, Job ad, Reddit post, Imported file, Added by hand, Website enquiry, Boo
 were looked up, a second tag naming who supplied them: Apollo, Hunter or Public pages. The Source filter uses the same
 names.
 
+## Apollo as a lead source
+
+With `APOLLO_API_KEY` set (a master key), each pipeline can find its leads in Apollo. Pipelines > Edit > **Apollo search**
+holds the filters: industries (Apollo's own names), company size ranges, countries, technologies, keywords, industries to
+leave out, the job-ad words that mean a company needs this, and two daily limits. "Preview 10 results" runs the search as
+typed without saving a lead. The daily run then, per active pipeline:
+
+1. searches for companies that match (1 credit), and again for the ones with an open job ad matching the hiring words (1 credit);
+2. finds the best person at each company by the pipeline's job titles, most wanted first (free);
+3. skips companies already in the list or on the do-not-contact list, by web address;
+4. fetches the matching job ad for up to five hiring companies (1 credit each): the ad's title and link are the
+   "Hiring for it" evidence on the lead, and the email writer can refer to it.
+
+A lead starts with the company, a first name and a job title, because that is all Apollo's free people search returns.
+**The email costs a credit and is only fetched when the lead has earned it**: it passes every rule, and would be grade B
+or better with the email. Only an address Apollo marks *verified* is used; "guessed" or "unavailable" counts as no email
+and the lead waits under Needs contact. A verified address is not checked a second time with Hunter. The reveal also
+brings the full name, LinkedIn profile, industry, staff count and country.
+
+**Fit score.** Apollo leads are scored from facts: industry, staff count against the size ranges, country, technology,
+a hiring or funding signal, and how good the job title is. A fact Apollo returned counts in full, one only implied by
+the search that found the lead counts a little less, and a mismatch costs points, so scores spread out.
+
+**Agencies.** When Apollo knows a company's industry (IT services, software development, marketing & advertising, design
+and the like), that decides whether it sells services like ours; the guess from its name or website is only used when
+Apollo has no data. The reason is written on the lead.
+
+**Credits.** Every call that costs a credit is counted. Settings > Agent & sending has "Apollo credits per day" (30 by
+default, 0 for no limit) across searches, job ads and reveals; each pipeline has its own "emails revealed per day". When a
+cap is reached, leads waiting for their email are tried again the next day. Settings > AI & cost shows credits used today
+and this month by kind. On an Apollo plan without company search (the free plan), people are searched for directly
+instead, which is free; the company's web address then arrives with the reveal.
+
+**Active pipelines.** A pipeline can be switched off (Pipelines > Edit): no new leads are looked for, its leads stay.
+Web & mobile apps, New websites, AI & automation, CRM / ERP, Security & compliance and Custom software & AI start
+switched off. Job titles: a pipeline's own titles are used first, then the titles that came with its Apollo search,
+then the general list in Settings.
+
+Other changes that came with it: addresses scraped from a page's code or examples (bootstrap@5.3.0, you@company.com) are
+no longer taken, and existing ones are moved to Needs contact once; when Claude is set up but not answering or over
+budget, no outreach email is drafted from the built-in wording (the lead waits, the banner says how many), while answers
+to replies still get a short holding draft; out-of-office, ticket, survey and "passed to another department" messages are
+filed as automatic messages and not as replies; Reports > By person names who approved each email.
+
+Tests: `python -m unittest discover -s tests -t . -v` (no outside service is called; Apollo is replaced by a stand-in).
+
 ## Owners and decision-makers
 
 A company with only info@ is half a lead. Each pipeline card shows how many of its live leads have a named person and how

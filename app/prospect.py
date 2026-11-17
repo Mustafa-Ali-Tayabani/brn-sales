@@ -140,7 +140,7 @@ def discover(key, p, limit=None, preview=False):
                 except RuntimeError:
                     break
                 if ads:
-                    r["extra"]["intent"].update(quote="Hiring: " + ads[0]["title"], url=ads[0]["url"], posted=ads[0]["posted"])
+                    r["extra"]["intent"].update(quote=ads[0]["title"], url=ads[0]["url"], posted=ads[0]["posted"])
     except apollo.NoPlan:
         # a free Apollo plan has no company search: look for the people directly (free), and learn the company's web address when one is revealed
         out["how"] = "people"

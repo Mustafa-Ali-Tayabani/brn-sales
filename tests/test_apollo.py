@@ -35,7 +35,7 @@ class Discovery(Case):
     def test_hiring_signal_with_evidence(self):
         main.discover_pipeline("gym_club", "apollo")
         it = self.extra("Pulse Fitness")["intent"]
-        self.assertEqual((it["level"], it["quote"], it["url"], it["posted"]), ("hiring", "Hiring: Front Desk Agent", "https://jobs.test/1", "2026-11-10"))
+        self.assertEqual((it["level"], it["quote"], it["url"], it["posted"]), ("hiring", "Front Desk Agent", "https://jobs.test/1", "2026-11-10"))
         self.assertEqual(agent.signal(self.lead("Pulse Fitness")), "hiring")
         self.assertIsNone(agent.signal(self.lead("Iron Gym")))
         self.assertEqual(client.get(f"/api/leads/{self.lead('Pulse Fitness')['id']}").json()["signal"], "hiring")
