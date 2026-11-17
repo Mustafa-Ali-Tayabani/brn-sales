@@ -341,6 +341,7 @@ def stats(request: Request):
     for r in by_product:
         r["name"] = prods.get(r["product"], {}).get("name", "No product")
     return {
+        "send_paused": (lambda p: {"until": p[0], "why": p[1]} if p else None)(channels.paused()),
         "mode": db.setting("mode"), "llm": llm.enabled(), "llm_status": llm.status(), "agent_enabled": db.setting("agent_enabled") == "1", "agent": agent.schedule_state(),
         "stages": stages, "daily": daily, "by_product": by_product,
         "kpis": {
@@ -1277,6 +1278,8 @@ def _decide(approval_id, approve, content=None):
     a = db.one("SELECT lead_id, action FROM approvals WHERE id=? AND state='pending'", (approval_id,))
     if not a:
         return "gone"
+    if approve and channels.paused() and db.one("SELECT channel FROM approvals WHERE id=?", (approval_id,))["channel"] == "email":
+        return f"Not sent. {channels.paused()[1]} Sending starts again tomorrow; the draft stays here."
     if approve and a["action"] not in ("reply", "followup"):
         # a draft written before a rule existed (or before the company's site was read) must not slip out on approval
         lead = agent.check_site(db.one("SELECT * FROM leads WHERE id=?", (a["lead_id"],)))
@@ -1348,7 +1351,7 @@ def get_settings(request: Request):
     s["booking_url"] = _public_base(request) + "/book"
     s["app_url"] = _public_base(request)
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
-                      "voice": voice.ready(), "enrich": enrich.enabled(), "meet": bool(invites.meet_links()), "people": bool(enrich.people_finder()), "verify": bool(enrich.verifier()), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
+                      "voice_key": voice.enabled(), "places_error": db.setting("places_error") or None, "voice": voice.ready(), "enrich": enrich.enabled(), "meet": bool(invites.meet_links()), "people": bool(enrich.people_finder()), "verify": bool(enrich.verifier()), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
 
 
@@ -1365,10 +1368,22 @@ def save_settings(payload: dict = Body(...)):
             raise HTTPException(400, f"\"{payload['timezone']}\" is not a time zone. Use a name like Asia/Karachi or Europe/London.")
     if "ai_balance" in payload and str(payload["ai_balance"]) != str(db.setting("ai_balance") or ""):
         db.set_setting("ai_balance_at", db.now())  # spend is counted from the moment the balance was entered
+    changed = []
     for k, v in payload.items():
         if k in db.DEFAULT_SETTINGS and k != "ai_balance_at":
-            db.set_setting(k, json.dumps(v) if k in ("sequence", "products", "discovery_queries") else v)
-    db.log(None, "system", f"Settings changed: {', '.join(payload)}", channel="system")
+            new = json.dumps(v) if k in ("sequence", "products", "discovery_queries") else str(v)
+            old = db.setting(k) or ""
+            try:   # lists are compared by content, not by how they happen to be written out
+                same = json.loads(old) == v if k in ("sequence", "products", "discovery_queries") else old == new
+            except ValueError:
+                same = False
+            if k == "products" and not same:
+                same = v == list(db.products().values())   # the editor sends back the pipelines as it was shown them, defaults filled in
+            if not same:
+                db.set_setting(k, new)
+                changed.append(k)
+    if changed:
+        db.log(None, "system", f"Settings changed: {', '.join(changed)}", channel="system")
     return {"ok": True}
 
 
@@ -1557,10 +1572,18 @@ def inbound(request: Request, p: dict = Body(...)):
     logged like a reply, and an answer is drafted for approval. Public: call it from the form's page."""
     if p.get("hp"):   # a hidden field only scripts fill in
         return {"ok": True}
-    ip, now = (request.client.host if request.client else ""), time.time()
+    key = db.setting("inbound_key") or os.environ.get("BRN_INBOUND_KEY") or ""
+    if key and (p.get("key") or request.headers.get("x-inbound-key") or "") != key:
+        raise HTTPException(403, "This form is not allowed to send here.")
+    ip, now = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else ""), time.time()
     recent = [t for t in _inbound.get(ip, []) if now - t < 3600]
-    if len(recent) >= 5:
-        raise HTTPException(429, "Too many messages from here in the last hour. Please try again later.")
+    today = [t for ts in _inbound.values() for t in ts if now - t < 86400]
+    if len(recent) >= 5 or len(today) >= int(db.setting("inbound_daily_cap") or 60):
+        raise HTTPException(429, "Too many messages in a short time. Please try again later.")
+    text = f"{p.get('message') or ''} {p.get('name') or ''} {p.get('company') or ''}"
+    if sources.junk_email((p.get("email") or "").strip().lower()) or len(re.findall(r"https?://", text)) > 2 or re.search(r"(?i)\b(viagra|casino|crypto ?invest|seo services|backlinks|guest post|loan offer)\b", text):
+        _inbound[ip] = recent + [now]
+        return {"ok": True}   # looks like spam: accepted and dropped, so the sender learns nothing
     name, email = (p.get("name") or "").strip()[:120], (p.get("email") or "").strip().lower()[:200]
     message = (p.get("message") or "").strip()[:3000]
     if not re.fullmatch(r"[\w.+'-]+@[\w-]+(\.[\w-]+)+", email):
@@ -1581,6 +1604,9 @@ def inbound(request: Request, p: dict = Body(...)):
     return {"ok": True}
 
 
+_SEARCHING = {}   # pipeline -> when its last search started
+
+
 def discover_pipeline(key, sources_only=None):
     """Finds new leads for one pipeline from its sources (Google Places, Reddit) and imports them into it."""
     p = db.products().get(key)
@@ -1588,6 +1614,10 @@ def discover_pipeline(key, sources_only=None):
         raise HTTPException(404, "unknown pipeline")
     src = p.get("sources") or {}
     out = {"pipeline": key, "imported": 0, "skipped": 0, "errors": [], "notes": []}
+    if time.time() - _SEARCHING.get(key, 0) < 600:   # a search of this pipeline is still running (a second click while the first is busy)
+        out["notes"].append("A search of this pipeline is already running. Nothing was searched twice.")
+        return out
+    _SEARCHING[key] = time.time()
     places = src.get("places") or []
     if places and (sources_only in (None, "places")):
         if not os.environ.get("GOOGLE_PLACES_API_KEY"):
@@ -1600,7 +1630,7 @@ def discover_pipeline(key, sources_only=None):
                     if any(r.get("website") for r in rows):   # a map listing has a phone number but no email: the business's own site often does
                         with_site = [r for r in rows if r.get("website")]
                         sources.enrich(with_site)
-                    res = _import(rows, f"google_places: {qd['query']}", {"product": key, "segment": qd.get("segment") or p.get("name")})
+                    res = _import(rows, f"google_places: {qd['query']}", {"product": key, "segment": qd.get("segment")})
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
                     out["errors"].append(f"{qd.get('query')}: {e}")
@@ -1612,6 +1642,9 @@ def discover_pipeline(key, sources_only=None):
         except Exception as e:
             out["errors"].append(f"Reddit '{phrase}': {e}")
     searching = db.setting("web_search_leads") != "0"
+    if searching and llm.search_blocked() and (src.get("web") or src.get("intent") or src.get("reddit")):   # Claude refused the last search for a reason that will not go away by itself
+        out["notes"].append(f"Web searches were skipped: {llm.search_blocked()}")
+        searching = False
     if not searching and sources_only in (None, "web", "intent") and (src.get("web") or src.get("intent") or src.get("reddit")):
         out["notes"].append("Finding leads by web search is switched off (Settings > Agent & sending), so web searches and people asking online were skipped.")
     web = src.get("web") or []
@@ -1623,7 +1656,7 @@ def discover_pipeline(key, sources_only=None):
                 try:
                     rows = llm.discover_businesses(qd["query"], qd.get("country", "US"), int(qd.get("limit", 15)))
                     rows = sources.enrich(rows, wordpress_only=bool(src.get("wordpress_only")))
-                    res = _import(rows, f"web: {qd['query']}", {"product": key, "segment": qd.get("segment") or p.get("name"),
+                    res = _import(rows, f"web: {qd['query']}", {"product": key, "segment": qd.get("segment"),
                                                                  "country": qd.get("country", "US")})
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
@@ -1676,12 +1709,14 @@ def discover_pipeline(key, sources_only=None):
             out["errors"].append(f"Companies hiring: {e}")
     if not places and not web and not src.get("reddit") and not asks and not jobs:
         out["notes"].append("This pipeline has no sources yet. Add web searches, Places searches or Reddit phrases in Settings > Pipelines.")
+    out["errors"] = list(dict.fromkeys(llm.explain(e) for e in out["errors"]))   # in plain words, each problem once
     ps = db.setting("pipeline_runs", json.loads) or {}
-    ps[key] = {"at": db.now(), "imported": out["imported"], "errors": len(out["errors"])}
+    ps[key] = {"at": db.now(), "imported": out["imported"], "errors": len(out["errors"]), "problems": out["errors"][:4], "notes": out["notes"][:4]}
     db.set_setting("pipeline_runs", json.dumps(ps))
     db.log(None, "system", f"Lead discovery for {p['name']}: {out['imported']} new leads"
-           + (f", {len(out['errors'])} errors ({out['errors'][0][:120]})" if out["errors"] else ""),
+           + (f", {len(out['errors'])} problem{'s' if len(out['errors']) != 1 else ''}: {' | '.join(out['errors'])[:900]}" if out["errors"] else ""),
            channel="system", status="error" if out["errors"] and not out["imported"] else "ok")
+    _SEARCHING.pop(key, None)
     return out
 
 
@@ -1730,6 +1765,9 @@ def _auto_discover():
         for key, p in db.products().items():
             if not p.get("active", True):
                 continue   # switched off under Pipelines: its leads stay, no new ones are looked for
+            last = ((db.setting("pipeline_runs", json.loads) or {}).get(key) or {}).get("at") or ""
+            if last and datetime.fromisoformat(last) > datetime.now(timezone.utc) - timedelta(minutes=30):
+                continue   # searched in the last half hour (by hand, or by another copy of the app during a deploy): once is enough
             try:
                 discover_pipeline(key)
             except Exception as e:

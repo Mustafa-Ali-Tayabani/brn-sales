@@ -180,8 +180,11 @@ def poll(handle_reply, handle_bounce=None):
                 subject = str(make_header(decode_header(msg.get("Subject", ""))))
                 text = f"Subject: {subject}\n\n{_strip_quoted(_text(msg))}"
                 if not _already_logged(lead["id"], text):
+                    robot = ((msg.get("Auto-Submitted") or "no").lower() != "no" or msg.get("X-Autoreply") or msg.get("X-Autorespond") or msg.get("X-Auto-Response-Suppress")
+                             or (msg.get("Precedence") or "").lower() in ("bulk", "auto_reply", "junk", "list")
+                             or sender.split("@")[0].replace("-", "").replace("_", "") in ("noreply", "donotreply", "notifications", "notification", "mailer", "bounces", "autoreply", "bot", "supportbot"))
                     handle_reply(lead["id"], text, {"from": sender, "subject": subject, "message_id": mid,
-                                                    "received_at": _received(msg), "already_read": num not in unseen})
+                                                    "received_at": _received(msg), "already_read": num not in unseen, "automatic": bool(robot)})
                     done += 1
                 if mid:
                     db.ex("INSERT OR IGNORE INTO inbox_seen(message_id, lead_id, created_at) VALUES (?,?,?)", (mid, lead["id"], db.now()))

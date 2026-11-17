@@ -248,6 +248,13 @@ def deliver(lead, step, content, at):
     if step["channel"] == "email":
         try:
             res = channels.send_email(lead, content["subject"], content["body"], cta=_settings(lead)["booking_link"], cta_label=content.get("cta"))
+        except channels.QuotaReached as e:
+            n = compliance.sent_today("email_sent")
+            until, first = channels.pause(f"{e}. {n} email{'s' if n != 1 else ''} went out today before it stopped.")
+            # one entry, on the lead whose email hit the limit; every other lead simply waits (see run_step), so the log is not filled with failures
+            db.log(lead["id"], "email_sent", f"Not sent. Sending stopped until tomorrow: {e}. {n} emails went out today. Set \"Emails per day\" in Settings to what your plan allows, or upgrade the plan.", channel="email", status="error")
+            db.update_lead(lead["id"], stage="in_sequence", next_action_at=until)
+            return
         except Exception as e:
             db.log(lead["id"], "email_sent", f"Send failed, retrying in 1 hour: {e}", channel="email", status="error")
             db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=1)))
@@ -300,6 +307,9 @@ def apply_outcome(lead_id, outcome):
 def run_step(lead, at):
     seq = db.sequence_for(lead)
     step = seq[lead["step"]]
+    if step["channel"] == "email" and channels.paused():   # the provider's allowance is used up: wait for tomorrow, quietly
+        db.update_lead(lead["id"], next_action_at=channels.paused()[0])
+        return
     lead = check_site(lead)   # a lead already in a sequence may never have had its site read
     hit = rules.check(lead) if step["channel"] == "email" else None
     if hit:  # rules are checked again before every email, so one switched on today also stops leads already in a sequence
@@ -444,7 +454,7 @@ def handle_reply(lead_id, text, meta=None):
     status a human has already chosen (replied, meeting booked, won, lost) is left alone, except for opt-outs."""
     meta = dict(meta or {})
     already_read = meta.pop("already_read", False)
-    intent = llm.classify_reply(text)
+    intent = {"intent": "auto_reply", "summary": "Not a person's answer: sent automatically by their mail system"} if meta.pop("automatic", False) else llm.classify_reply(text)
     if intent.get("intent") == "auto_reply":   # nobody answered: it is kept in the lead's mail, but the lead is not marked as replied and nothing is drafted
         db.log(lead_id, "email_reply", f"Automatic message, not a reply: {intent.get('summary', '')}", channel="email", payload={"text": text, **meta, **intent})
         return intent

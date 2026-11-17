@@ -79,6 +79,11 @@ class Case(unittest.TestCase):
             db.set_setting(k, json.dumps(db.PRODUCTS) if k == "products" else "")
         for k, v in (("ai_mode", "off"), ("mode", "approval"), ("min_score", "55"), ("dm_auto", "0"), ("apollo_daily_cap", "30"), ("contact_grades", "C"), ("lead_quality", "fit"), ("agent_enabled", "1")):
             db.set_setting(k, v)
+        for k in ("pipeline_runs", "send_paused_until", "send_paused_why", "places_error", "inbound_key", "llm_error"):
+            db.set_setting(k, "{}" if k == "pipeline_runs" else "")
+        main._SEARCHING.clear(); main._inbound.clear(); llm._search_block.update(until=0, why="")
+        from app.providers import sources
+        sources._DOWN.clear()
         SENT.clear()
         self.ap = FakeApollo()
         apollo.httpx = types.SimpleNamespace(request=self.ap.request, HTTPError=httpx.HTTPError)

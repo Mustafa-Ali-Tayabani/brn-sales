@@ -233,6 +233,9 @@ DEFAULT_SETTINGS = {
     "dm_daily_cap": "20",         # lookups per day at most, to protect credits
     "apollo_daily_cap": "30",     # Apollo credits per day at most, across searches, job ads and revealed emails (0 = no limit)
     "apollo_usage": "",           # credits used per day, kept by the app
+    "inbound_daily_cap": "60",    # website form: enquiries accepted per day at most
+    "inbound_key": "",            # website form: when set, a submission must carry this key
+    "send_paused_until": "", "send_paused_why": "", "places_error": "",
     "web_search_leads": "1",      # find leads by web search (people asking online, business web searches, LinkedIn posts); 0 = off
     "custom_stages": "[]",        # statuses you added yourself: [{"key": "c_demo_done", "name": "Demo done", "color": "#7c5cff"}]
     "dm_min_score": "60",

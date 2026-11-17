@@ -198,6 +198,27 @@ scroll sideways inside their card, and on a phone the Leads table keeps company,
 - **Web search leads on / off**: Settings > Agent & sending > "Find leads by web search". Off stops the searches for
   people asking online, business web searches and LinkedIn posts; Apollo, Google Maps and job ads carry on.
 
+## When something outside the app refuses
+
+- **Email provider's limit.** When Resend says the day's (or month's) allowance is used up, sending stops until the next
+  day instead of failing once an hour per lead. One entry is logged, a banner says so, drafts stay in Approvals, and due
+  emails wait. Set "Emails per day" to what the plan allows.
+- **Claude.** A failed search is logged with the whole reason in plain words (credit run out, web search switched off for
+  the organisation, key refused, model not available). After such an account problem the other searches of that run are
+  skipped rather than each failing the same way. If the model does not take one version of the web search tool, the other
+  is tried.
+- **Google Places.** A 403 is turned into its cause (Places API (New) not switched on, no billing account, or a
+  restricted key), shown under Settings > Connections as "key set, Google refuses", and the remaining map searches of the
+  run are skipped.
+- **Reddit** blocks searches from servers that are not signed in as an app. Add `REDDIT_CLIENT_ID` and
+  `REDDIT_CLIENT_SECRET` (a free "script" app at reddit.com/prefs/apps), or remove the Reddit phrases.
+- Each pipeline card shows the problems of its last search.
+
+Also: support, billing, careers and similar department mailboxes get no cold email (rule on by default; a named person is
+looked for first); a message a mail system sent by itself is never a reply; an agency is never a customer, even in a
+pipeline sold to software companies; the website form (`/api/inbound`) drops spam quietly, has a daily ceiling
+(`inbound_daily_cap`, 60) and can require a key (`BRN_INBOUND_KEY`, sent as `key` in the form's request).
+
 ## Owners and decision-makers
 
 A company with only info@ is half a lead. Each pipeline card shows how many of its live leads have a named person and how

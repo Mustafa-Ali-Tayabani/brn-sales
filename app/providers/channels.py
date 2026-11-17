@@ -71,6 +71,25 @@ def _smtp(msg):
     return str(msg["Message-ID"])
 
 
+class QuotaReached(RuntimeError):
+    """The email provider will not take any more emails for now (its daily or monthly allowance is used up)."""
+
+
+def paused():
+    """(until, why) while sending is stopped because the provider's allowance ran out, else None."""
+    until = db.setting("send_paused_until") or ""
+    return (until, db.setting("send_paused_why") or "") if until > db.now() else None
+
+
+def pause(why):
+    """Stop sending until the next day (UTC): trying again every hour only fills the log with failures."""
+    from datetime import datetime, timedelta, timezone
+    until = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=0, minute=10, second=0, microsecond=0).isoformat(timespec="seconds")
+    first = not paused()
+    db.set_setting("send_paused_until", until); db.set_setting("send_paused_why", why)
+    return until, first
+
+
 def _resend(msg):
     sender = _sender()
     addrs = lambda k: [formataddr(x) for x in getaddresses([str(msg.get(k) or "")]) if x[1]]
@@ -93,7 +112,13 @@ def _resend(msg):
     if files:
         payload["attachments"] = files
     r = httpx.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, json=payload, timeout=30)
+    if r.status_code == 429 and "quota" not in r.text.lower():   # too many in one second, not the day's allowance: wait a moment and try once more
+        import time
+        time.sleep(1.2)
+        r = httpx.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, json=payload, timeout=30)
     if r.status_code >= 400:
+        if "quota" in r.text.lower() or (r.status_code == 429 and "limit" in r.text.lower()):
+            raise QuotaReached("Resend's sending limit for your plan is used up" + (" for today" if "daily" in r.text.lower() else " for this month" if "monthly" in r.text.lower() else ""))
         raise RuntimeError(f"Resend refused the email: {r.text[:300]}")
     return r.json().get("id")
 

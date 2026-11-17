@@ -645,7 +645,8 @@ def suggest_sources(p: dict = Body(...)):
 @router.get("/api/rules")
 def get_rules():
     st = rules.state()
-    return {"builtin": [{**r, **st["builtin"][r["key"]]} for r in rules.BUILTIN], "custom": st["custom"],
+    idle = {"verify_mailbox": None if M.enrich.verifier() else "Not running: no checking service is connected (HUNTER_API_KEY). Emails revealed by Apollo are already verified."}
+    return {"builtin": [{**r, **st["builtin"][r["key"]], "idle": idle.get(r["key"])} for r in rules.BUILTIN], "custom": st["custom"],
             "fields": rules.FIELDS, "tests": rules.TESTS, "outcomes": rules.OUTCOMES}
 
 

@@ -171,6 +171,8 @@ SYSTEM = (
 def _lead_view(lead):
     """Lead fields for the prompt, with the imported scan data (extra) unpacked."""
     v = {k: lead.get(k) for k in ("company", "contact_name", "title", "website", "city", "country", "industry", "segment", "notes")}
+    if str(v.get("segment") or "").lower() in {str(p.get("name") or "").lower() for p in db.products().values()}:
+        v["segment"] = None   # older leads carry the pipeline's name here: it is what we sell, not what they are
     try:
         extra = json.loads(lead.get("extra") or "{}")
     except Exception:
@@ -221,7 +223,10 @@ Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-
     else:
         score = 65 if (lead.get("email") or lead.get("phone")) else 40
         pains, hooks, reason = ["unclear"], ["custom software and AI automation"], "generic fit"
-    return {"summary": f"{lead['company']} is a {lead.get('segment') or lead.get('industry') or 'business'} in {lead.get('city') or lead.get('country') or 'a place not yet known'}.",
+    ours = {str(p.get("name") or "").lower() for p in db.products().values()} | {"asked for it", "hiring for it", "wrote to us", "asking online", "agency (possible partner)"}
+    kind = next((v for v in (lead.get("industry"), lead.get("segment")) if v and str(v).lower() not in ours), None)
+    kind = (("an " if str(kind)[:1].lower() in "aeiou" else "a ") + str(kind)) if kind else "a business"
+    return {"summary": f"{lead['company']} is {kind} in {lead.get('city') or lead.get('country') or 'a place not yet known'}.",
             "pain_points": pains, "hooks": hooks, "score": min(score, 100), "score_reason": reason, "language": "en", "_engine": "template"}
 
 
@@ -552,14 +557,65 @@ def over_budget():
     return budget > 0 and spent()["c"] >= budget
 
 
+_search_block = {"until": 0.0, "why": ""}
+WEB_TOOLS = ["web_search_20250305", "web_search_20260209"]   # the first is tried first; the one that works is remembered
+
+
+def search_blocked():
+    """Why Claude's web search is not being tried right now, or None."""
+    return _search_block["why"] if time.time() < _search_block["until"] else None
+
+
+def explain(e):
+    """An error from Claude (or another service) as one plain sentence, in full: what it means and what to do."""
+    msg = str(e)
+    body = getattr(e, "body", None)
+    inner = ((body or {}).get("error") or {}).get("message") if isinstance(body, dict) else None
+    if not inner:
+        m = re.search(r"""['"]message['"]:\s*['"](.+?)['"]\s*[,}]""", msg)
+        inner = m.group(1) if m else None
+    low = (inner or msg).lower()
+    head = msg.split("Error code:")[0].strip(" :") if "Error code:" in msg else ""
+    pre = (head + ": ") if head else ""
+    if "credit balance" in low:
+        return pre + "Claude refused the request because the Anthropic credit has run out. Add credit at console.anthropic.com > Billing."
+    if "web search" in low and ("not enabled" in low or "enable" in low or "admin" in low):
+        return pre + "Claude's web search is switched off for your Anthropic organisation. An admin can switch it on at console.anthropic.com > Settings > Privacy (Web search)."
+    if "rate limit" in low or "429" in msg[:40] or "overloaded" in low or "529" in msg[:40]:
+        return pre + "Claude was too busy or over its rate limit. It will be tried again on the next run."
+    if "invalid x-api-key" in low or "authentication" in low:
+        return pre + "The Anthropic API key was refused. Check ANTHROPIC_API_KEY in Railway Variables."
+    if "model" in low and ("not found" in low or "does not exist" in low or "not_found" in low):
+        return pre + f"The Claude model set in Settings ({model()}) is not available to your account. Choose another under Settings > AI & cost. ({inner})"
+    if inner and "Error code:" in msg:
+        return pre + f"Claude refused the request: {inner}"
+    return msg
+
+
 def _web_json(prompt, max_uses=5, max_tokens=3000):
     """Ask Claude something it needs web search for, and return the JSON object it ends with."""
     if _client is None:
         raise RuntimeError("ANTHROPIC_API_KEY is not set, so web search is unavailable")
+    if search_blocked():
+        raise RuntimeError(search_blocked())
     msgs, text = [{"role": "user", "content": prompt}], ""
     for _ in range(4):  # a long search can pause: continue it
-        msg = _client.messages.create(model=model(), max_tokens=max_tokens, messages=msgs,
-                                      tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": max_uses}])
+        msg = None
+        for n, tool in enumerate(list(WEB_TOOLS)):
+            try:
+                msg = _client.messages.create(model=model(), max_tokens=max_tokens, messages=msgs, tools=[{"type": tool, "name": "web_search", "max_uses": max_uses}])
+                if n:   # the other version of the search tool is the one this model takes: use it first from now on
+                    WEB_TOOLS.remove(tool); WEB_TOOLS.insert(0, tool)
+                break
+            except Exception as e:
+                text = explain(e)
+                wrong_tool = "Error code: 400" in str(e) and any(w in str(e).lower() for w in ("web_search", "tool", "not supported"))
+                if wrong_tool and n == 0:
+                    continue
+                if any(w in text for w in ("credit has run out", "switched off for your Anthropic", "API key was refused", "is not available to your account")):
+                    _search_block.update(until=time.time() + 6 * 3600, why=text)   # it will fail the same way for every pipeline: stop asking
+                    db.set_setting("llm_error", text); db.set_setting("llm_error_at", db.now())
+                raise RuntimeError(text)
         if getattr(msg, "usage", None) is not None:
             _record("discovery", msg.usage)
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")

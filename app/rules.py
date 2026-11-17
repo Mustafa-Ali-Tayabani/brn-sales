@@ -43,6 +43,8 @@ BUILTIN = [
     {"key": "vendor", "name": "Never pitch companies that sell services like ours as customers", "outcome": "skip", "default": True, "value": "partner",
      "choices": {"partner": "Move them to the white-label partner pipeline, where they get the partnership pitch", "skip": "Skip them altogether"},
      "about": "Software houses, web and app agencies, IT service firms and marketing agencies do not buy what you sell to customers. Judged from the company's own website and name. They never receive a customer email; you choose whether they are approached as partners instead."},
+    {"key": "support_desk", "name": "Skip support, billing and careers mailboxes", "outcome": "fix", "default": True,
+     "about": "Addresses like support@, help@, billing@, careers@ or press@ go to a ticket system or another department. A sales email there is answered by a robot, or not at all. A named person is looked for first."},
     {"key": "role", "name": "Hold shared mailboxes for review", "outcome": "review", "default": False,
      "about": "Addresses like info@, sales@ or support@ go to a shared inbox instead of a person. The agent first looks for a named person with their own address; only when none is found is the lead paused for you, so no email goes to a shared inbox."},
     {"key": "free", "name": "Hold free email providers for review", "outcome": "review", "default": False,
@@ -206,6 +208,11 @@ def mailbox_status(lead):
     return status
 
 
+SUPPORT = ("support", "help", "helpdesk", "helpcenter", "customerservice", "customer.service", "customercare", "customer.care", "customersupport", "care", "service",
+           "billing", "accounts", "invoices", "careers", "career", "jobs", "hr", "recruitment", "recruiting", "talent", "press", "media", "pr", "legal", "privacy", "abuse",
+           "postmaster", "webmaster", "security", "compliance", "feedback", "complaints", "returns", "orders")
+
+
 def _lookup_pending(lead):
     """A shared mailbox is not held while a named person can still be looked up for it: the search runs first, during research."""
     from . import quality
@@ -238,6 +245,8 @@ def check(lead, network=True, rules=None, verify=True, early=False):
                 return hit("noreply", f"{email} is a no-reply address that nobody reads.")
             if on("disposable") and domain in DISPOSABLE:
                 return hit("disposable", f"{email} is a throwaway inbox.")
+            if on("support_desk") and (local in SUPPORT or local.split("+")[0].rstrip("0123456789") in SUPPORT) and not (early and _lookup_pending(lead)):
+                return hit("support_desk", f"{email} is a support or department mailbox, not a person who buys.")
             if on("role") and local in ROLE and not (early and _lookup_pending(lead)):
                 return hit("role", f"{email} is a shared mailbox, not a person.")
             if on("free") and domain in FREE:
@@ -253,7 +262,8 @@ def check(lead, network=True, rules=None, verify=True, early=False):
                                   stage IN ('in_sequence','awaiting_approval','replied','meeting_booked') LIMIT 1""", (lead["id"], f"%@{domain}"))
                 if other:
                     return hit("one_per_company", f"Someone else at {domain} ({other['contact_name'] or other['company']}) is already being contacted.")
-    if on("vendor") and not db.products().get(lead.get("product") or "", {}).get("sells_to_tech"):
+    pipe = db.products().get(lead.get("product") or "", {})
+    if on("vendor") and not pipe.get("partner"):   # only a partner pipeline wants agencies; one sold to software companies wants product companies, not agencies
         try:
             extra = json.loads(lead.get("extra") or "{}") or {}
         except ValueError:
@@ -265,6 +275,8 @@ def check(lead, network=True, rules=None, verify=True, early=False):
             why = None   # found by a search of chosen industries, and its own industry arrives with the reveal: no guessing from the name meanwhile
         else:
             why = extra.get("vendor") or sources.looks_like_vendor(lead.get("company"), lead.get("industry"), lead.get("segment") if lead.get("source") != "hiring" else "")
+        if why and pipe.get("sells_to_tech") and not (sources.is_agency(why) or str(why).startswith("Apollo lists")):
+            why = None   # a software company is a buyer here; an agency still is not
         if why and not (extra.get("intent") or {}).get("level") in ("asked", "inbound"):   # someone who asked us is a buyer, whatever they do
             if str(why).startswith("Apollo lists"):
                 return hit("vendor", f"{why}, an industry that sells services like ours, so it is a competitor rather than a buyer.")

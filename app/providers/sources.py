@@ -132,7 +132,43 @@ def review_signal(place, words):
     return out
 
 
+_DOWN = {}   # source -> (until, why): a source that refused is left alone for a while
+
+
+def _why_google(text):
+    low = text.lower()
+    if "has not been used" in low or "is disabled" in low or "not enabled" in low or "service_disabled" in low:
+        return "Google refused the map search: the \"Places API (New)\" is not switched on for this key's project. Switch it on in Google Cloud > APIs & Services > Library."
+    if "billing" in low:
+        return "Google refused the map search: the Google Cloud project has no billing account. Add one under Google Cloud > Billing (Places has a free monthly allowance, but billing must be set up)."
+    if "referer" in low or "ip address" in low or "restrict" in low or "api_key_service_blocked" in low or "not authorized to use this api" in low:
+        return "Google refused the map search: the API key is restricted. Under Google Cloud > Credentials, allow \"Places API (New)\" for this key and remove website or IP restrictions (the app calls from a server)."
+    if "api key not valid" in low or "api_key_invalid" in low:
+        return "Google refused the map search: the API key is not valid. Check GOOGLE_PLACES_API_KEY in Railway Variables."
+    return "Google refused the map search (error 403). The usual causes: Places API (New) not switched on, no billing account, or a restriction on the key."
+
+
 def google_places(query, country="SA", limit=20, only_without_website=False, review_words=None):
+    """Map search, with a refusal from Google turned into a reason and remembered, so one bad key does not fail twenty searches."""
+    from .. import db
+    import time
+    if _DOWN.get("places", (0, ""))[0] > time.time():
+        raise RuntimeError(_DOWN["places"][1])
+    try:
+        rows = _google_places(query, country, limit, only_without_website, review_words)
+    except RuntimeError as e:
+        if any(w in str(e) for w in ("403", "PERMISSION_DENIED", "REQUEST_DENIED", "API key")):
+            why = _why_google(str(e))
+            _DOWN["places"] = (time.time() + 6 * 3600, why)
+            db.set_setting("places_error", why)
+            raise RuntimeError(why)
+        raise
+    if db.setting("places_error"):
+        db.set_setting("places_error", "")
+    return rows
+
+
+def _google_places(query, country="SA", limit=20, only_without_website=False, review_words=None):
     """e.g. google_places('gyms in Riyadh'). Business listings only: these are company lines, not personal numbers.
     With only_without_website, keeps businesses that have no website listed (pages through up to 60 results)."""
     key = os.environ.get("GOOGLE_PLACES_API_KEY")
@@ -177,10 +213,21 @@ def google_places(query, country="SA", limit=20, only_without_website=False, rev
 def reddit_search(phrase, limit=15, days="week"):
     """Public posts where people ask for a service ("need a website for my business"). Read-only:
     the agent drafts a reply, a person posts it. Nothing is sent to Reddit automatically."""
-    r = httpx.get("https://www.reddit.com/search.json", params={"q": phrase, "sort": "new", "t": days, "limit": min(limit, 50)},
-                  headers={"User-Agent": "brn-pipeline/1.0 (lead research; read-only)"}, timeout=20, follow_redirects=True)
+    import os, time
+    if _DOWN.get("reddit", (0, ""))[0] > time.time():
+        raise RuntimeError(_DOWN["reddit"][1])
+    url, headers = "https://www.reddit.com/search.json", {"User-Agent": "brn-pipeline/1.0 (lead research; read-only)"}
+    cid, secret = os.environ.get("REDDIT_CLIENT_ID"), os.environ.get("REDDIT_CLIENT_SECRET")
+    if cid and secret:   # Reddit only answers servers that sign in as an app (free: reddit.com/prefs/apps, type "script")
+        t = httpx.post("https://www.reddit.com/api/v1/access_token", auth=(cid, secret), data={"grant_type": "client_credentials"}, headers=headers, timeout=20)
+        if t.status_code < 400 and t.json().get("access_token"):
+            url, headers = "https://oauth.reddit.com/search", {**headers, "Authorization": f"Bearer {t.json()['access_token']}"}
+    r = httpx.get(url, params={"q": phrase, "sort": "new", "t": days, "limit": min(limit, 50)}, headers=headers, timeout=20, follow_redirects=True)
     if r.status_code >= 400:
-        raise RuntimeError(f"Reddit search error {r.status_code}")
+        why = (f"Reddit refused the search (error {r.status_code}). Reddit blocks searches from servers that are not signed in as an app: create a free app at reddit.com/prefs/apps "
+               "and add REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in Railway Variables, or remove the Reddit phrases from the pipeline.") if r.status_code in (401, 403, 429) else f"Reddit search error {r.status_code}"
+        _DOWN["reddit"] = (time.time() + 6 * 3600, why)
+        raise RuntimeError(why)
     out = []
     for c in r.json().get("data", {}).get("children", []):
         d = c.get("data", {})
@@ -297,7 +344,16 @@ VENDOR_PHRASES = ("software development company", "software development agency",
                   "seo company", "web design agency", "web design company", "design agency", "creative agency", "ux agency", "ui/ux design agency",
                   "it services", "it solutions", "it consulting", "it outsourcing", "software house", "software agency", "development agency",
                   "offshore development", "staff augmentation", "dedicated developers", "hire developers", "outsourcing company", "branding agency")
-VENDOR_NAMES = ("infotech", "softwares", "web solutions", "it solutions", "technolabs", "software solutions", "digital agency", "web agency", "dev studio")
+VENDOR_NAMES = ("infotech", "softwares", "web solutions", "it solutions", "technolabs", "software solutions", "digital agency", "web agency", "dev studio",
+                "white label", "white-label", "marketing agency", "creative agency", "design agency", "development agency", "seo agency", "branding agency", "advertising agency",
+                "wordpress agency", "wp agency", "software house", "web design", "web development", "app development", "it services", "it consulting", "outsourcing", "staff augmentation")
+# among those, the ones that mean "sells its people's time" rather than "makes a software product": never a customer, even for a pipeline sold to software companies
+AGENCY_WORDS = ("agency", "white label", "white-label", "outsourc", "staff augmentation", "software house", "dev studio", "web design", "web development", "app development",
+                "development company", "development agency", "development services", "it services", "it consulting", "consultancy", "infotech", "technolabs", "web solutions", "it solutions")
+
+
+def is_agency(why):
+    return any(w in str(why or "").lower() for w in AGENCY_WORDS)
 
 
 def looks_like_vendor(*texts):
