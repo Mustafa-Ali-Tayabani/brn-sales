@@ -133,6 +133,11 @@ def send_email(lead, subject, body, cta=None, cta_label=None):
 def place_call(lead, script):
     if not voice.ready():
         return {"status": "skipped"}  # AI calling is not set up: the agent leaves the brief for a person to call
+    why = voice.over_budget()
+    if why and "in progress" in why:
+        raise RuntimeError(why)  # room may free up once the running calls report their cost: the agent tries again later
+    if why:
+        return {"status": "skipped", "why": why}  # out of budget: same, a person can still phone
     cid = voice.call(lead["phone"], lead.get("contact_name") or lead["company"],
                      {"company": lead["company"], "contact_name": lead.get("contact_name") or "", "opening": script.get("opening", ""),
                       "talking_points": "; ".join(script.get("talking_points", []))}, lead["id"])

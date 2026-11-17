@@ -6,13 +6,18 @@ in Settings (VAPI_ASSISTANT_ID / VAPI_PHONE_NUMBER_ID on the server still win wh
 
 A call is only placed as a step of a sequence, after the usual checks (lawful basis, local calling hours, daily
 limit) and, in approval mode, your click. What the lead said comes back to /webhooks/voice when the call ends."""
+import json
 import os
+import time
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from .. import db
 
 API = "https://api.vapi.ai"
+ROOM = 1.0   # dollars kept free for one more call: a call is only placed while at least this much of the budget is left
+_spent = {"at": 0.0, "value": None, "source": ""}
 OUTCOMES = ["meeting", "interested", "not_now", "not_interested", "unsubscribe", "wrong_person", "no_answer", "voicemail"]
 
 
@@ -103,6 +108,63 @@ def setup(server_url, chosen_phone=None):
     return status()
 
 
+def budget():
+    try:
+        return max(0.0, float(db.setting("call_budget") or 0))
+    except ValueError:
+        return 0.0
+
+
+def _month_start():
+    return datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _recorded():
+    """Call costs this month from the reports Vapi sent us (used when Vapi cannot be asked)."""
+    total = 0.0
+    for a in db.q("SELECT payload FROM activities WHERE channel='phone' AND created_at>=? AND payload LIKE ?", (_month_start().isoformat(), '%"cost"%')):
+        try:
+            total += float(json.loads(a["payload"] or "{}").get("cost") or 0)
+        except (ValueError, TypeError):
+            pass
+    return total
+
+
+def spent(fresh=False):
+    """Dollars of calls this calendar month (UTC): Vapi's own figure for the account, else what the call reports added up to."""
+    if not fresh and _spent["value"] is not None and time.time() - _spent["at"] < 60:
+        return _spent["value"]
+    start = _month_start()
+    try:
+        calls = _call("GET", f"/call?limit=1000&createdAtGe={start.strftime('%Y-%m-%dT%H:%M:%S.000Z')}")
+        value = sum(float(c.get("cost") or 0) for c in calls if (c.get("createdAt") or "9") >= start.strftime("%Y-%m-%d"))
+        value, source = max(value, _recorded()), "vapi"
+    except Exception:
+        value, source = _recorded(), "reports"
+    _spent.update(at=time.time(), value=value, source=source)
+    return value
+
+
+def _running():
+    """Calls placed in the last ten minutes: their cost is not known yet, so room is held for each."""
+    since = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    return db.one("SELECT COUNT(*) n FROM activities WHERE channel='phone' AND created_at>=? AND (payload LIKE ? OR summary LIKE ?)",
+                  (since, '%"in_progress"%', "Test call placed%"))["n"]
+
+
+def over_budget():
+    """Why no more calls may be placed this month, or None while there is room."""
+    cap = budget()
+    if not cap:
+        return None
+    used = spent()
+    if used + ROOM > cap:
+        return f"this month's AI call budget of ${cap:g} is used up (${used:.2f} spent)"
+    if used + ROOM * (_running() + 1) > cap:
+        return f"calls in progress may use what is left of this month's ${cap:g} AI call budget"
+    return None
+
+
 def status():
     return {"connected": enabled(), "assistant": bool(assistant_id()), "phone_id": phone_id(), "ready": ready(),
             "fixed_by_server": bool(os.environ.get("VAPI_ASSISTANT_ID") or os.environ.get("VAPI_PHONE_NUMBER_ID"))}
@@ -112,6 +174,9 @@ def call(number, name, variables, lead_id=None):
     """Place one call. Returns Vapi's call id."""
     if not ready():
         raise RuntimeError("AI calling is not fully set up: finish it under Settings > Connections.")
-    out = _call("POST", "/call", {"phoneNumberId": phone_id(), "assistantId": assistant_id(), "customer": {"number": number, "name": name},
+    why = over_budget()
+    if why:  # every caller checks first; this makes sure nothing slips past
+        raise RuntimeError(f"Not called: {why}.")
+    out =_call("POST", "/call", {"phoneNumberId": phone_id(), "assistantId": assistant_id(), "customer": {"number": number, "name": name},
                                   "assistantOverrides": {"metadata": {"lead_id": lead_id}, "variableValues": variables}})
     return out.get("id")

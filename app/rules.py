@@ -44,7 +44,7 @@ BUILTIN = [
      "choices": {"partner": "Move them to the white-label partner pipeline, where they get the partnership pitch", "skip": "Skip them altogether"},
      "about": "Software houses, web and app agencies, IT service firms and marketing agencies do not buy what you sell to customers. Judged from the company's own website and name. They never receive a customer email; you choose whether they are approached as partners instead."},
     {"key": "role", "name": "Hold shared mailboxes for review", "outcome": "review", "default": False,
-     "about": "Addresses like info@, sales@ or support@ go to a shared inbox instead of a person. Paused so you can find a named contact first."},
+     "about": "Addresses like info@, sales@ or support@ go to a shared inbox instead of a person. The agent first looks for a named person with their own address; only when none is found is the lead paused for you, so no email goes to a shared inbox."},
     {"key": "free", "name": "Hold free email providers for review", "outcome": "review", "default": False,
      "about": "Gmail, Yahoo, Outlook and similar: often a private address, not a business one."},
     {"key": "one_per_company", "name": "One person per company at a time", "outcome": "review", "default": False,
@@ -182,7 +182,18 @@ def mailbox_status(lead):
     return status
 
 
-def check(lead, network=True, rules=None, verify=True):
+def _lookup_pending(lead):
+    """A shared mailbox is not held while a named person can still be looked up for it: the search runs first, during research."""
+    from . import quality
+    from .providers import enrich, llm
+    try:
+        looked = "person_lookup" in (json.loads(lead.get("extra") or "{}") or {})
+    except ValueError:
+        looked = False
+    return not looked and not lead.get("emails_sent") and db.setting("dm_auto") == "1" and bool(enrich.people_finder() or llm.enabled()) and quality.needs_person(lead)
+
+
+def check(lead, network=True, rules=None, verify=True, early=False):
     """The first rule this lead breaks, as {"rule", "name", "reason", "outcome"}, or None when it may go ahead."""
     st = rules or state()
     on = lambda k: st["builtin"][k]["on"]
@@ -203,7 +214,7 @@ def check(lead, network=True, rules=None, verify=True):
                 return hit("noreply", f"{email} is a no-reply address that nobody reads.")
             if on("disposable") and domain in DISPOSABLE:
                 return hit("disposable", f"{email} is a throwaway inbox.")
-            if on("role") and local in ROLE:
+            if on("role") and local in ROLE and not (early and _lookup_pending(lead)):
                 return hit("role", f"{email} is a shared mailbox, not a person.")
             if on("free") and domain in FREE:
                 return hit("free", f"{email} is a free personal address ({domain}).")

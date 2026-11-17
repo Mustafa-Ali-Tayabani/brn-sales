@@ -109,7 +109,7 @@ def lookups_today():
     return db.one("SELECT COUNT(*) n FROM activities WHERE kind='enrich' AND created_at>=?", (db.now()[:10],))["n"]
 
 
-def find_person(lead, manual=False):
+def _finder_person(lead, manual=False):
     """Look for a named decision-maker at the lead's company and put them on the lead. The shared address it had is kept.
     Returns {"found": bool, "detail": str}."""
     if not enrich.people_finder():
@@ -144,6 +144,152 @@ def find_person(lead, manual=False):
     db.log(lead["id"], "enrich", f"Found a named contact: {p['contact_name']}" + (f", {p['title']}" if p.get("title") else "") + f" ({p['email']}), via {p['via']}",
            channel="system", payload={"domain": domain, "via": p["via"], "previous_email": lead.get("email")})
     return {"found": True, "detail": f"{p['contact_name']}" + (f", {p['title']}" if p.get("title") else "") + f" · {p['email']}", **p}
+
+
+def _named_on(name, url):
+    """Does that page really name this person? True, False (page read, name not on it) or None (page or name not readable)."""
+    from .providers import intent
+    parts = [w for w in intent._words(name) if len(w) > 2]
+    text = intent.page_text(url) if len(parts) >= 2 else None
+    if text is None:
+        return None
+    hay = set(intent._words(text))
+    return all(w in hay for w in parts)
+
+
+def _web_person(lead, x):
+    """The owner or manager from public pages (Claude's web search), when no people finder has them. Returns a result dict or None."""
+    from .providers import llm
+    if not llm.enabled() or llm.over_budget() or not (lead.get("company") or "").strip():
+        return None
+    p = llm.find_owner(lead["company"], lead.get("website"), ", ".join(v for v in (lead.get("city"), lead.get("country")) if v), [t.strip() for t in titles_for(lead) if t.strip()][:8])
+    if not p:
+        return None
+    checked = _named_on(p["name"], p["source"])
+    if checked is False:   # the page was read and does not name them: not kept
+        db.log(lead["id"], "enrich", f"A name was suggested for {lead['company']} but the page given does not show it, so it was not used", channel="system", payload={"source": p["source"]})
+        return None
+    email, via = p.get("email"), "public pages"
+    if not email and enrich.enabled():   # we know who: ask the people finder for this person's own address
+        try:
+            m = enrich.find_person(p["name"], p.get("linkedin"), lead["company"], domain_of(lead), want_phone=False) or {}
+            email, via = (m.get("email") or "").lower() or None, "public pages + Apollo"
+            x.update({k: v for k, v in {"email_status": m.get("email_status")}.items() if v and email})
+        except RuntimeError:
+            pass
+    if email and (email == (lead.get("email") or "").lower() or db.one("SELECT 1 x FROM leads WHERE lower(email)=? AND id<>?", (email, lead["id"]))):
+        email = None
+    fields = {"contact_name": p["name"], "title": p.get("title") or lead.get("title")}
+    if email:
+        if lead.get("email"):
+            x["generic_email"] = lead["email"]
+        x.pop("email_bounced", None); x.pop("email_check", None)
+        fields["email"] = email
+    if p.get("phone") and not lead.get("phone"):
+        fields["phone"] = p["phone"]
+    x.update({k: v for k, v in {"linkedin": p.get("linkedin") or x.get("linkedin"), "person_source": p["source"],
+                                "person_checked": "the name was found on that page" if checked else "the page could not be opened to check the name"}.items() if v})
+    if lead.get("stage") == "needs_contact" and (email or fields.get("phone") or lead.get("email")):
+        fields["stage"] = "new"
+    db.update_lead(lead["id"], **fields, extra=json.dumps(x, ensure_ascii=False))
+    got = " · ".join(v for v in (email, fields.get("phone")) if v)
+    db.log(lead["id"], "enrich", f"Found who runs it: {p['name']}" + (f", {p['title']}" if p.get("title") else "") + (f" ({got})" if got else "") + f", from {via}",
+           channel="system", payload={"source": p["source"], "checked": checked, "via": via})
+    return {"found": True, "detail": p["name"] + (f", {p['title']}" if p.get("title") else "") + (f" · {got}" if got else " · no personal email found" + (", the company address is kept" if lead.get("email") else "")),
+            "contact_name": p["name"], "title": p.get("title"), "email": email, "via": via}
+
+
+def find_person(lead, manual=False):
+    """Put a named owner or decision-maker on the lead: the people finder first (Apollo or Hunter), then public pages.
+    Returns {"found": bool, "detail": str}."""
+    res = _finder_person(lead, manual) if enrich.people_finder() else {"found": False, "detail": ""}
+    if res["found"] or "limit" in res["detail"]:
+        return res
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead["id"],))
+    if (lead.get("contact_name") or "").strip() and not manual:
+        return res
+    cap = int(db.setting("dm_daily_cap") or 20)
+    if not manual and lookups_today() >= cap:
+        return {"found": False, "detail": f"Today's limit of {cap} lookups is reached."}
+    from .providers import llm
+    if not llm.enabled():
+        return res if res["detail"] else {"found": False, "detail": "Nothing is connected that can look people up. Add ANTHROPIC_API_KEY (searches public pages), APOLLO_API_KEY or HUNTER_API_KEY on the server."}
+    if llm.over_budget():
+        return {"found": False, "detail": (res["detail"] + " " if res["detail"] else "") + "Today's Claude budget is used up, so public pages were not searched."}
+    x = _extra(lead)
+    x["person_lookup"] = db.now()[:10]   # saved with the result, or when nobody is found: not searched again for 30 days
+    try:
+        web = _web_person(lead, x)
+    except Exception as e:   # not counted as looked up: it is tried again next time
+        return {"found": False, "detail": f"The search could not be finished: {str(e)[:160]}"}
+    if web:
+        return web
+    db.update_lead(lead["id"], extra=json.dumps(x, ensure_ascii=False))
+    return {"found": False, "detail": res["detail"] or f"No owner or manager of {lead['company']} could be found on public pages."}
+
+
+# ---------- owners and decision-makers for a whole pipeline ----------
+PEOPLE = {"running": False, "product": None, "checked": 0, "total": 0, "found": 0, "started": None, "finished": None, "stopped": None, "results": []}
+ACTIVE = "stage NOT IN ('disqualified','opted_out','lost','won')"
+
+
+def people_counts():
+    """Per pipeline: how many live leads have a named person, how many of those can be reached directly, and how many still have nobody."""
+    out = {}
+    for l in db.q(f"SELECT product, contact_name, email, phone FROM leads WHERE {ACTIVE}"):
+        c = out.setdefault(l["product"] or "", {"leads": 0, "named": 0, "ready": 0, "missing": 0})
+        named = bool((l["contact_name"] or "").strip())
+        c["leads"] += 1
+        c["named"] += named
+        c["ready"] += named and bool((l["email"] and not shared_mailbox(l["email"])) or l["phone"])
+        c["missing"] += not named
+    return out
+
+
+def _people_todo(product):
+    recent = time.strftime("%Y-%m-%d", time.gmtime(time.time() - 30 * 86400))
+    return [l for l in db.q(f"SELECT * FROM leads WHERE product=? AND {ACTIVE} ORDER BY score DESC, id DESC", (product,))
+            if not (l.get("contact_name") or "").strip() and (_extra(l).get("person_lookup") or "") < recent]
+
+
+def people_start(product, limit=25):
+    """Look for the owner or manager of every lead in a pipeline that has no named person yet (best leads first)."""
+    with LOCK:
+        if PEOPLE["running"]:
+            return False
+        todo = _people_todo(product)[:max(1, min(int(limit), 100))]
+        PEOPLE.update(running=True, product=product, checked=0, total=len(todo), found=0, started=db.now(), finished=None, stopped=None, results=[])
+
+    def run():
+        from .providers import llm
+        try:
+            for lead in todo:
+                if not enrich.people_finder() and llm.over_budget():
+                    PEOPLE["stopped"] = "Today's Claude budget is used up. The rest can be looked up tomorrow, or raise the budget in Settings."
+                    break
+                res = find_person(lead, manual=True)
+                with LOCK:
+                    PEOPLE["checked"] += 1
+                    PEOPLE["found"] += bool(res["found"])
+                    PEOPLE["results"].append({"id": lead["id"], "company": lead["company"], "found": bool(res["found"]), "detail": res["detail"]})
+        finally:
+            with LOCK:
+                PEOPLE.update(running=False, finished=db.now())
+            db.log(None, "system", f"Looked for owners in {db.products().get(product, {}).get('name', product)}: {PEOPLE['found']} found out of {PEOPLE['checked']} checked", channel="system")
+
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+def people_state(product=None):
+    with LOCK:
+        snap = dict(PEOPLE, results=list(PEOPLE["results"])[-60:])
+    if product:
+        snap["waiting"] = len(_people_todo(product))
+        snap["counts"] = people_counts().get(product, {"leads": 0, "named": 0, "ready": 0, "missing": 0})
+    from .providers import llm
+    snap["can"] = {"web": llm.enabled(), "finder": enrich.people_finder()}
+    return snap
 
 
 # ---------- clean-up of the existing list ----------

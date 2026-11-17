@@ -101,12 +101,54 @@ grades first, and Settings > Agent & sending can stop it contacting grades below
   no contact details and may not be read by machine, so the author is matched to a contact through Apollo.
 * Map results now also get the email each business publishes on its own website.
 
+**Every pipeline searches for the need.** Each built-in pipeline comes with searches for people asking for what it sells
+("need an ERP for my business") and, where it fits, for companies hiring for it ("Odoo developer"). A pipeline you saved
+earlier gets them only where it had no such list at all; searches you edited or emptied are left alone. Map searches stay
+for pipelines that sell to a kind of business (gyms, restaurants): they give the full list, and Find owners gives the
+person. The searches use Claude's web search and stop at the daily Claude budget.
+
+**No email to a shared inbox.** Switch on "Hold shared mailboxes for review" under Settings > Rules. The agent then looks
+for a named person at every lead that only has info@, sales@ and the like, before the rule is applied. A lead that gets a
+person's own address goes ahead; one that does not is paused for you instead of being emailed. It is off by default,
+because many small businesses publish nothing but a shared address.
+
+**Claude credit.** Anthropic gives an app no way to read the credit balance, so enter it once under Settings > AI & cost
+(and again after a top-up). What is left (the balance minus what the agent has spent since) shows at the bottom of the menu
+on every page and turns red under $2.
+
+## Owners and decision-makers
+
+A company with only info@ is half a lead. Each pipeline card shows how many of its live leads have a named person and how
+many of those can be reached directly. **Find owners** looks up the owner or the person who runs each company that has
+nobody named yet, best leads first: the people finder first (Apollo or Hunter, when connected), then public pages through
+Claude's web search (the company site, Google, social profiles, business registers), using the pipeline's job titles. A
+name is kept only when a page names that person in that role; when the page can be read and does not show the name, it is
+dropped. No email address is ever guessed: the person's own address is used when a page shows it or the people finder has
+it, otherwise the company address is kept and the email is addressed to the person. A company where nobody was found is
+not searched again for 30 days. With "find a named contact automatically" on in Settings, the agent does the same for good
+leads as they come in. Leads can be filtered by "Named person".
+
+## LinkedIn
+
+The **LinkedIn** page holds every lead that came from LinkedIn (people added from their profile, and people found through
+a public post saying they need what a pipeline sells) with its own funnel, drop-out reasons, the post and profile links,
+and whether contact details were found. "Search LinkedIn posts" runs that search for one pipeline, with its own phrases or
+one you type. LinkedIn is never logged into or scraped: only public posts that web search can see are found, and contact
+details come from Apollo, since LinkedIn shows none.
+
 ## AI phone calls
 
 Settings > Connections > AI phone calls. With `VAPI_API_KEY` set, **Set up the AI caller** creates the caller in your
 Vapi account (script, the result it reports, and where it reports to); you choose which of your Vapi numbers it calls from
 and can have it phone you to hear it. Calls are placed as the phone step of a sequence, within calling hours and the
 daily limit, and after your approval in approval mode. Without it, the agent leaves a call brief for you to phone by hand.
+
+**Call budget**: Settings > "AI call budget per month ($)", 30 by default, 0 for no limit. The month's spend is read from
+your Vapi account (all calls on it, test calls included; the call reports are the fallback) and shown on the AI phone
+calls card. A call is only placed while at least $1 of the budget is left, with room held for calls still running; after
+that, phone steps become call briefs until next month or until you raise the figure. It counts what Vapi bills. A number
+imported from Twilio or Telnyx is billed for line time by that carrier, outside this figure. For a hard stop on Vapi's
+side as well, buy credit in fixed amounts and leave auto-reload off.
 
 ## Email coach
 
@@ -162,6 +204,16 @@ but paused, so it does not get a second, different pitch unless you start it by 
 Settings > Agent & sending. The agent is on or off, and can be limited to working days and hours in a time zone you pick.
 Outside those hours it rests (no research, drafting, follow-ups, inbox reading or lead searches); meeting and task
 reminders still go out. "Run one pass now" always runs.
+
+**Time zone**: one setting for the whole system (Settings > Agent & sending > Time zone, Pakistan by default). It decides
+the agent's working hours, the hours offered on the booking page, the times the assistant reads and writes, and the zone
+of a meeting made without one. The dashboard itself shows times in the clock of the computer you are using.
+
+**Clean up Approvals**: the Clean up button on the Approvals page checks every waiting draft and lists the ones that
+should not go out as they are: the lead is closed or on the do-not-contact list, a lead rule now stops it (agencies move
+to the partner pipeline), the lead already replied, a newer draft for the same lead is waiting, or there is no address to
+send to. Drafts older than 14 days can be taken out too, and are then written again. You choose which groups to take out.
+Nothing is deleted: a draft is marked skipped and the lead's timeline says why.
 
 ## The assistant
 

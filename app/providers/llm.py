@@ -514,6 +514,33 @@ Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","website":"
     return out[:int(limit)]
 
 
+def find_owner(company, website=None, place=None, titles=()):
+    """The person who owns or runs this business, from public pages, with the page that says so.
+    Returns {name, title, source, email, phone, linkedin, confidence} or None. Nothing is guessed: no source page, no person."""
+    wanted = ", ".join(t for t in titles if t)[:200] or "owner, founder, general manager"
+    data = _web_json(f"""Who owns or runs this business? We want ONE real person to write to.
+Business: "{company}"{f' · website: {website}' if website else ''}{f' · location: {place}' if place else ''}
+Preferred roles, best first: {wanted}. If none of those can be found, the most senior person who represents the business (manager, director).
+Where to look: the business's own website (about, team, contact pages), its Google Business, Instagram, Facebook and LinkedIn pages,
+business registers, local news and interviews.
+Rules:
+- The person must be clearly tied to THIS business (same name elsewhere is not enough; check the location or website matches).
+- Never guess. Never build an email address from a pattern. Give an email or phone only when a public page shows it for this person or business.
+- If you cannot find a named person together with a page that names them in that role, reply {{"person": null}}.
+Reply with ONLY JSON: {{"person": {{"name": "full name", "title": "their role at the business", "source": "exact URL of the page that names them in this role",
+"email": "or null", "phone": "in international form, or null", "linkedin": "their linkedin.com/in/... profile, or null", "confidence": "high, medium or low"}}}}""", max_uses=4, max_tokens=1500)
+    p = data.get("person") or None
+    if not isinstance(p, dict):
+        return None
+    name, source = re.sub(r"\s+", " ", str(p.get("name") or "")).strip(), str(p.get("source") or "").strip()
+    if len(name) < 4 or " " not in name or name.lower() == (company or "").lower() or not source.startswith("http") or str(p.get("confidence") or "").lower().startswith("low"):
+        return None
+    email = str(p.get("email") or "").strip().lower()
+    return {"name": name[:80], "title": str(p.get("title") or "")[:100] or None, "source": source[:400], "email": email if re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", email) else None,
+            "phone": re.sub(r"[^\d+]", "", str(p.get("phone") or "")) or None,
+            "linkedin": str(p["linkedin"]).strip() if "linkedin.com/in/" in str(p.get("linkedin") or "") else None, "confidence": str(p.get("confidence") or "medium").lower()}
+
+
 def find_websites(companies):
     """The official website of each named company: {name: url}. Names it is not sure about are left out."""
     if not companies:

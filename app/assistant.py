@@ -104,7 +104,7 @@ def _clip(v, n=300):
 
 def _zone():
     try:
-        return ZoneInfo(db.setting("agent_timezone") or "UTC")
+        return ZoneInfo(db.setting("timezone") or "UTC")
     except Exception:
         return timezone.utc
 

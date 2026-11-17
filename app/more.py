@@ -117,10 +117,13 @@ def reports(days: int = 30, product: str = None):
     }
 
 
-def funnel(product=None):
+def funnel(product=None, linkedin=False):
     """Where leads are and where they drop out, for one pipeline or all: found, worth contacting, contacted, replied,
     replied positively, meeting, won. Each step is a subset of the one before."""
-    lw, largs = ("WHERE product=?", [product]) if product else ("", [])
+    conds, largs = (["leads.product=?"], [product]) if product else ([], [])
+    if linkedin:
+        conds.append(f"({M.LINKEDIN_SQL})"); largs = largs + M.LINKEDIN_ARGS
+    lw = "WHERE " + " AND ".join(conds) if conds else ""
     rows = db.q(f"SELECT id, stage, emails_sent, last_contacted_at, replied_at, product FROM leads {lw}", largs)
     met = {r["lead_id"] for r in db.q("SELECT DISTINCT lead_id FROM meetings WHERE lead_id IS NOT NULL AND status<>'cancelled'")}
     out_stages = ("disqualified", "needs_contact", "new")
@@ -132,7 +135,7 @@ def funnel(product=None):
              ("Replied", len(replied)), ("Replied positively", len(positive)), ("Meeting", len(meeting)), ("Won", sum(r["stage"] == "won" for r in rows))]
     partners = {k for k, p in db.products().items() if p.get("partner")}
     why, ruled = {}, set()
-    for a in db.q("SELECT a.lead_id, a.summary, a.payload FROM activities a JOIN leads l ON l.id=a.lead_id WHERE a.kind='blocked' AND a.summary LIKE 'Rule:%'" + (" AND l.product=?" if product else ""), largs):
+    for a in db.q("SELECT a.lead_id, a.summary, a.payload FROM activities a JOIN leads l ON l.id=a.lead_id WHERE a.kind='blocked' AND a.summary LIKE 'Rule:%'" + "".join(" AND " + c.replace("leads.", "l.") for c in conds), largs):
         name = "moved" if "partner pipeline" in a["summary"] else a["summary"][6:].split(". ")[0]
         why[name] = why.get(name, 0) + 1
         if name != "moved":
@@ -356,13 +359,169 @@ def similar_leads(lead_id: int, p: dict = Body(default={})):
     return {"added": len(res["imported"]), "skipped": res["skipped"]}
 
 
+# ---------- clean-up of the drafts waiting in Approvals ----------
+STALE_DAYS = 14
+CLEAN_KINDS = {  # kind: (what it says on the page, ticked by default)
+    "closed": ("The lead is closed, or asked not to be contacted", True),
+    "rule": ("A lead rule now stops this lead", True),
+    "replied": ("The lead has replied, or is already past outreach", True),
+    "duplicate": ("A newer draft for the same lead is waiting", True),
+    "no_address": ("The lead has no address or number to send it to", True),
+    "stale": (f"Written more than {STALE_DAYS} days ago (it is written again, fresh)", False),
+}
+
+
+def _approval_scan():
+    """Drafts in Approvals that should not go out as they are: [{id, lead_id, kind, company, action, hit}]."""
+    old = _iso(datetime.now(timezone.utc) - timedelta(days=STALE_DAYS))
+    out, seen = [], set()
+    for a in db.q("SELECT id, lead_id, channel, action, created_at FROM approvals WHERE state='pending' ORDER BY id DESC"):   # newest first
+        lead = db.one("SELECT * FROM leads WHERE id=?", (a["lead_id"],))
+        outreach = a["action"] not in ("reply", "followup")
+        key, kind, hit = (a["lead_id"], "outreach" if outreach else a["action"]), None, None
+        if not lead or lead["stage"] in ("opted_out", "disqualified", "lost") or compliance.is_suppressed(lead):
+            kind = "closed"
+        elif key in seen and outreach:
+            kind = "duplicate"
+        elif outreach and ((lead.get("replied_at") and lead["replied_at"] > a["created_at"]) or lead["stage"] in ("won", "meeting_booked", "replied", "reply_manually")):
+            kind = "replied"
+        elif outreach and not lead.get("phone" if a["channel"] == "phone" else "email"):
+            kind = "no_address"
+        elif outreach:
+            hit = rules.check(lead, network=False)
+            kind = "rule" if hit else "stale" if a["created_at"] < old else None
+        seen.add(key)
+        if kind:
+            out.append({"id": a["id"], "lead_id": a["lead_id"], "kind": kind, "company": (lead or {}).get("company") or "(deleted lead)", "action": a["action"], "hit": hit})
+    return out
+
+
+@router.get("/api/approvals-cleanup")
+def approvals_cleanup():
+    found, groups = _approval_scan(), []
+    for kind, (label, on) in CLEAN_KINDS.items():
+        mine = [p for p in found if p["kind"] == kind]
+        if mine:
+            groups.append({"kind": kind, "label": label, "drafts": len(mine), "on": on, "examples": [p["company"] for p in mine[:4]],
+                           "rules": sorted({p["hit"]["name"] for p in mine if p.get("hit")})})
+    return {"waiting": db.one("SELECT COUNT(*) n FROM approvals WHERE state='pending'")["n"], "found": len(found), "groups": groups}
+
+
+@router.post("/api/approvals-cleanup")
+def approvals_cleanup_apply(p: dict = Body(...)):
+    """Take the chosen kinds of draft out of Approvals. Nothing is deleted: each is marked skipped and its lead's timeline says why."""
+    kinds, out = set(p.get("kinds") or []), {"removed": 0, "rewrite": 0, "moved": 0}
+    for it in _approval_scan():
+        if it["kind"] not in kinds:
+            continue
+        lead = db.one("SELECT * FROM leads WHERE id=?", (it["lead_id"],))
+        if it["kind"] == "rule" and lead:
+            rules.apply(lead, it["hit"])   # the rule's own outcome: skipped, waits for a fix, paused, or moved to partners (drops the draft too)
+            out["moved"] += it["hit"]["outcome"] == "partner"
+        else:
+            db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE id=? AND state='pending'", (db.now(), it["id"]))
+            if lead:
+                db.log(lead["id"], "approval", f"Draft '{it['action']}' removed in the Approvals clean-up: {CLEAN_KINDS[it['kind']][0].lower()}", channel="agent")
+                if it["kind"] == "stale":
+                    db.update_lead(lead["id"], stage="in_sequence", next_action="rewrite", next_action_at=db.now())
+                    out["rewrite"] += 1
+                elif it["kind"] == "no_address" and lead["stage"] == "awaiting_approval":
+                    db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
+        out["removed"] += 1
+    db.log(None, "system", f"Approvals clean-up: {out['removed']} drafts removed" + (f", {out['rewrite']} to be written again" if out["rewrite"] else "")
+           + (f", {out['moved']} agencies moved to partners" if out["moved"] else ""), channel="system")
+    return {**out, "waiting": db.one("SELECT COUNT(*) n FROM approvals WHERE state='pending'")["n"]}
+
+
+# ---------- owners and decision-makers for a pipeline ----------
+@router.get("/api/owners")
+def owners_state(product: str = None):
+    return quality.people_state(product)
+
+
+@router.post("/api/owners")
+def owners_start(p: dict = Body(...)):
+    """Look for the owner or manager of each lead in a pipeline that has no named person yet."""
+    key = p.get("product")
+    if key not in db.products():
+        raise HTTPException(404, "unknown pipeline")
+    st = quality.people_state(key)
+    if not st["can"]["web"] and not st["can"]["finder"]:
+        raise HTTPException(400, "Nothing is connected that can look people up. Add ANTHROPIC_API_KEY (searches public pages), APOLLO_API_KEY or HUNTER_API_KEY on the server.")
+    if not st["waiting"]:
+        raise HTTPException(400, "Every lead in this pipeline already has a named person, or was looked up in the last 30 days.")
+    if not quality.people_start(key, int(p.get("limit") or 25)):
+        raise HTTPException(409, "A search for owners is already running. Wait for it to finish.")
+    return quality.people_state(key)
+
+
+# ---------- leads from LinkedIn ----------
+LI = {"running": False, "product": None, "started": None, "finished": None, "added": 0, "skipped": 0, "errors": [], "note": None}
+
+
+@router.get("/api/linkedin")
+def linkedin_page():
+    """Everything that came from LinkedIn (added from a profile, or found through a public post), with its own funnel."""
+    rows = db.q(f"SELECT id, source, stage, contact_name, email, phone, extra FROM leads WHERE {M.LINKEDIN_SQL}", M.LINKEDIN_ARGS)
+    live = [r for r in rows if r["stage"] not in ("disqualified", "opted_out", "lost")]
+    pipes = [{"key": k, "name": v.get("name") or k, "linkedin": bool((v.get("sources") or {}).get("linkedin")), "phrases": len((v.get("sources") or {}).get("intent") or [])}
+             for k, v in db.products().items()]
+    return {"funnel": funnel(linkedin=True), "search": dict(LI), "pipelines": pipes,
+            "counts": {"all": len(rows), "from_posts": sum(r["source"] != "linkedin" for r in rows), "from_profiles": sum(r["source"] == "linkedin" for r in rows),
+                       "with_email": sum(bool(r["email"]) for r in live), "with_phone": sum(bool(r["phone"]) for r in live),
+                       "no_contact": sum(not r["email"] and not r["phone"] for r in live)},
+            "can": {"search": llm.enabled(), "contacts": bool(os.environ.get("APOLLO_API_KEY"))}}
+
+
+@router.post("/api/linkedin/search")
+def linkedin_search(p: dict = Body(...)):
+    """Search public LinkedIn posts for people asking for what a pipeline sells, and add them as leads."""
+    import threading
+    key = p.get("product")
+    prod = db.products().get(key)
+    if not prod:
+        raise HTTPException(404, "unknown pipeline")
+    if not llm.enabled():
+        raise HTTPException(400, "Searching LinkedIn posts needs Claude's web search: set ANTHROPIC_API_KEY on the server.")
+    if llm.over_budget():
+        raise HTTPException(400, "Today's Claude budget is used up. Try tomorrow, or raise the budget in Settings.")
+    src = prod.get("sources") or {}
+    asks = [a if isinstance(a, dict) else {"query": a} for a in (src.get("intent") or [{"query": q} for q in (src.get("reddit") or [])[:2]])][:3]
+    if p.get("query"):
+        asks = [{"query": str(p["query"])[:200], "country": p.get("country") or ""}]
+    if not asks:
+        raise HTTPException(400, "This pipeline has no search phrases yet. Add some under Pipelines > edit > People asking for it, or type one here.")
+    if LI["running"]:
+        raise HTTPException(409, "A LinkedIn search is already running.")
+    LI.update(running=True, product=key, started=db.now(), finished=None, added=0, skipped=0, errors=[], note=None)
+
+    def run():
+        try:
+            for qd in asks:
+                try:
+                    rows = M._request_leads(qd["query"], qd.get("country") or "", 8, linkedin=True)
+                    res = M._import(rows, f"LinkedIn posts: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or "US"})
+                    LI["added"] += len(res["imported"]); LI["skipped"] += res["skipped"]
+                except Exception as e:
+                    LI["errors"].append(f"{qd['query']}: {str(e)[:200]}")
+            if not LI["added"] and not LI["errors"]:
+                LI["note"] = "No public LinkedIn post asking for this was found that could be checked. Most LinkedIn posts are not visible to search, so this is common: try a more specific phrase."
+        finally:
+            LI.update(running=False, finished=db.now())
+
+    threading.Thread(target=run, daemon=True).start()
+    return dict(LI)
+
+
 # ---------- AI phone calls ----------
 @router.get("/api/voice")
 def voice_status():
     out = voice.status()
+    out["budget"] = voice.budget()
     if out["connected"]:
         try:
             out["numbers"] = voice.numbers()
+            out["spent"], out["spent_source"], out["stopped"] = round(voice.spent(fresh=True), 2), voice._spent["source"], voice.over_budget()
         except RuntimeError as e:
             out["error"] = str(e)
     return out
@@ -385,6 +544,8 @@ def voice_test(p: dict = Body(...)):
     number = re.sub(r"[^\d+]", "", p.get("number") or "")
     if not re.fullmatch(r"\+\d{8,15}", number):
         raise HTTPException(400, "Enter the number in international form, for example +966501234567.")
+    if voice.over_budget():
+        raise HTTPException(400, f"Not called: {voice.over_budget()}. Raise the monthly call budget in Settings to go on.")
     try:
         cid = voice.call(number, "Test call", {"company": "your company", "contact_name": "", "opening": f"Hello, this is a test call from {db.setting('sender_name')}. Can you hear me clearly?",
                                                "talking_points": "This is only a test of the calling assistant. Ask how the line sounds, thank them, and end the call."})
@@ -543,7 +704,7 @@ _booked = {}   # ip -> times of recent bookings
 
 def _zone():
     try:
-        return ZoneInfo(db.setting("booking_timezone") or "UTC")
+        return ZoneInfo(db.setting("timezone") or "UTC")
     except Exception:
         return timezone.utc
 
@@ -646,7 +807,7 @@ def book(request: Request, p: dict = Body(...)):
     elif not lead.get("email"):
         db.update_lead(lead["id"], email=email)
     note = (p.get("note") or "").strip()[:1000]
-    tz = (p.get("tz") or db.setting("booking_timezone") or "UTC")[:60]
+    tz = (p.get("tz") or db.setting("timezone") or "UTC")[:60]
     f = {"title": f"{db.setting('booking_title')}: {lead['company'] if lead else name}", "starts_at": slot,
          "ends_at": _iso(datetime.fromisoformat(slot) + timedelta(minutes=length)), "timezone": tz, "attendees": [email],
          "description": (f"Booked online by {name}." + (f"\n\n{note}" if note else "")), "location": ""}

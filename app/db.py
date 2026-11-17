@@ -244,7 +244,8 @@ DEFAULT_SETTINGS = {
     "agent_days": "6,0,1,2,3",    # Python weekdays, Monday = 0: Sunday to Thursday
     "agent_start": "09:00",
     "agent_end": "18:00",
-    "agent_timezone": "Asia/Riyadh",
+    "agent_timezone": "Asia/Riyadh",   # no longer read: "timezone" below is the one time zone for everything
+    "timezone": "Asia/Karachi",        # the agent's working hours, the booking page's hours, the assistant and new meetings
     "booking_page_url": "",       # where your booking page lives on your own website, if it is embedded there
     "meeting_reminder_min": "60", # email a brief to whoever booked a meeting this many minutes before it (0 = off)
     "meeting_followup": "1",      # after a meeting, draft a follow-up email for approval
@@ -260,6 +261,7 @@ DEFAULT_SETTINGS = {
     "booking_days_ahead": "14",
     "daily_email_cap": "40",
     "daily_call_cap": "20",
+    "call_budget": "30",  # dollars of AI calls per calendar month; 0 = no limit
     "min_score": "55",
     "products": json.dumps(PRODUCTS),
     "default_product": "custom",
@@ -302,6 +304,25 @@ MIGRATIONS = [
 ID_TABLES = ("leads", "activities", "approvals", "users", "meetings", "tasks", "templates")  # tables whose INSERT returns a new id
 
 
+# What each pipeline searches for when nobody has set it up: people asking for it, and companies hiring for it.
+# Added to a saved pipeline only where it has no such list at all, so searches someone edited (or emptied) are left alone.
+SIGNAL_SEARCHES = {
+    "fixify": (["wordpress site hacked need help", "need a wordpress developer to fix my site"], ["wordpress developer"]),
+    "gym_club": (["looking for gym management software", "need a membership and billing system for my gym"], []),
+    "ai_waiter": (["looking for a QR ordering system for my restaurant", "restaurant online ordering system recommendation"], []),
+    "estimates": (["property management software recommendation", "need estimating software for maintenance jobs"], []),
+    "qapipeline": (["looking for a test management tool", "need help with QA automation"], ["QA engineer", "test automation engineer"]),
+    "rpa_finance": (["how to automate invoice processing", "accounts payable automation recommendation"], ["accounts payable specialist", "RPA developer"]),
+    "website_build": (["need a website for my business", "looking for someone to build a website"], []),
+    "web_mobile": (["looking for an app developer", "need an agency to build a mobile app"], ["react native developer", "flutter developer"]),
+    "ai_automation": (["looking for an AI automation developer", "need help automating a business process with AI"], ["AI engineer", "automation engineer"]),
+    "crm_erp": (["need an ERP for my business", "looking for a custom CRM developer"], ["Odoo developer", "ERP consultant"]),
+    "product_design": (["need a UI UX designer for my app"], ["product designer", "UI UX designer"]),
+    "security": (["need a penetration test for my company", "need help with SOC 2 compliance"], ["security engineer"]),
+    "custom": (["looking for a software development company to build custom software"], ["software engineer"]),
+}
+
+
 def products():
     """Saved pipelines, plus any default pipeline added in a newer version (never overwrites edits)."""
     try:
@@ -315,6 +336,11 @@ def products():
         else:
             for k in ("type", "sources"):
                 out[p["key"]].setdefault(k, p.get(k))
+    for key, (asks, jobs) in SIGNAL_SEARCHES.items():
+        if key in out:
+            src = out[key]["sources"] = dict(out[key].get("sources") or {})
+            src.setdefault("intent", [{"query": q, "country": "", "limit": 8} for q in asks])
+            src.setdefault("hiring", list(jobs))
     return out
 
 

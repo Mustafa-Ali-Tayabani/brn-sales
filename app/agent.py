@@ -142,7 +142,7 @@ def research_lead(lead):
                        research=json.dumps(draft, ensure_ascii=False), next_action="reply on the post", next_action_at=None)
         db.log(lead["id"], "research", f"Someone asked for this online. Drafted a reply for you to post: {draft.get('summary', '')}", payload=draft)
         return
-    hit = rules.check(lead)
+    hit = rules.check(lead, early=True)
     if hit:  # a rule from Settings > Rules stops this lead before any research is spent on it
         rules.apply(lead, hit)
         return
@@ -152,7 +152,7 @@ def research_lead(lead):
         return
     lead = scan_website(lead)
     lead = check_site(lead)
-    hit = rules.check(lead, network=False)
+    hit = rules.check(lead, network=False, early=True)
     if hit:  # the website shows this is a competitor, not a buyer
         rules.apply(lead, hit)
         return
@@ -165,7 +165,8 @@ def research_lead(lead):
     score = int(r.get("score") or 0)
     why = signal(lead)
     from . import quality
-    if (db.setting("dm_auto") == "1" and score >= int(db.setting("dm_min_score") or 60) and quality.needs_person(lead) and not lead.get("emails_sent")
+    hold_shared = rules.state()["builtin"]["role"]["on"]   # with "no shared mailboxes" on, every lead gets the search, not only the good ones
+    if (db.setting("dm_auto") == "1" and (score >= int(db.setting("dm_min_score") or 60) or hold_shared) and quality.needs_person(lead) and not lead.get("emails_sent")
             and "person_lookup" not in (json.loads(lead.get("extra") or "{}") or {})):
         found = quality.find_person(lead)   # a named decision-maker instead of info@, when a people finder is connected
         if found["found"]:
@@ -245,7 +246,7 @@ def deliver(lead, step, content, at):
             db.update_lead(lead["id"], stage="in_sequence", next_action_at=_iso(at + timedelta(hours=2)))
             return
         if res["status"] == "skipped":
-            db.log(lead["id"], "call_scheduled", f"Call not placed: AI calling isn't connected. Call {lead.get('phone') or 'them'} yourself (brief below), then set the status.",
+            db.log(lead["id"], "call_scheduled", f"Call not placed: {res.get('why') or 'AI calling is not connected'}. Call {lead.get('phone') or 'them'} yourself (brief below), then set the status.",
                    channel="phone", status="ok", payload={"transcript": "Call brief\n" + json.dumps(content, ensure_ascii=False, indent=2), "script": content})
         else:
             db.ex("UPDATE leads SET last_contacted_at=? WHERE id=?", (db.now(), lead["id"]))
@@ -446,7 +447,7 @@ def schedule_state(at=None):
     on: the master switch. scheduled: it only works inside set hours. active: it is working this minute."""
     at = at or datetime.now(timezone.utc)
     on, scheduled = db.setting("agent_enabled") == "1", db.setting("agent_schedule") == "1"
-    out = {"on": on, "scheduled": scheduled, "active": on, "next_start": None, "until": None, "timezone": db.setting("agent_timezone") or "UTC"}
+    out = {"on": on, "scheduled": scheduled, "active": on, "next_start": None, "until": None, "timezone": db.setting("timezone") or "UTC"}
     if not scheduled:
         return out
     try:

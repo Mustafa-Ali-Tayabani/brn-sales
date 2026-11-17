@@ -127,7 +127,9 @@ def required(method, path):
         return "view"
     if path == "/api/pipelines/suggest":
         return "settings"
-    if path.startswith("/api/agent") or path.endswith("/discover"):
+    if path.startswith("/api/owners"):
+        return "leads.write"
+    if path.startswith("/api/agent") or path.endswith("/discover") or path == "/api/linkedin/search":
         return "agent"
     if path.startswith("/api/approvals"):
         return "send"

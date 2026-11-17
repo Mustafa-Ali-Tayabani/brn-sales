@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
+from zoneinfo import ZoneInfo
+
 from . import agent, assistant, auth, compliance, db, email_template, invites, quality, rules
 from urllib.parse import quote
 
@@ -228,6 +230,11 @@ def brand(name: str):
 REPLIED_STAGES = ("replied", "meeting_booked", "won", "nurture", "lost", "opted_out")
 
 
+# A lead "came from LinkedIn" when it was added from a profile, or found through a public LinkedIn post.
+LINKEDIN_SQL = "leads.source='linkedin' OR leads.extra LIKE ? OR leads.extra LIKE ? OR leads.extra LIKE ?"
+LINKEDIN_ARGS = ["%linkedin.com/posts/%", "%linkedin.com/feed/%", '%"via_linkedin": true%']
+
+
 def _lead_filters(f):
     """Shared WHERE clause for lead lists, stats and exports. f is a dict of query params."""
     w, a = ["1=1"], []
@@ -262,6 +269,12 @@ def _lead_filters(f):
         w.append("(l.extra LIKE ? OR l.extra LIKE ? OR l.extra LIKE ? OR l.source='reddit')"); a += ['%"level": "asked"%', '%"level": "hiring"%', '%"level": "inbound"%']
     elif sig == "none":
         w.append("(l.extra IS NULL OR (l.extra NOT LIKE ? AND l.extra NOT LIKE ? AND l.extra NOT LIKE ?)) AND COALESCE(l.source,'')<>'reddit'"); a += ['%"level": "asked"%', '%"level": "hiring"%', '%"level": "inbound"%']
+    if f.get("person") == "named":
+        w.append("l.contact_name IS NOT NULL AND l.contact_name<>''")
+    elif f.get("person") == "missing":
+        w.append("(l.contact_name IS NULL OR l.contact_name='')")
+    if f.get("linkedin"):
+        w.append("(" + LINKEDIN_SQL.replace("leads.", "l.") + ")"); a += LINKEDIN_ARGS
     if f.get("has") == "email":
         w.append("l.email IS NOT NULL AND l.email<>''")
     elif f.get("has") == "phone":
@@ -345,7 +358,13 @@ def leads(request: Request):
                 (*args, limit, offset))
     for r in rows:  # why each lead is worth contacting, without sending the whole research blob to the page
         r["signal"] = agent.signal(r)
-        r.pop("extra", None)
+        x = r.pop("extra", None)
+        if f.get("linkedin"):  # the LinkedIn page shows the profile and the post each lead came from
+            try:
+                x = json.loads(x or "{}") or {}
+            except ValueError:
+                x = {}
+            r["extra"] = {"linkedin": x.get("linkedin"), "intent": {k: (x.get("intent") or {}).get(k) for k in ("url", "quote", "posted")} if x.get("intent") else None}
     return {"total": total, "rows": rows}
 
 
@@ -1042,7 +1061,7 @@ def _meeting_fields(p, old=None):
         ends = (datetime.fromisoformat(starts) + timedelta(minutes=max(5, int(p.get("duration_min") or 30)))).isoformat(timespec="seconds")
     else:  # moved without a new length: keep how long it was
         ends = (datetime.fromisoformat(starts) + (datetime.fromisoformat(old["ends_at"]) - datetime.fromisoformat(old["starts_at"]))).isoformat(timespec="seconds")
-    return {"title": title, "starts_at": starts, "ends_at": ends, "timezone": p.get("timezone") or old.get("timezone") or "UTC",
+    return {"title": title, "starts_at": starts, "ends_at": ends, "timezone": p.get("timezone") or old.get("timezone") or db.setting("timezone") or "UTC",
             "attendees": _attendees(p["attendees"]) if "attendees" in p else [a["email"] for a in json.loads(old.get("attendees") or "[]")],
             "description": p.get("description", old.get("description") or ""), "location": p.get("location", old.get("location") or "")}
 
@@ -1210,6 +1229,11 @@ def save_settings(payload: dict = Body(...)):
         raise HTTPException(400, "Send mode must be approval or live.")
     if payload.get("mode") == "live" and os.environ.get("BRN_ALLOW_LIVE") != "1":
         raise HTTPException(403, "Live sending is locked. Set BRN_ALLOW_LIVE=1 on the server once outreach is approved.")
+    if "timezone" in payload:
+        try:
+            ZoneInfo(str(payload["timezone"]))
+        except Exception:
+            raise HTTPException(400, f"\"{payload['timezone']}\" is not a time zone. Use a name like Asia/Karachi or Europe/London.")
     if "ai_balance" in payload and str(payload["ai_balance"]) != str(db.setting("ai_balance") or ""):
         db.set_setting("ai_balance_at", db.now())  # spend is counted from the moment the balance was entered
     for k, v in payload.items():
@@ -1259,18 +1283,22 @@ def voice_webhook(payload: dict = Body(...)):
         return {"ignored": True}  # status updates, transcripts while the call is running, ...
     call = msg.get("call") or {}
     meta = {**(call.get("metadata") or {}), **((call.get("assistantOverrides") or {}).get("metadata") or {}), **((msg.get("assistant") or {}).get("metadata") or {})}
+    cost = msg.get("cost") if msg.get("cost") is not None else call.get("cost")
+    voice._spent["value"] = None  # a call just ended: count the month again next time
     lead_id = meta.get("lead_id")
     if not lead_id and call.get("id"):
         row = db.one("SELECT lead_id FROM activities WHERE kind='call_completed' AND payload LIKE ? ORDER BY id DESC LIMIT 1", (f'%"provider_id": "{call["id"]}"%',))
         lead_id = row and row["lead_id"]
     if not lead_id or not db.one("SELECT 1 x FROM leads WHERE id=?", (int(lead_id),)):
+        if cost:  # a test call, or a lead since deleted: no lead to update, but the money still counts
+            db.log(None, "system", f"A call with no lead attached cost ${float(cost):.2f}", channel="phone", payload={"cost": cost, "call_id": call.get("id")})
         return {"ignored": True}
     analysis = msg.get("analysis") or call.get("analysis") or {}
     outcome = (analysis.get("structuredData") or {}).get("outcome") or msg.get("endedReason")
     artifact = msg.get("artifact") or {}
     db.log(int(lead_id), "call_completed", f"Call report: {outcome}" + (f". {analysis['summary']}" if analysis.get("summary") else ""), channel="phone", status="ok",
            payload={"transcript": msg.get("transcript") or artifact.get("transcript"), "recording": msg.get("recordingUrl") or artifact.get("recordingUrl"),
-                    "outcome": outcome, "summary": analysis.get("summary")})
+                    "outcome": outcome, "summary": analysis.get("summary"), "cost": cost})
     agent.apply_outcome(int(lead_id), outcome)
     return {"ok": True}
 
@@ -1324,7 +1352,7 @@ def _request_leads(need, country, limit, linkedin=False):
                      "source": "intent", "consent_basis": "legitimate_interest_b2b" if it["website"] or it["email"] else "public_post", "notes": f'They wrote: "{it["quote"]}"',
                      "extra": {"intent": {"level": "asked", "quote": it["quote"], "url": it["url"], "posted": it["posted"], "where": it["where"],
                                           "checked": "the quote was found on the page" if ok else "the page could not be opened to check the quote"},
-                               "found_by": need, **({"linkedin": it["profile"]} if it.get("profile") else {})}})
+                               "found_by": need, **({"linkedin": it["profile"]} if it.get("profile") else {}), **({"via_linkedin": True} if linkedin else {})}})
     with_site = [r for r in rows if r["extra"]["intent"]["url"] != r["website"] and not r.get("email")]
     if with_site:
         sources.enrich(with_site)   # their own site may publish a contact email
@@ -1473,10 +1501,10 @@ def pipelines():
     counts = {}
     for r in db.q("SELECT COALESCE(product,'') product, stage, COUNT(*) n FROM leads GROUP BY product, stage"):
         counts.setdefault(r["product"], {})[r["stage"]] = r["n"]
-    out = []
+    out, people = [], quality.people_counts()
     for k, p in db.products().items():
         src = p.get("sources") or {}
-        out.append({**p, "stages": counts.get(k, {}), "total": sum(counts.get(k, {}).values()), "last_run": runs.get(k),
+        out.append({**p, "stages": counts.get(k, {}), "total": sum(counts.get(k, {}).values()), "last_run": runs.get(k), "people": people.get(k, {"leads": 0, "named": 0, "ready": 0, "missing": 0}),
                     "source_count": len(src.get("places") or []) + len(src.get("reddit") or [])})
     return {"pipelines": out, "auto": db.setting("auto_discovery") == "1",
             "places_key": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
