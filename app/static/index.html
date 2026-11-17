@@ -266,7 +266,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
 @media(max-width:1100px){.steps{grid-template-columns:1fr 1fr}}
 .empty{text-align:center;padding:40px 20px}.empty h3{margin-bottom:8px;justify-content:center}
 @media(max-width:1100px){.stages{grid-template-columns:repeat(3,1fr);row-gap:14px}.grid2,.grid2e{grid-template-columns:1fr}}
-@media(max-width:900px){.side{position:static;width:auto;flex-direction:row;flex-wrap:wrap}.navlbl,.sublogo{display:none}.mode{display:none}main{margin:0;padding:16px}.stages{grid-template-columns:repeat(2,1fr)}.dlist{grid-template-columns:1fr}}
+@media(max-width:900px){.stages{grid-template-columns:repeat(2,1fr)}.dlist{grid-template-columns:1fr}}
 
 /* assistant chat */
 #ai-fab{position:fixed;right:22px;bottom:22px;width:56px;height:56px;border-radius:50%;background:var(--blue);color:#fff;border:0;box-shadow:0 8px 24px #010ecf66;z-index:30;font-size:24px;padding:0;justify-content:center}
@@ -282,9 +282,60 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
 .ai-m.a ul{margin:4px 0;padding-left:18px}.ai-m.a a{cursor:pointer;font-weight:600}.ai-m.t{color:var(--mut);font-style:italic}
 #ai-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 10px;background:var(--paper)}#ai-chips button{font-size:12px;padding:5px 10px;border-radius:99px}
 #ai-form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#fff}#ai-form textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;max-height:90px;height:38px!important;min-height:0!important}
+
+.drawer:not(.open){box-shadow:none}
+/* ---------- small screens: tablets and phones ---------- */
+.mbar,.navshade,.fbtn{display:none}
+@media(max-width:900px){
+  .mbar{display:flex;position:sticky;top:0;z-index:12;height:54px;align-items:center;gap:8px;padding:0 10px 0 6px;background:var(--ink);color:#fff}
+  .mbar .logo{margin:0;font-size:19px;flex:1}
+  .mbar button{all:unset;cursor:pointer;min-width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:10px;gap:6px;font-size:13px;color:#d9dae0}
+  .mbar button:active{background:#1a1c24}.mbar svg{width:22px;height:22px}
+  .side{width:min(84vw,300px);transform:translateX(-104%);transition:transform .22s ease;z-index:26;overflow-y:auto;padding:18px 12px}
+  body.navopen .side{transform:none;box-shadow:20px 0 60px #0006}body.navopen{overflow:hidden}
+  .navshade{position:fixed;inset:0;background:#0b0c1099;z-index:25}body.navopen .navshade{display:block}
+  .nav{padding:12px 12px}
+  main{margin:0;padding:14px 14px 96px;max-width:none}
+  .top{gap:8px;margin-bottom:14px}.top .ttl{flex:1 1 100%;min-width:0}.top h1{font-size:23px}
+  .top>button,.top .agentsw{font-size:13px}.top>button:not(.icon){padding:7px 12px}
+  .card:has(>table),.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  th,td{padding:9px 10px}
+  .kpis{grid-template-columns:1fr 1fr}.pgrid{grid-template-columns:1fr}.steps{grid-template-columns:1fr 1fr}
+  .hero{padding:16px}.stg{padding:4px 12px}
+  .fbtn{display:inline-flex}.fbox{display:none}.fbox.open{display:block}.fbox .fgrid{grid-template-columns:1fr 1fr}
+  .filters>input{min-width:0!important;flex:1 1 100%!important}
+  .kcol{flex-basis:min(84vw,320px);max-height:none}
+  .drawer{width:100%;padding:16px;z-index:22}
+  .modal{padding:0;align-items:stretch}.modal .box{width:100%;height:100dvh;max-height:100dvh;border-radius:0}.modal .bd{flex:1}
+  #ask{padding:16px;align-items:center}#ask .box{height:auto;max-height:86dvh;border-radius:16px}
+  .settabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}.settabs::-webkit-scrollbar{display:none}.settab{flex:none;white-space:nowrap}
+  .savebar{margin:14px 62px 0 0;bottom:10px;max-width:none}
+  #ai-fab{right:14px;bottom:14px;width:48px;height:48px;font-size:21px}
+  #ai-box{right:8px;left:8px;width:auto;max-width:none;bottom:70px;height:min(72dvh,560px)}
+  .compose{left:0;right:0;width:auto;max-height:100dvh;border-radius:0}
+  .frow2{grid-template-columns:104px 1fr 44px;gap:8px}
+  .toast{max-width:calc(100vw - 24px);text-align:center}
+  .trow{flex-wrap:wrap}.trow>button{margin-left:auto}
+  .cday{min-height:58px;padding:3px}
+}
+@media(max-width:640px){
+  .top .sub{display:none}
+  /* the lead buttons belong to the pages about leads; elsewhere they only push the page down */
+  body:not([data-view=overview]):not([data-view=leads]):not([data-view=pipelines]):not([data-view=linkedin]) .top>button[data-perm]{display:none}
+  body:has(.modal.open) #ai-fab,body:has(.drawer.open) #ai-fab,body.navopen #ai-fab{display:none}
+  #leads .cell2 b{overflow-wrap:anywhere}
+  input,select,textarea{font-size:16px}  /* phones zoom the page when a field's text is smaller than this */
+  #leads tr>*:nth-child(3),#leads tr>*:nth-child(4),#leads tr>*:nth-child(5),#leads tr>*:nth-child(6),#leads tr>*:nth-child(9),#leads tr>*:nth-child(10),#leads tr>*:nth-child(11){display:none}
+  #liBody table tr>*:nth-child(3),#liBody table tr>*:nth-child(5),#liBody table tr>*:nth-child(6){display:none}
+  .modal .fgrid,.frow{grid-template-columns:1fr}
+  .card{padding-left:14px;padding-right:14px}
+  .grid2,.grid2e{gap:12px}
+}
 </style>
 </head>
-<body>
+<body data-view="overview">
+<div class="mbar"><button onclick="navToggle(true)" aria-label="Open the menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><div class="logo">brn<b>.</b> pipeline</div><button onclick="show('approvals')" aria-label="Approvals">Approvals <span class="pill" id="napp2">0</span></button></div>
+<div class="navshade" onclick="navToggle(false)"></div>
 <aside class="side">
   <div class="logo">brn<b>.</b> pipeline</div><div class="sublogo">Sales agent</div>
   <div class="navlbl">Sell</div>
@@ -338,6 +389,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
     <div class="filters">
       <input id="lq" placeholder="Search company, email, website, notes" style="flex:1;min-width:220px" oninput="debounce(loadLeads)">
       <div class="ms" id="prodChips"></div>
+      <button class="fbtn" onclick="this.closest('section').querySelector('.fbox').classList.toggle('open')">Filters</button>
     </div>
     <div class="fbox">
       <div class="fgrid">
@@ -602,9 +654,10 @@ const prodTag=p=>p?`<span class="tag p">${esc(PRODUCTS[p]?.name||p)}</span>`:'<s
 function alertBanner(t,err){try{const j=JSON.parse(t);if(j.detail)t=j.detail}catch{}$('#banner').innerHTML=`<div class="banner ${err?'':'good'}">${esc(t)}</div>`;window.scrollTo({top:0,behavior:'smooth'});clearTimeout(window._bt);window._bt=setTimeout(()=>$('#banner').innerHTML='',err?20000:7000)}
 function openModal(title,html){$('#mTitle').textContent=title;$('#mBody').innerHTML=html;$('#modal').classList.add('open')}
 function closeModal(){$('#modal').classList.remove('open');$('#mBody').innerHTML=''}
-document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>{if(b.dataset.v=='settings')setCur=b.dataset.tab||(setCur=='people'?'agent':setCur);show(b.dataset.v)});
+const navToggle=o=>document.body.classList.toggle('navopen',!!o);
+document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>{navToggle(false);if(b.dataset.v=='settings')setCur=b.dataset.tab||(setCur=='people'?'agent':setCur);show(b.dataset.v)});
 const navOn=()=>document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('on',b.dataset.v==view&&(view!='settings'||(b.dataset.tab=='people')==(setCur=='people'))));
-function show(v){view=v;history.replaceState(null,'','#'+v+(v=='mail'&&MB.mode=='leads'&&mailLead?'/'+mailLead:''));navOn();
+function show(v){view=v;document.body.dataset.view=v;history.replaceState(null,'','#'+v+(v=='mail'&&MB.mode=='leads'&&mailLead?'/'+mailLead:''));navOn();
   document.querySelectorAll('main>section').forEach(s=>s.classList.toggle('hide',s.id!='v-'+v));
   if(v=='pipelines'&&!window._keepBoard)closeBoard(true);window._keepBoard=false;
   $('#title').textContent={overview:'Overview',pipelines:'Pipelines',leads:'Leads',linkedin:'LinkedIn leads',approvals:'Approvals',mail:'Mailbox',calendar:'Calendar',tasks:'Tasks',reports:'Reports & forecast',coach:'Email coach',log:'Activity log',settings:'Settings & automation'}[v];refresh()}
@@ -632,7 +685,7 @@ async function loadStats(){const s=await api('/api/stats'+(ovProduct?'?product='
   $('#spend').innerHTML=s.llm?`<div style="margin-top:4px">${usd(L.today)} today${L.budget?' of $'+L.budget.toFixed(2):''}</div>${L.budget?`<div class="meter"><i style="width:${pct}%"></i></div>`:''}${L.balance_left!=null?`<div style="margin-top:6px;cursor:pointer${L.balance_left<2?';color:#ff8a7a;font-weight:600':''}" title="Your Claude credit: the balance you entered minus what the agent has spent since. Click to update it." onclick="setCur='ai';show('settings')">≈ $${L.balance_left.toFixed(2)} Claude credit left${L.balance_left<2?' · top up soon':''}</div>`:can('settings')?`<div style="margin-top:6px;cursor:pointer;text-decoration:underline" onclick="setCur='ai';show('settings');setTimeout(()=>$('#s-ai_balance').focus(),400)">Add your Claude credit balance</div>`:''}`:'';
   $('#sysBanner').innerHTML=(!A.on?'<div class="banner"><span><b>The agent is stopped.</b> Nothing runs: no research, emails, calls, inbox reading or lead searches.</span><button class="sm x" onclick="toggleAgent()">Start agent</button></div>':'')
    +(s.llm&&L.over_budget?`<div class="banner">Today's Claude budget ($${L.budget.toFixed(2)}) is used up, so no outreach email is being written${L.waiting?`: ${L.waiting} lead${L.waiting==1?' waits':'s wait'} and will be drafted tomorrow`:''}. Raise it under Settings &gt; AI &amp; cost to carry on today. Answers to replies still get a short holding draft.</div>`:'')+(s.llm&&L.error?`<div class="banner"><span><b>Claude isn't answering right now</b>, so no outreach email is being drafted${L.waiting?`: ${L.waiting} lead${L.waiting==1?' waits':'s wait'} and will be written when it is back`:''}. Answers to replies still get a short holding draft. ${esc(L.error)} <span class="muted">(${fmt(L.error_at)}, retries every 10 minutes)</span></span></div>`:'');
-  $('#ncal').textContent=s.kpis.meetings_upcoming;$('#ntask').textContent=s.kpis.tasks_due;$('#ntask').classList.toggle('hot',s.kpis.tasks_due>0);const nm=s.kpis.inbox_unread??s.kpis.unread_mail;$('#nmail').textContent=nm;$('#nmail').classList.toggle('hot',nm>0);$('#napp').textContent=s.kpis.pending_approvals;$('#napp').classList.toggle('hot',s.kpis.pending_approvals>0);
+  $('#ncal').textContent=s.kpis.meetings_upcoming;$('#ntask').textContent=s.kpis.tasks_due;$('#ntask').classList.toggle('hot',s.kpis.tasks_due>0);const nm=s.kpis.inbox_unread??s.kpis.unread_mail;$('#nmail').textContent=nm;$('#nmail').classList.toggle('hot',nm>0);$('#napp').textContent=$('#napp2').textContent=s.kpis.pending_approvals;$('#napp2').classList.toggle('hot',s.kpis.pending_approvals>0);$('#napp').classList.toggle('hot',s.kpis.pending_approvals>0);
   $('#agentState').innerHTML=`<b style="font-size:13px"><span class="dot ${A.active?'':A.on?'rest':'off'}"></span>Agent ${agentNow(A).toLowerCase()}</b>`;
   if(!ovProduct)$('#nleads').textContent=s.kpis.leads;
   if(view!='overview')return;
