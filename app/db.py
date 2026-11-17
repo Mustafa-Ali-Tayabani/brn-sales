@@ -287,6 +287,7 @@ DEFAULT_SETTINGS = {
     "ai_balance_at": "",
     "ai_balance_base": "",        # everything spent up to the moment the balance was entered, so only later spending is subtracted
     "web_search_max_uses": "3",   # web searches one question may make
+    "ai_monthly_budget": "0",     # dollars of Claude per calendar month at most, across everything it does (0 = no monthly limit)
     "pipeline_runs": "{}",
     "sequence": json.dumps([
         {"day": 0, "channel": "email", "action": "intro"},

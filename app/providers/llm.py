@@ -39,6 +39,58 @@ def spent(since_day=None):
     return db.one(f"SELECT COALESCE(SUM(cost),0) c, COALESCE(SUM(calls),0) n FROM ai_usage WHERE day{op}?", (day,))
 
 
+_reported = {"at": 0.0, "data": None}
+
+
+def anthropic_reported(fresh=False):
+    """This month's spend as Anthropic itself reports it for the whole organisation, when an Admin API key is set
+    (ANTHROPIC_ADMIN_KEY). Their figure runs some hours behind, so it corrects the month's total; it cannot stop a
+    search the minute it happens. Returns {"month", "as_of", "error"} or None when no admin key is set."""
+    key = os.environ.get("ANTHROPIC_ADMIN_KEY")
+    if not key:
+        return None
+    if not fresh and _reported["data"] is not None and time.time() - _reported["at"] < 1800:
+        return _reported["data"]
+    import httpx
+    start = db.now()[:8] + "01T00:00:00Z"
+    try:
+        total, page, as_of = 0.0, None, None
+        for _ in range(10):
+            r = httpx.get("https://api.anthropic.com/v1/organizations/analytics/cost", params={"starting_at": start, "limit": 1000, **({"page": page} if page else {})},
+                          headers={"x-api-key": key, "anthropic-version": "2026-10-21", "anthropic-beta": "analytics-usage-cost-2026-08-24"}, timeout=12)
+            if r.status_code >= 400:
+                raise RuntimeError("Anthropic refused the admin key." if r.status_code in (401, 403) else f"Anthropic's cost report answered with error {r.status_code}: {r.text[:200]}")
+            body = r.json() or {}
+            total += sum(float((row.get("cost") or {}).get("amount") or 0) for row in body.get("data") or [])   # amounts are in cents
+            as_of = body.get("data_refreshed_at") or as_of
+            page = body.get("next_page")
+            if not (body.get("has_more") and page):
+                break
+        data = {"month": round(total / 100, 2), "as_of": as_of, "error": None}
+    except Exception as e:
+        data = {"month": None, "as_of": None, "error": str(e)[:300]}
+    _reported.update(at=time.time(), data=data)
+    return data
+
+
+def month_spent():
+    """Dollars spent on Claude this month: this app's own count, or Anthropic's figure when that is higher (it also
+    covers anything else that uses the same account, and anything the app's count missed)."""
+    mine = spent(db.now()[:8] + "01")["c"]
+    theirs = (anthropic_reported() or {}).get("month")
+    return max(mine, theirs or 0)
+
+
+def limit_reached():
+    """Which spending limit from Settings > AI & cost has been reached, as a sentence, or None."""
+    day, month = float(db.setting("ai_daily_budget") or 0), float(db.setting("ai_monthly_budget") or 0)
+    if month > 0 and month_spent() >= month:
+        return f"this month's Claude budget of ${month:.2f} is used up (${month_spent():.2f} spent)"
+    if day > 0 and spent()["c"] >= day:
+        return f"today's Claude budget of ${day:.2f} is used up"
+    return None
+
+
 def _usable(task="research"):
     if _client is None or time.time() < _cooldown_until:
         return False
@@ -48,10 +100,7 @@ def _usable(task="research"):
     if mode == "economy":
         if task not in ECONOMY_TASKS:
             return False
-    budget = float(db.setting("ai_daily_budget") or 0)
-    if budget > 0 and spent()["c"] >= budget:
-        return False
-    return True
+    return not limit_reached()
 
 
 class Unavailable(RuntimeError):
@@ -66,10 +115,7 @@ def writer_down(task="email"):
         return None
     if time.time() < _cooldown_until:
         return "Claude is not answering at the moment" + (f" ({db.setting('llm_error')})" if db.setting("llm_error") else "")
-    budget = float(db.setting("ai_daily_budget") or 0)
-    if budget > 0 and spent()["c"] >= budget:
-        return "today's Claude budget is used up"
-    return None
+    return limit_reached()
 
 
 SEARCH_PRICE = 10.0 / 1000     # dollars per web search (Anthropic: $10 per 1,000), on top of the tokens
@@ -123,6 +169,7 @@ def usage_report():
     return {"model": model(), "mode": db.setting("ai_mode"), "budget": float(db.setting("ai_daily_budget") or 0),
             "today": round(spent()["c"], 4), "today_calls": spent()["n"], "month": round(spent(today[:8] + "01")["c"], 4),
             "balance_entered": bal or None, "balance_at": bal_at or None, "balance_left": left,
+            "month_spent": round(month_spent(), 2), "month_budget": float(db.setting("ai_monthly_budget") or 0), "reported": anthropic_reported(), "limit": limit_reached(),
             "days": days, "tasks": tasks, "prices": PRICES.get(model()), "search_price": SEARCH_PRICE, "max_searches": max_searches(),
             "searches_month": db.one("SELECT COALESCE(SUM(COALESCE(searches,0)),0) n FROM ai_usage WHERE day>=?", (today[:8] + "01",))["n"]}
 
@@ -133,7 +180,7 @@ def status():
     return {"configured": enabled(), "model": model(), "error": db.setting("llm_error") or None,
             "error_at": db.setting("llm_error_at") or None, "cooling_down": enabled() and time.time() < _cooldown_until,
             "ai_mode": r["mode"], "today": r["today"], "budget": r["budget"], "balance_left": r["balance_left"],
-            "over_budget": r["budget"] > 0 and r["today"] >= r["budget"],
+            "over_budget": bool(limit_reached()), "limit": limit_reached(), "month": r["month_spent"], "month_budget": r["month_budget"],
             "waiting": db.one("SELECT COUNT(*) n FROM leads WHERE next_action='waiting_for_claude' AND stage='in_sequence'")["n"]}
 
 
@@ -576,8 +623,7 @@ def _home_market(country):
 
 
 def over_budget():
-    budget = float(db.setting("ai_daily_budget") or 0)
-    return budget > 0 and spent()["c"] >= budget
+    return bool(limit_reached())
 
 
 _search_block = {"until": 0.0, "why": ""}
@@ -624,9 +670,9 @@ def max_searches():
 
 
 def _budget_stop():
-    budget = float(db.setting("ai_daily_budget") or 0)
-    if budget > 0 and spent()["c"] >= budget:
-        raise RuntimeError(f"Today's Claude budget of ${budget:.2f} is used up, so no more web searches run today. Raise it under Settings > AI & cost to carry on.")
+    why = limit_reached()
+    if why:
+        raise RuntimeError(why[0].upper() + why[1:] + ", so no more web searches run. Raise it under Settings > AI & cost to carry on.")
 
 
 def _web_json(prompt, max_uses=None, max_tokens=3000):

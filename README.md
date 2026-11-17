@@ -118,6 +118,11 @@ web search reads (they are part of the text sent), and $10 per 1,000 web searche
 searches (Settings > AI & cost, 1 to 5). The daily budget applies to every search, including "Find leads now", Find
 owners and the LinkedIn search: once it is reached, nothing more is asked of Claude that day.
 
+**Monthly limit.** Settings > AI & cost > "Monthly budget": once that much is spent in the calendar month, Claude is not
+used again until the next month (no searches, no drafting; emails wait rather than going out in built-in wording). With an
+Admin API key in `ANTHROPIC_ADMIN_KEY`, the portal also reads what Anthropic itself reports for the month and holds the
+limit to whichever figure is higher. Anthropic's report runs a few hours behind, so it corrects the month, not the minute.
+
 **Claude credit.** Only what is spent after you enter the balance is subtracted from it. Anthropic gives an app no way to read the credit balance, so enter it once under Settings > AI & cost
 (and again after a top-up). What is left (the balance minus what the agent has spent since) shows at the bottom of the menu
 on every page and turns red under $2.

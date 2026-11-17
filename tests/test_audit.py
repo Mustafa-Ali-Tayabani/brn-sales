@@ -356,3 +356,59 @@ class Cost(Case):
         self.assertEqual(llm.usage_report()["balance_left"], 8.21)
         client.post("/api/settings", json={"ai_balance": "20"})
         self.assertEqual(llm.usage_report()["balance_left"], 20.0)
+
+
+class MonthlyLimit(Case):
+    def spend(self, dollars, day=None):
+        db.ex("INSERT INTO ai_usage(day, model, task, calls, input_tokens, output_tokens, cost) VALUES (?,?,?,?,?,?,?)", (day or db.now()[:8] + "01", "claude-haiku-5-5", "discovery", 1, 1, 1, dollars))
+
+    def test_the_month_has_its_own_limit(self):
+        db.set_setting("ai_monthly_budget", "5"); db.set_setting("ai_mode", "economy"); llm._client = object()
+        try:
+            self.spend(4.90)
+            self.assertIsNone(llm.limit_reached()); self.assertTrue(llm._usable("email"))
+            self.spend(0.20, day=db.now()[:8] + "02" if db.now()[8:10] != "02" else db.now()[:8] + "03")
+            self.assertEqual(llm.limit_reached(), "this month's Claude budget of $5.00 is used up ($5.10 spent)")
+            self.assertFalse(llm._usable("email")); self.assertTrue(llm.over_budget())
+            with self.assertRaisesRegex(RuntimeError, "This month's Claude budget of \\$5.00 is used up"):
+                llm._web_json("find")
+            i = main._insert({"company": "Wait Gym", "contact_name": "Sam", "email": "sam@waitgym.test", "product": "gym_club", "industry": "gym"})
+            for _ in range(2):
+                agent.tick(force=True)
+            self.assertEqual((self.lead("Wait Gym")["next_action"], db.one("SELECT COUNT(*) n FROM approvals")["n"]), ("waiting_for_claude", 0))   # no built-in wording sent instead
+            st = client.get("/api/stats").json()["llm_status"]
+            self.assertEqual((st["over_budget"], st["month_budget"], st["month"]), (True, 5.0, 5.1)); self.assertIn("this month", st["limit"])
+            client.post("/api/settings", json={"ai_monthly_budget": "20"})
+            self.assertIsNone(llm.limit_reached())
+        finally:
+            llm._client = None
+
+    def test_anthropics_own_figure_is_used_when_higher(self):
+        import os
+        import httpx
+        self.spend(1.57)
+        self.assertIsNone(llm.anthropic_reported())                                        # no admin key: nothing is asked
+        os.environ["ANTHROPIC_ADMIN_KEY"] = "sk-ant-admin-test"
+        seen = []
+        def get(url, params=None, headers=None, timeout=None):
+            seen.append((url, params, headers))
+            return Resp(200, {"data": [{"starting_at": "x", "cost": {"currency": "USD", "amount": "1300.000000", "list_amount": "1300.000000"}}, {"cost": {"amount": "24.000000"}}],
+                              "has_more": False, "data_refreshed_at": "2026-11-18T06:00:00Z"})
+        real, httpx.get = httpx.get, get
+        try:
+            r = llm.anthropic_reported()
+            self.assertEqual((r["month"], r["as_of"], r["error"]), (13.24, "2026-11-18T06:00:00Z", None))      # cents in, dollars out
+            self.assertEqual(seen[0][0], "https://api.anthropic.com/v1/organizations/analytics/cost")
+            self.assertEqual((seen[0][2]["x-api-key"], seen[0][2]["anthropic-beta"]), ("sk-ant-admin-test", "analytics-usage-cost-2026-08-24"))
+            self.assertTrue(seen[0][1]["starting_at"].endswith("-01T00:00:00Z"))
+            self.assertEqual(llm.month_spent(), 13.24)                                     # their figure, not the app's 1.57
+            db.set_setting("ai_monthly_budget", "10")
+            self.assertIn("$13.24 spent", llm.limit_reached())
+            llm.anthropic_reported(); self.assertEqual(len(seen), 1)                        # asked once in half an hour, not on every page load
+            u = llm.usage_report(); self.assertEqual((u["month_spent"], u["reported"]["month"]), (13.24, 13.24))
+            httpx.get = lambda *a, **k: Resp(401, {"error": "bad key"})
+            bad = llm.anthropic_reported(fresh=True)
+            self.assertEqual((bad["month"], bad["error"]), (None, "Anthropic refused the admin key."))
+            self.assertEqual(llm.month_spent(), 1.57)                                      # falls back to the app's own count
+        finally:
+            httpx.get = real; os.environ.pop("ANTHROPIC_ADMIN_KEY", None)
