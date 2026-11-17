@@ -231,6 +231,8 @@ DEFAULT_SETTINGS = {
     "contact_grades": "C",        # lowest grade the agent contacts: C = everyone, B = skip C leads, A = only A leads
     "dm_auto": "1",               # look for a named decision-maker before emailing a shared mailbox (needs Apollo or Hunter)
     "dm_daily_cap": "20",         # lookups per day at most, to protect credits
+    "apollo_daily_cap": "30",     # Apollo credits per day at most, across searches, job ads and revealed emails (0 = no limit)
+    "apollo_usage": "",           # credits used per day, kept by the app
     "dm_min_score": "60",
     "dm_titles": "owner, founder, ceo, managing director, general manager, director, head",
     "nurture_days": "60",         # after "not now": how long to wait before drafting a check-in (0 = never)
@@ -323,6 +325,26 @@ SIGNAL_SEARCHES = {
 }
 
 
+# Apollo search per pipeline, used where a pipeline has no Apollo search of its own yet. Industries are Apollo's own names.
+# Each entry: industries, staff ranges, countries, job titles (most wanted first), hiring words, and optionally technologies / industries to leave out.
+_AG = ["information technology & services", "marketing & advertising", "design"]
+APOLLO_SEED = {
+    "gym_club": (["health, wellness & fitness"], ["20,500"], ["SA", "AE", "KW", "QA"], ["owner", "general manager", "operations manager"], ["membership manager", "front desk", "branch manager"], {}),
+    "estimates": (["real estate", "construction", "facilities services"], ["20,1000"], ["CH", "GB", "AE", "SA"], ["operations director", "head of maintenance", "managing director"], ["estimator", "maintenance coordinator"], {}),
+    "ai_waiter": (["restaurants", "hospitality", "food & beverages"], ["10,500"], ["AE", "SA", "KW", "QA"], ["owner", "f&b director", "operations manager"], ["restaurant manager", "waiter", "new branch"], {}),
+    "qapipeline": (["computer software", "internet"], ["50,1000"], ["US", "GB", "AE"], ["cto", "vp engineering", "head of qa", "qa lead"], ["qa engineer", "sdet", "test automation"], {"exclude_industries": _AG}),
+    "fixify": ([], ["2,50"], ["US", "GB", "CH"], ["owner", "office manager", "marketing manager"], ["web admin", "wordpress developer"], {"technologies": ["WordPress", "WooCommerce"]}),
+    "rpa_finance": (["retail", "hospital & health care", "facilities services", "restaurants"], ["200,100000"], ["SA", "AE", "KW", "GB"], ["cfo", "finance director", "head of accounts payable"], ["ap clerk", "accounts payable", "data entry"], {}),
+    "saas_crm_erp": (["wholesale", "logistics & supply chain", "hospital & health care"], ["50,500"], ["AE", "SA", "KW", "US"], ["coo", "ceo", "it manager"], ["erp consultant", "odoo", "operations analyst"], {}),
+    "product_design": (["computer software", "financial services"], ["10,200"], ["US", "GB", "AE"], ["founder", "ceo", "head of product"], ["product designer", "ux designer"], {}),
+    "custom_software": (["retail", "real estate", "logistics & supply chain"], ["50,500"], [], ["cto", "it manager", "coo"], ["full stack developer", "software engineer"], {"exclude_industries": _AG}),
+    "security_testing": (["financial services", "hospital & health care", "computer software"], ["20,500"], ["US", "GB", "AE", "SA"], ["cto", "ciso", "head of security", "compliance manager"], ["security engineer", "iso 27001", "soc 2", "compliance"], {}),
+    "white_label": (["information technology & services", "design", "marketing & advertising"], ["5,100"], [], ["founder", "ceo", "head of delivery"], [], {}),
+}
+# Thin pipelines: kept with their leads, but switched off until someone turns them on (no searches run for an inactive pipeline).
+INACTIVE_BY_DEFAULT = ("web_mobile", "new_websites", "website_build", "ai_automation", "crm_erp", "security", "custom_ai", "custom")
+
+
 def products():
     """Saved pipelines, plus any default pipeline added in a newer version (never overwrites edits)."""
     try:
@@ -341,6 +363,16 @@ def products():
             src = out[key]["sources"] = dict(out[key].get("sources") or {})
             src.setdefault("intent", [{"query": q, "country": "", "limit": 8} for q in asks])
             src.setdefault("hiring", list(jobs))
+    for key, p in out.items():
+        if key in APOLLO_SEED and "apollo" not in (p.get("sources") or {}):
+            ind, sizes, where, who, hiring, more = APOLLO_SEED[key]
+            p["sources"] = {**(p.get("sources") or {}), "apollo": {"industries": list(ind), "employee_ranges": list(sizes), "countries": list(where), "technologies": [], "keywords": [],
+                                                                   "job_titles": list(who), "hiring_keywords": list(hiring), "exclude_industries": [], "daily_limit": 25, "reveal_limit": 10, **more}}
+        p.setdefault("active", key not in INACTIVE_BY_DEFAULT)
+        if p.get("partner") or p.get("type") == "partner":   # a partner pipeline always carries both marks, however it was saved
+            p["partner"], p["type"] = True, "partner"
+        elif p.get("type") not in ("product", "service"):
+            p["type"] = "product"
     return out
 
 

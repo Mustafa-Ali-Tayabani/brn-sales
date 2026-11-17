@@ -146,6 +146,22 @@ def research_lead(lead):
     if hit:  # a rule from Settings > Rules stops this lead before any research is spent on it
         rules.apply(lead, hit)
         return
+    from . import prospect
+    from_apollo = bool(prospect._x(lead).get("apollo"))
+    if prospect.due(lead):   # found in Apollo: the person's email costs a credit, so it is only fetched for a lead that has earned it
+        lead, hold = prospect.reveal(lead)
+        if hold == "wait":   # today's credits are used up: try again tomorrow, without holding up the other new leads
+            tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=0, minute=10, second=0, microsecond=0)
+            db.update_lead(lead["id"], next_action="reveal_email", next_action_at=_iso(tomorrow))
+            return
+        hit = None if hold else rules.check(lead, early=True)   # the reveal also says what the company does: an agency is caught here
+        if hit:
+            rules.apply(lead, hit)
+            return
+    if from_apollo and not lead.get("email"):
+        db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
+        db.log(lead["id"], "stage_change", "Needs contact details: no verified email for this lead. Add one and move it back to 'new'.")
+        return
     if not (lead.get("email") or lead.get("phone")):
         db.update_lead(lead["id"], stage="needs_contact", next_action=None, next_action_at=None)
         db.log(lead["id"], "stage_change", "Needs contact details: no email or phone yet. Add one and move it back to 'new'.")
@@ -164,6 +180,9 @@ def research_lead(lead):
         return
     score = int(r.get("score") or 0)
     why = signal(lead)
+    if from_apollo and r.get("_engine") == "template":   # company facts say more than the built-in guess
+        score, reasons = prospect.fit(lead)
+        r["score"], r["score_reason"] = score, "; ".join(reasons[:5])
     from . import quality
     hold_shared = rules.state()["builtin"]["role"]["on"]   # with "no shared mailboxes" on, every lead gets the search, not only the good ones
     if (db.setting("dm_auto") == "1" and (score >= int(db.setting("dm_min_score") or 60) or hold_shared) and quality.needs_person(lead) and not lead.get("emails_sent")
@@ -484,7 +503,7 @@ def tick(at=None, force=False):
     done = 0
     if db.setting("agent_enabled") != "1" or not (force or active()):
         return 0
-    for lead in db.q("SELECT * FROM leads WHERE stage='new' LIMIT 25"):
+    for lead in db.q("SELECT * FROM leads WHERE stage='new' AND (next_action_at IS NULL OR next_action_at<=?) LIMIT 25", (_iso(at),)):
         research_lead(lead)
         done += 1
     due = db.q("SELECT * FROM leads WHERE stage='in_sequence' AND next_action_at IS NOT NULL AND next_action_at<=? ORDER BY COALESCE(grade,'C'), next_action_at LIMIT 50", (_iso(at),))  # best leads first

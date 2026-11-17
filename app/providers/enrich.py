@@ -93,13 +93,15 @@ def find_person(name=None, linkedin=None, company=None, domain=None, want_phone=
             note = "Apollo would not look up phone numbers (usually a plan or credit limit), so only emails were fetched."
     if r.status_code >= 400:
         raise _fail(r)
+    from . import apollo
+    apollo.spend("reveal", 1)
     data = r.json() or {}
     p = data.get("person")
     if not p or p.get("match_confidence") == "none":
         return None
     org = p.get("organization") or {}
     email = p.get("email") or ""
-    if "not_unlocked" in email or p.get("email_status") in ("unavailable", "bounced"):
+    if "not_unlocked" in email or p.get("email_status") != "verified":   # only an address Apollo has verified is used
         email = ""
     phones = _phones(p)
     if not phones and org.get("phone"):
@@ -168,13 +170,17 @@ def _apollo_person(domain, wanted):
         raise _fail(r)
     people = [(p, _rank(p.get("title"), wanted)) for p in (r.json() or {}).get("people") or [] if p.get("has_email")]
     people = sorted([x for x in people if x[1] is not None], key=lambda x: x[1])
+    from . import apollo
     for p, _ in people[:2]:   # revealing an email costs a credit: try the best match, then one more
+        if not apollo.room(1):
+            raise RuntimeError(f"Today's Apollo credit cap of {apollo.cap()} is used up.")
         m = httpx.post(f"{API}/people/match", params={"id": p["id"]}, headers=_headers(), timeout=40)
         if m.status_code >= 400:
             raise _fail(m)
+        apollo.spend("reveal", 1)
         person = (m.json() or {}).get("person") or {}
         email = (person.get("email") or "").lower()
-        if email and "not_unlocked" not in email and person.get("email_status") not in ("unavailable", "bounced"):
+        if email and "not_unlocked" not in email and person.get("email_status") == "verified":   # guessed or unavailable addresses are not used
             return {"contact_name": person.get("name") or p.get("first_name"), "title": person.get("title") or p.get("title"), "email": email,
                     "email_status": person.get("email_status"), "linkedin": person.get("linkedin_url"), "via": "Apollo"}
     return None

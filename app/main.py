@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 
 from zoneinfo import ZoneInfo
 
-from . import agent, assistant, auth, compliance, countries, db, email_template, invites, quality, rules
+from . import agent, assistant, auth, compliance, countries, db, email_template, invites, prospect, quality, rules
 from urllib.parse import quote
 
 from .providers import channels, enrich, inbox, intent, llm, mailbox, sources, voice
@@ -230,7 +230,7 @@ def brand(name: str):
 REPLIED_STAGES = ("replied", "meeting_booked", "won", "nurture", "lost", "opted_out")
 
 
-FROM = {"google_places": "Google Maps", "places": "Google Maps", "reddit": "Reddit post", "hiring": "Job ad", "web": "Web search", "linkedin": "LinkedIn profile",
+FROM = {"apollo": "Apollo", "google_places": "Google Maps", "places": "Google Maps", "reddit": "Reddit post", "hiring": "Job ad", "web": "Web search", "linkedin": "LinkedIn profile",
         "manual": "Added by hand", "csv": "Imported file", "file": "Imported file", "assistant": "Added by the assistant", "booking": "Booking page",
         "website": "Website enquiry", "inbound": "Wrote to us", "similar": "Similar company"}
 
@@ -1246,6 +1246,8 @@ def get_settings(request: Request):
             s[k] = json.loads(s[k])
         except Exception:
             pass
+    s["products"] = list(db.products().values())   # as the agent sees them: with pipelines added in a newer version (the partner pipeline) and each one's kind filled in
+    s.pop("apollo_usage", None)
     s["live_allowed"] = os.environ.get("BRN_ALLOW_LIVE") == "1"
     s["email_via"] = channels.email_provider()
     s["logo_effective"] = email_template.logo_url()
@@ -1507,6 +1509,15 @@ def discover_pipeline(key, sources_only=None):
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
                     out["errors"].append(f"People asking for '{qd.get('query')}': {e}")
+    if sources_only in (None, "apollo") and enrich.enabled() and prospect.apollo.has_filters(prospect.cfg(p)):
+        try:   # companies that match the pipeline's Apollo search, with the right person at each
+            found = prospect.discover(key, p)
+            res = _import(found["rows"], "apollo", {"product": key})
+            out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
+            out["notes"] += found["notes"]
+            out["apollo"] = {"added": len(res["imported"]), "credits": found["credits"], "how": found["how"]}
+        except Exception as e:
+            out["errors"].append(f"Apollo: {e}")
     jobs = src.get("hiring") or []
     if jobs and sources_only in (None, "hiring"):
         try:
@@ -1578,7 +1589,9 @@ def _auto_discover():
             except Exception as e:
                 db.log(None, "system", f"Auto-discovery '{qd.get('query')}' failed: {e}", channel="system", status="error")
     if db.setting("auto_discovery") == "1":
-        for key in db.products():
+        for key, p in db.products().items():
+            if not p.get("active", True):
+                continue   # switched off under Pipelines: its leads stay, no new ones are looked for
             try:
                 discover_pipeline(key)
             except Exception as e:

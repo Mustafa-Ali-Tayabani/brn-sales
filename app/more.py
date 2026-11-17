@@ -527,6 +527,39 @@ def linkedin_search(p: dict = Body(...)):
     return dict(LI)
 
 
+# ---------- Apollo ----------
+@router.get("/api/apollo/usage")
+def apollo_usage():
+    """Apollo credits used today and this month, by kind, and the daily cap."""
+    return M.prospect.apollo.usage()
+
+
+@router.post("/api/apollo/preview")
+def apollo_preview(p: dict = Body(...)):
+    """Run a pipeline's Apollo search without saving anything: the first ten companies and who would be contacted there.
+    The pipeline is sent as it stands in the editor, so a search can be tried before it is saved."""
+    pr = M.prospect
+    if not M.enrich.enabled():
+        raise HTTPException(400, "Apollo is not connected. Add APOLLO_API_KEY in Railway Variables.")
+    pipe = {**(db.products().get(p.get("key") or "") or {}), **{k: p[k] for k in ("titles", "sells_to_tech", "partner") if k in p},
+            "sources": {"apollo": p.get("apollo") or {}}}
+    if not pr.apollo.has_filters(pr.cfg(pipe)):
+        raise HTTPException(400, "Nothing to search for yet. Fill in at least one of: industries, company size, countries, technologies or keywords.")
+    try:
+        found = pr.discover(p.get("key") or "preview", pipe, limit=10, preview=True)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    rows = []
+    for r in found["rows"]:
+        a = r["extra"]["apollo"]
+        score, why = pr.fit({**r, "extra": json.dumps(r["extra"])}, pipe)
+        rows.append({"company": r["company"], "website": r.get("website"), "industry": r.get("industry"), "employees": a.get("employees"), "country": r.get("country"),
+                     "person": r.get("contact_name"), "title": r.get("title"), "has_email": a.get("has_email"), "hiring": bool(r["extra"].get("intent")),
+                     "agency": bool(r["extra"].get("vendor")), "score": score, "why": why})
+    db.log(None, "system", f"Apollo search previewed: {len(rows)} results, {found['credits']} credit(s)", channel="system")
+    return {"rows": rows, "notes": found["notes"], "credits": found["credits"], "how": found["how"], "usage": pr.apollo.usage()}
+
+
 # ---------- AI phone calls ----------
 @router.get("/api/voice")
 def voice_status():

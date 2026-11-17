@@ -187,6 +187,8 @@ def mailbox_status(lead):
     seen = extra.get("email_check") or {}
     if seen.get("email") == lead["email"].lower():
         return seen.get("status")
+    if extra.get("email_status") == "verified" and extra.get("contact_via") == "Apollo":
+        return "valid"   # Apollo already verified this mailbox when it revealed it: no second check, no Hunter needed
     from .providers import enrich
     today = db.now()[:10]
     if _verified["day"] != today:
@@ -253,8 +255,13 @@ def check(lead, network=True, rules=None, verify=True, early=False):
             extra = json.loads(lead.get("extra") or "{}") or {}
         except ValueError:
             extra = {}
-        why = extra.get("vendor") or sources.looks_like_vendor(lead.get("company"), lead.get("industry"), lead.get("segment") if lead.get("source") != "hiring" else "")
+        if (extra.get("apollo") or {}).get("industry") and "vendor" in extra:   # Apollo says what the company does: that decides it, not a guess from its name or site
+            why = extra["vendor"]
+        else:
+            why = extra.get("vendor") or sources.looks_like_vendor(lead.get("company"), lead.get("industry"), lead.get("segment") if lead.get("source") != "hiring" else "")
         if why and not (extra.get("intent") or {}).get("level") in ("asked", "inbound"):   # someone who asked us is a buyer, whatever they do
+            if str(why).startswith("Apollo lists"):
+                return hit("vendor", f"{why}, an industry that sells services like ours, so it is a competitor rather than a buyer.")
             return hit("vendor", f'It looks like a provider of similar services ("{why}"), so a competitor rather than a buyer.')
     if on("no_name") and not (lead.get("contact_name") or "").strip():
         return hit("no_name", "There is no contact name for this lead.")
