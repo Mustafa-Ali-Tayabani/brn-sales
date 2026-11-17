@@ -179,8 +179,7 @@ Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
 If the lead data includes website scan results (health score, issues), use the most concrete issue as the main hook.
 If the data includes "intent" (they asked for this, or are hiring for it), that is the hook: refer to what they said or the role they advertise.
 Score how likely they are to BUY this now, not how well they match a description: 85+ only with evidence of a current need (a request,
-a job ad, a concrete problem), 55-70 for a plain profile match, below 30 when the lead is itself a provider of similar services
-(agency, software house, consultancy, freelancer): those are competitors, not buyers, so also set "buyer" to false.
+a job ad, a concrete problem), 55-70 for a plain profile match. {"For this offer the buyers ARE agencies, software houses and consultancies: judge whether this one is likely to need outside delivery capacity, and set buyer to true." if db.products().get(product_key or "", {}).get("sells_to_tech") else 'Score below 30 when the lead is itself a provider of similar services (agency, software house, consultancy, freelancer): those are competitors, not buyers, so also set "buyer" to false.'}
 Return JSON: {{"summary": str, "pain_points": [str], "hooks": [str], "score": 0-100, "score_reason": str, "buyer": true|false, "language": "ar"|"en"}}""", 800, "research")
         except Exception as e:
             _note_error(e)

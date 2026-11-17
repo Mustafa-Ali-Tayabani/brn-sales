@@ -65,7 +65,7 @@ def grade(lead):
         why.append("Weak fit")
     if fb == "good":
         pts += 2; why.append("You marked it good")
-    if x.get("vendor") and sig not in ("asked", "inbound"):
+    if x.get("vendor") and sig not in ("asked", "inbound") and not db.products().get(lead.get("product") or "", {}).get("sells_to_tech"):
         return "C", ["Looks like a competitor"] + why
     if fb == "bad":
         return "C", ["You marked it bad"] + why

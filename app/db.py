@@ -203,6 +203,13 @@ PRODUCTS = [
     {"key": "custom", "name": "Custom software & AI", "type": "service",
      "pitch": "brn dynamics builds custom software: product design, SaaS, CRM/ERP, AI and automation, web and mobile apps. 80+ projects since 2019, 5.0 on Clutch.",
      "icp": "Growing businesses that need custom software or AI automation", "sources": {"places": [], "reddit": []}},
+    # Agencies are not customers for the pipelines above: they sell the same kind of work. Here they are the customer.
+    {"key": "white_label", "name": "White-label partner (agencies)", "type": "partner", "partner": True, "sells_to_tech": True,
+     "pitch": "brn dynamics works behind agencies as their white-label delivery team: product design, web and mobile apps, AI and automation, QA. "
+              "The agency keeps the client and the relationship; we build under their brand, to their process, with a named team. 80+ projects since 2019, 5.0 on Clutch.",
+     "icp": "Digital, marketing and design agencies, software houses and consultancies that need extra delivery capacity or skills they don't have in-house",
+     "titles": "founder, owner, managing director, head of delivery, operations director, partner",
+     "sources": {"places": [], "reddit": [], "intent": [{"query": "agency looking for a white label development partner", "country": "", "limit": 8}], "hiring": []}},
 ]
 
 DEFAULT_SETTINGS = {

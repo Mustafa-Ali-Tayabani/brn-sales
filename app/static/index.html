@@ -251,6 +251,8 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
 @media(max-width:1000px){.setwrap{grid-template-columns:1fr}.settabs{position:static;flex-direction:row;flex-wrap:wrap}.savebar{margin-left:0}}
 .rmx td,.rmx th{padding:8px 10px}.rmx input{width:16px;height:16px}.rmx td:first-child{font-size:13px}
 .grade{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;font:700 12px "Space Grotesk";flex:none}.grade.gA{background:var(--ok);color:#fff}.grade.gB{background:#e9f3ff;color:#0b5cad}.grade.gC{background:#efefe9;color:var(--mut)}
+.frow2{display:grid;grid-template-columns:150px 1fr 60px 150px;gap:12px;align-items:center;padding:7px 0;font-size:14px}.frow2 .fbar{height:22px;border-radius:7px;background:var(--line2);overflow:hidden}.frow2 .fbar i{display:block;height:100%;background:var(--blue);border-radius:7px}
+.frow2 b{text-align:right}.frow2 .fp{font-size:12px}@media(max-width:1100px){.frow2{grid-template-columns:120px 1fr 50px}.frow2 .fp{display:none}}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;z-index:30;font-size:13px;box-shadow:0 10px 30px #0005;animation:tin .2s ease-out}
 @keyframes tin{from{opacity:0;transform:translate(-50%,8px)}}
 .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px}
@@ -418,7 +420,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
   </section>
 
   <!-- REPORTS -->
-  <section id="v-reports" class="hide"><div class="filters"><div class="chips" id="repChips"></div></div><div id="repBody"></div></section>
+  <section id="v-reports" class="hide"><div class="filters"><div class="chips" id="repChips"></div><span style="flex:1"></span><select id="repPipe" onchange="repProduct=this.value;loadReports()"></select></div><div id="repBody"></div></section>
 
   <!-- EMAIL COACH -->
   <section id="v-coach" class="hide"><div id="coachNote"></div><div class="grid2e" style="align-items:start"><div id="coachLeft"></div><div id="coachRight"></div></div></section>
@@ -867,7 +869,7 @@ function cleanRender(s){if(!$('#cleanBody'))return clearInterval(cleanTimer);con
      <p class="muted" style="font-size:13px">Each company's home page is read once, so this takes a few minutes for a long list. You can close this window; it carries on.</p><button onclick="cleanDo('cancel')">Stop</button>`
    :s.applied!=null?`<div class="banner good"><span><b>${s.applied} ${s.applied==1?'lead was':'leads were'} set aside.</b> Nothing was deleted: each one's page says why, and you can move it back.</span></div><button onclick="cleanDo('start')">Check again</button>`
    :s.finished&&s.found?`<p style="margin-top:0"><b>${s.found} of ${s.total} leads</b> should not be contacted as they are:</p><table><tr><th>Why</th><th>Leads</th><th>For example</th></tr>${s.groups.map(g=>`<tr><td>${esc(g.reason)}</td><td><b>${g.leads}</b></td><td class="muted">${esc(g.examples.join(', '))}</td></tr>`).join('')}</table>
-     <div class="row" style="margin-top:14px"><button class="pri" data-perm="leads.delete" onclick="cleanDo('apply')">Set these ${s.found} aside</button><button onclick="cleanDo('start')">Check again</button><span class="hint" style="margin:0">Nothing is deleted. Wrong addresses wait under Needs contact; competitors and repeats are disqualified.</span></div>`
+     <div class="row" style="margin-top:14px"><button class="pri" data-perm="leads.delete" onclick="cleanDo('apply')">Set these ${s.found} aside</button><button onclick="cleanDo('start')">Check again</button><span class="hint" style="margin:0">Nothing is deleted. Wrong addresses wait under Needs contact; agencies move to the partner pipeline (or are skipped, as your rule says); repeats are set aside.</span></div>`
    :s.finished?`<div class="banner good"><span><b>All ${s.total} leads passed.</b> None breaks a rule or is entered twice.</span></div><button onclick="cleanDo('start')">Check again</button>`
    :`<p style="margin-top:0">This checks every lead the agent could still contact against your rules (wrong or dead addresses, competitors, throwaway inboxes and so on) and looks for companies entered more than once. You see what it finds before anything changes.</p><button class="pri" onclick="cleanDo('start')">Check my leads</button>`);
   clearInterval(cleanTimer);if(s.running)cleanTimer=setInterval(async()=>cleanRender(await api('/api/cleanup')),1500)}
@@ -885,13 +887,16 @@ let CUR='USD';const money=v=>v==null||v===''?'–':new Intl.NumberFormat([], {st
 const pct=v=>v==null?'–':v+'%';
 
 /* ---- reports & forecast ---- */
-let repDays=30;
-async function loadReports(){const r=await api('/api/reports?days='+repDays),t=r.totals,f=r.forecast;CUR=r.currency;
+let repDays=30,repProduct='';
+async function loadReports(){const r=await api('/api/reports?'+qs({days:repDays,...(repProduct?{product:repProduct}:{})})),t=r.totals,f=r.forecast,fu=r.funnel,top=fu.steps[0].leads||1;CUR=r.currency;
+  $('#repPipe').innerHTML='<option value="">All pipelines</option>'+r.pipelines.map(p=>`<option value="${p.key}" ${p.key==repProduct?'selected':''}>${esc(p.name)}</option>`).join('');
   $('#repChips').innerHTML=[[7,'7 days'],[30,'30 days'],[90,'90 days'],[365,'12 months']].map(([d,n])=>`<span class="chip ${repDays==d?'on':''}" onclick="repDays=${d};loadReports()">Last ${n}</span>`).join('');
   const tile=(n,v,s)=>`<div class="kpi"><span>${n}</span><b>${v}</b>${s?`<span>${s}</span>`:''}</div>`;
   const bar=v=>`<div class="mini" style="margin-top:5px"><i style="width:${Math.min(100,v||0)}%"></i></div>`;
   const tbl=(head,rows,empty)=>`<div class="tablewrap"><table><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr>${rows.join('')||`<tr><td colspan="${head.length}" class="muted">${empty}</td></tr>`}</table></div>`;
-  $('#repBody').innerHTML=`<div class="kpis">${tile('Emails sent',t.sent,t.leads_emailed+' leads')}${tile('Replies',t.replies,pct(t.rate)+' of emails')}${tile('Positive replies',t.positive,pct(t.positive_rate)+' of emails')}${tile('Meetings booked',t.meetings)}${tile('Deals won',t.won,money(t.won_value))}${tile('Bounced',t.bounced,pct(t.bounce_rate)+' of emails')}</div>
+  $('#repBody').innerHTML=`<div class="grid2"><div class="card"><h3>Funnel<span class="r">all leads${repProduct?'':` · ${fu.kinds.customers} customer ${fu.kinds.customers==1?'lead':'leads'}, ${fu.kinds.partners} partner`}</span></h3>${fu.steps.map((x,i)=>`<div class="frow2"><span class="fl">${x.name}</span><div class="fbar"><i style="width:${Math.max(x.leads?1.5:0,x.leads/top*100)}%"></i></div><b>${x.leads.toLocaleString()}</b><span class="muted fp">${i?(x.of_previous==null?'–':x.of_previous+'% of step before'):''}</span></div>`).join('')}</div>
+   <div class="card"><h3>Where leads drop out</h3>${fu.lost.length?`<table>${fu.lost.map(x=>`<tr><td>${esc(x.why)}</td><td style="text-align:right"><b>${x.leads}</b></td></tr>`).join('')}</table>`:'<p class="muted">Nothing has dropped out yet.</p>'}${fu.moved_to_partners?`<p class="muted" style="margin-top:10px">${fu.moved_to_partners} ${fu.moved_to_partners==1?'agency was':'agencies were'} moved to the partner pipeline instead of getting a customer email.</p>`:''}</div></div>
+   <div class="psec">Outreach in the period</div><div class="kpis">${tile('Emails sent',t.sent,t.leads_emailed+' leads')}${tile('Replies',t.replies,pct(t.rate)+' of emails')}${tile('Positive replies',t.positive,pct(t.positive_rate)+' of emails')}${tile('Meetings booked',t.meetings)}${tile('Deals won',t.won,money(t.won_value))}${tile('Bounced',t.bounced,pct(t.bounce_rate)+' of emails')}</div>
    <p class="muted" style="font-size:12px;margin:-6px 0 14px">Reply rates count each email once: of the emails sent in this period, how many got an answer so far. Recent emails may still be answered.</p>
    <div class="grid2e"><div class="card"><h3>By pipeline</h3>${tbl(['Pipeline','Sent','Replies','Reply rate','Meetings','Won'],r.by_pipeline.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${x.sent}</td><td>${x.replies}</td><td>${pct(x.rate)}${bar(x.rate)}</td><td>${x.meetings}</td><td>${x.won}${x.won_value?' · '+money(x.won_value):''}</td></tr>`),'No emails sent in this period')}</div>
     <div class="card"><h3>By email step</h3>${tbl(['Step','Sent','Replies','Positive','Reply rate'],r.by_step.map(x=>`<tr><td><b>${esc(x.name)}</b></td><td>${x.sent}</td><td>${x.replies}</td><td>${x.positive}</td><td>${pct(x.rate)}${bar(x.rate)}</td></tr>`),'No emails sent in this period')}</div></div>
@@ -978,12 +983,12 @@ function seqFromText(){try{SEQ=JSON.parse($('#s-sequence').value);seqRender()}ca
 let PL=[];const lines=(a)=>(a||[]).map(x=>typeof x=='string'?x:[x.query,x.country||'',x.limit||''].join(' | ')).join('\n');
 const unlines=(t,objs)=>t.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{if(!objs)return l;const[query,country,limit]=l.split('|').map(x=>x.trim());return{query,country:(country||'SA').toUpperCase(),limit:+limit||20}});
 function plRender(){$('#plList').innerHTML=PL.map((p,i)=>{const s=p.sources||{},src=[(s.intent||[]).length&&(s.intent.length+' search'+(s.intent.length>1?'es':'')+' for people asking'),(s.hiring||[]).length&&(s.hiring.length+' hiring signal'+(s.hiring.length>1?'s':'')),(s.places||[]).length&&(s.places.length+' map search'+(s.places.length>1?'es':'')),(s.web||[]).length&&(s.web.length+' web search'+(s.web.length>1?'es':'')),(s.reddit||[]).length&&(s.reddit.length+' intent phrase'+(s.reddit.length>1?'s':''))].filter(Boolean).join(' · ')||'no lead sources yet';
-   return `<div class="trow"><div style="flex:1;min-width:0"><div class="tt">${esc(p.name)} <span class="tag ${p.type=='service'?'g':'p'}">${esc(p.type||'product')}</span>${p.sequence?' <span class="tag g">own sequence</span>':''}</div><small class="muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.pitch||'')}</small><small class="muted">${src}</small></div><button class="sm" onclick="plEdit(${i})">Edit</button></div>`}).join('')
+   return `<div class="trow"><div style="flex:1;min-width:0"><div class="tt">${esc(p.name)} <span class="tag ${p.partner?'replied':p.type=='service'?'g':'p'}">${esc(p.partner?'partner':p.type||'product')}</span>${p.sequence?' <span class="tag g">own sequence</span>':''}</div><small class="muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.pitch||'')}</small><small class="muted">${src}</small></div><button class="sm" onclick="plEdit(${i})">Edit</button></div>`}).join('')
   +`<div class="row" style="margin-top:12px"><button onclick="plEdit(-1)">+ Add a pipeline</button></div>`}
 function plSync(){$('#s-products').value=JSON.stringify(PL,null,1);setDirty();plRender()}
 function plFromText(){try{PL=JSON.parse($('#s-products').value);plRender()}catch{alertBanner('The pipelines are not valid JSON',true)}}
 function plEdit(i){const p=i<0?{name:'',type:'product',pitch:'',icp:'',sources:{}}:PL[i],s=p.sources||{};
-  openModal(i<0?'New pipeline':'Edit pipeline',`<div class="fgrid"><div><label>Name</label><input id="pl-name" value="${esc(p.name)}"></div><div><label>Kind</label><select id="pl-type"><option value="product" ${p.type!='service'?'selected':''}>Product</option><option value="service" ${p.type=='service'?'selected':''}>Service</option></select></div></div>
+  openModal(i<0?'New pipeline':'Edit pipeline',`<div class="fgrid"><div><label>Name</label><input id="pl-name" value="${esc(p.name)}"></div><div><label>Kind</label><select id="pl-type"><option value="product" ${p.type!='service'&&!p.partner?'selected':''}>Product (sold to customers)</option><option value="service" ${p.type=='service'?'selected':''}>Service (sold to customers)</option><option value="partner" ${p.partner?'selected':''}>Partner: agencies we work behind (white label)</option></select></div></div>
    <label>Pitch (what the agent says you offer)</label><textarea id="pl-pitch" style="min-height:80px">${esc(p.pitch||'')}</textarea>
    <label>Ideal customer</label><input id="pl-icp" style="width:100%" value="${esc(p.icp||'')}">
    <label>Who to write to at these companies (job titles, best first; optional)</label><input id="pl-titles" style="width:100%" value="${esc(p.titles||'')}" placeholder="e.g. gym manager, operations manager, owner">
@@ -1006,9 +1011,10 @@ function plEdit(i){const p=i<0?{name:'',type:'product',pitch:'',icp:'',sources:{
 function plSave(i){const name=$('#pl-name').value.trim();if(!name)return alertBanner('Give the pipeline a name',true);
   const p=i<0?{key:name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'pipeline'}:PL[i];
   if(i<0){let k=p.key,n=2;while(PL.some(x=>x.key==p.key))p.key=k+'_'+n++}
+  if($('#pl-type').value=='partner'){p.partner=true;p.sells_to_tech=true}else delete p.partner;
   Object.assign(p,{name,type:$('#pl-type').value,pitch:$('#pl-pitch').value.trim(),icp:$('#pl-icp').value.trim()});
   if($('#pl-link').value.trim())p.booking_link=$('#pl-link').value.trim();else delete p.booking_link;
-  if($('#pl-tech').checked)p.sells_to_tech=true;else delete p.sells_to_tech;if($('#pl-titles').value.trim())p.titles=$('#pl-titles').value.trim();else delete p.titles;
+  if($('#pl-tech').checked||p.partner)p.sells_to_tech=true;else delete p.sells_to_tech;if($('#pl-titles').value.trim())p.titles=$('#pl-titles').value.trim();else delete p.titles;
   p.sources={...(p.sources||{}),intent:$('#pl-intent').value.split('\n').map(l=>l.split('|').map(x=>x.trim())).filter(x=>x[0]).map(([query,country,limit])=>({query,country:(country||'').toUpperCase(),limit:Math.min(+limit||8,15)})),hiring:unlines($('#pl-hiring').value,false),places:unlines($('#pl-places').value,true),web:unlines($('#pl-web').value,true),reddit:unlines($('#pl-reddit').value,false),linkedin:$('#pl-li').checked,only_without_website:$('#pl-nosite').checked,review_words:$('#pl-reviews').value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean),wordpress_only:$('#pl-wp').checked};
   if(i<0)PL.push(p);closeModal();plSync()}
 async function plSuggest(a){a.textContent='Thinking…';try{const r=await api('/api/pipelines/suggest',{method:'POST',body:{name:$('#pl-name').value,pitch:$('#pl-pitch').value,icp:$('#pl-icp').value}});
@@ -1017,7 +1023,7 @@ async function plSuggest(a){a.textContent='Thinking…';try{const r=await api('/
 async function plDel(i){if(!await ask('Delete the pipeline "'+PL[i].name+'"? Its leads stay, but without a pipeline.'))return;PL.splice(i,1);closeModal();plSync()}
 
 /* ---- rules ---- */
-let RULES=null;const ROUT={fix:['needs_contact','waits for a fix'],skip:['blocked','lead is skipped'],review:['pending_approval','paused for you']};
+let RULES=null;const ROUT={fix:['needs_contact','waits for a fix'],skip:['blocked','lead is skipped'],review:['pending_approval','paused for you'],partner:['replied','moved to partners']};
 async function loadVoice(){if(!can('settings')||!$('#voiceCard'))return;const v=await api('/api/voice');
   $('#voiceCard').innerHTML=!v.connected?`<p class="muted" style="margin:0 0 8px">Not connected. The agent can phone leads as a step of a sequence, in Arabic or English, and report what they said. Until then it leaves a call brief for you to phone by hand.</p>
      <ol class="muted" style="margin:0;padding-left:18px;font-size:13px"><li>Create an account at vapi.ai and copy the <b>private</b> API key.</li><li>Add it to the server as <code>VAPI_API_KEY</code>.</li>
@@ -1032,7 +1038,8 @@ async function voiceTest(b){if(!await ask('Call '+$('#vTest').value+' now? This 
 async function loadRules(){if(!can('settings'))return;RULES=await api('/api/rules');rulesRender();rulesIdeas()}
 function rulesRender(){if(!RULES)return;
   $('#rulesBuiltin').innerHTML=RULES.builtin.map((r,i)=>`<div class="rule"><input type="checkbox" class="sw" ${r.on?'checked':''} onchange="RULES.builtin[${i}].on=this.checked;setDirty();rulesRender()" title="${r.on?'On':'Off'}">
-    <div style="flex:1;min-width:0"><div class="tt">${esc(r.name)} <span class="tag ${ROUT[r.outcome][0]}">${ROUT[r.outcome][1]}</span></div><div class="hint" style="margin:2px 0 0">${esc(r.about)}</div>
+    <div style="flex:1;min-width:0"><div class="tt">${esc(r.name)} <span class="tag ${ROUT[r.choices&&r.value!='skip'?'partner':r.outcome][0]}">${ROUT[r.choices&&r.value!='skip'?'partner':r.outcome][1]}</span></div><div class="hint" style="margin:2px 0 0">${esc(r.about)}</div>
+    ${r.choices?`<select style="width:100%;margin-top:8px" ${r.on?'':'disabled'} onchange="RULES.builtin[${i}].value=this.value;setDirty();rulesRender()">${Object.entries(r.choices).map(([k,n])=>`<option value="${k}" ${k==(r.value||'partner')?'selected':''}>${esc(n)}</option>`).join('')}</select>`:''}
     ${'hint' in r?`<input style="width:100%;margin-top:8px" value="${esc(r.value)}" placeholder="${esc(r.hint)}" ${r.on?'':'disabled'} oninput="RULES.builtin[${i}].value=this.value;setDirty()">`:''}</div></div>`).join('');
   const opt=(o,sel)=>Object.entries(o).map(([k,n])=>`<option value="${k}" ${k==sel?'selected':''}>${esc(n)}</option>`).join('');
   $('#rulesCustom').innerHTML=(RULES.custom.map((c,i)=>`<div class="seqrow"><span class="muted">When</span><select onchange="RULES.custom[${i}].field=this.value;setDirty()">${opt(RULES.fields,c.field)}</select>
@@ -1358,7 +1365,7 @@ async function loadPipelines(){const r=await api('/api/pipelines');PIPES=r.pipel
     <div class="row" onclick="event.stopPropagation()"><button class="sm" onclick="findLeads('${p.key}',this)">Find leads now</button><button class="sm" onclick="openBoard('${p.key}')">Open board →</button></div></div>`};
   const note=!r.places_key?'<div class="banner">Map searches (businesses near you, businesses without a website) need a Google Places API key: add <b>GOOGLE_PLACES_API_KEY</b> in Railway Variables. Reddit intent search works without a key.</div>':'';
   $('#plist').innerHTML=note+`<div class="row" style="margin-bottom:4px"><button class="dark" onclick="openBoard('__all')">Open board with all leads</button></div><p class="muted" style="margin:10px 0 0">Every product and service runs as its own pipeline with its own pitch, sources and follow-up sequence. Automatic discovery is <b>${r.auto?'on (daily)':'off'}</b>.</p>`
-   +`<div class="psec">Products</div><div class="pgrid">${PIPES.filter(p=>p.type!='service').map(card).join('')}</div><div class="psec">Services</div><div class="pgrid">${PIPES.filter(p=>p.type=='service').map(card).join('')}</div>`}
+   +`<div class="psec">Products</div><div class="pgrid">${PIPES.filter(p=>p.type!='service'&&!p.partner).map(card).join('')}</div>${PIPES.some(p=>p.partner)?`<div class="psec">Partners (agencies we work behind)</div><div class="pgrid">${PIPES.filter(p=>p.partner).map(card).join('')}</div>`:''}<div class="psec">Services</div><div class="pgrid">${PIPES.filter(p=>p.type=='service').map(card).join('')}</div>`}
 async function findLeads(key,b){const t=b.textContent;b.disabled=true;b.textContent='Searching…';
   try{const r=await api(`/api/pipelines/${key}/discover`,{method:'POST'});alertBanner(`Found ${r.imported} new leads (${r.skipped} already known).`+(r.notes.length?' '+r.notes.join(' '):'')+(r.errors.length?' Problems: '+r.errors.join('; '):''),r.errors.length&&!r.imported);loadFacets();refresh()}
   finally{b.disabled=false;b.textContent=t}}

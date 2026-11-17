@@ -112,8 +112,43 @@ def reports(days: int = 30, product: str = None):
         "by_signal": [{"name": k, **v, "rate": _rate(v["replies"], v["sent"])} for k, v in sorted(how.items(), key=lambda x: -x[1]["sent"])],
         "by_person": [{"name": k, "sent": v["sent"], "replies": v["replies"], "rate": _rate(v["replies"], v["sent"]), "meetings": v.get("meetings", 0)}
                       for k, v in sorted(person.items(), key=lambda x: -(x[1]["sent"] + x[1].get("meetings", 0)))],
-        "forecast": forecast(product),
+        "forecast": forecast(product), "funnel": funnel(product),
+        "pipelines": [{"key": k, "name": p["name"], "partner": bool(p.get("partner"))} for k, p in prods.items()], "product": product or "",
     }
+
+
+def funnel(product=None):
+    """Where leads are and where they drop out, for one pipeline or all: found, worth contacting, contacted, replied,
+    replied positively, meeting, won. Each step is a subset of the one before."""
+    lw, largs = ("WHERE product=?", [product]) if product else ("", [])
+    rows = db.q(f"SELECT id, stage, emails_sent, last_contacted_at, replied_at, product FROM leads {lw}", largs)
+    met = {r["lead_id"] for r in db.q("SELECT DISTINCT lead_id FROM meetings WHERE lead_id IS NOT NULL AND status<>'cancelled'")}
+    out_stages = ("disqualified", "needs_contact", "new")
+    contacted = [r for r in rows if r["emails_sent"] or r["last_contacted_at"]]
+    replied = [r for r in contacted if r["replied_at"]] + [r for r in rows if r["replied_at"] and not (r["emails_sent"] or r["last_contacted_at"])]
+    positive = [r for r in replied if r["stage"] in ("replied", "meeting_booked", "won") or r["id"] in met]
+    meeting = [r for r in rows if r["stage"] in ("meeting_booked", "won") or r["id"] in met]
+    steps = [("Leads found", len(rows)), ("Worth contacting", sum(r["stage"] not in out_stages for r in rows)), ("Contacted", len(contacted) + sum(1 for r in replied if r not in contacted)),
+             ("Replied", len(replied)), ("Replied positively", len(positive)), ("Meeting", len(meeting)), ("Won", sum(r["stage"] == "won" for r in rows))]
+    partners = {k for k, p in db.products().items() if p.get("partner")}
+    why, ruled = {}, set()
+    for a in db.q("SELECT a.lead_id, a.summary, a.payload FROM activities a JOIN leads l ON l.id=a.lead_id WHERE a.kind='blocked' AND a.summary LIKE 'Rule:%'" + (" AND l.product=?" if product else ""), largs):
+        name = "moved" if "partner pipeline" in a["summary"] else a["summary"][6:].split(". ")[0]
+        why[name] = why.get(name, 0) + 1
+        if name != "moved":
+            ruled.add(a["lead_id"])
+    rest = [r for r in rows if r["id"] not in ruled]  # each lead is counted under one reason
+    moved = why.pop("moved", 0)  # agencies sent to the partner pipeline are still being worked, so they are not a loss
+    lost = {"Stopped by a rule: " + k: v for k, v in sorted(why.items(), key=lambda x: -x[1])[:6]}
+    lost.update({k: v for k, v in {"Scored too low to contact": sum(r["stage"] == "disqualified" for r in rest) ,
+                                   "No email or phone yet": sum(r["stage"] == "needs_contact" for r in rest),
+                                   "Sequence finished, no reply": sum(r["stage"] == "completed" for r in rest),
+                                   "Said no": sum(r["stage"] == "lost" for r in rest), "Asked us to stop": sum(r["stage"] == "opted_out" for r in rest),
+                                   "Kept under Nurture, not contacted": sum(r["stage"] == "nurture" and not r["replied_at"] for r in rest)}.items() if v > 0})
+    return {"steps": [{"name": n, "leads": v, "of_previous": _rate(v, steps[i - 1][1]) if i else None, "of_all": _rate(v, steps[0][1])} for i, (n, v) in enumerate(steps)],
+            "lost": [{"why": k, "leads": v} for k, v in lost.items()],
+            "moved_to_partners": moved,
+            "kinds": {"customers": sum(r["product"] not in partners for r in rows), "partners": sum(r["product"] in partners for r in rows)}}
 
 
 def forecast(product=None):

@@ -173,8 +173,9 @@ def research_lead(lead):
     if r.get("_engine") == "template" and why in ("asked", "inbound", "hiring"):  # built-in scoring knows nothing about intent: a stated need outranks a profile match
         score = max(score, {"asked": 90, "inbound": 92, "hiring": 78}[why])
         r["score"], r["score_reason"] = score, f"{SIGNALS[why].lower()}; {r.get('score_reason', '')}".strip("; ")
-    if r.get("buyer") is False:  # Claude judged it a provider of similar services
-        rules.apply(lead, {"rule": "vendor", "name": "Skip companies that sell services like ours", "outcome": "skip",
+    if r.get("buyer") is False and not db.products().get(lead.get("product") or "", {}).get("sells_to_tech"):  # Claude judged it a provider of similar services
+        rules.apply(lead, {"rule": "vendor", "name": "Never pitch companies that sell services like ours as customers",
+                           "outcome": "partner" if rules.state()["builtin"]["vendor"]["value"] != "skip" and rules.partner_pipeline() else "skip",
                            "reason": r.get("score_reason") or "It looks like a provider of similar services, not a buyer."})
         db.update_lead(lead["id"], research=json.dumps(r, ensure_ascii=False), score=score)
         return
@@ -279,6 +280,7 @@ def apply_outcome(lead_id, outcome):
 def run_step(lead, at):
     seq = db.sequence_for(lead)
     step = seq[lead["step"]]
+    lead = check_site(lead)   # a lead already in a sequence may never have had its site read
     hit = rules.check(lead) if step["channel"] == "email" else None
     if hit:  # rules are checked again before every email, so one switched on today also stops leads already in a sequence
         rules.apply(lead, hit)

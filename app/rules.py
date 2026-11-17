@@ -40,8 +40,9 @@ BUILTIN = [
      "about": "Addresses like noreply@ or donotreply@ are never read by anyone."},
     {"key": "disposable", "name": "Skip throwaway email services", "outcome": "skip", "default": True,
      "about": "Temporary inboxes such as Mailinator. Nobody real is behind them."},
-    {"key": "vendor", "name": "Skip companies that sell services like ours", "outcome": "skip", "default": True,
-     "about": "Software houses, web and app agencies, IT service firms and marketing agencies are competitors or resellers, not buyers. Judged from the company's own website and name. Pipelines marked as selling to tech companies are exempt."},
+    {"key": "vendor", "name": "Never pitch companies that sell services like ours as customers", "outcome": "skip", "default": True, "value": "partner",
+     "choices": {"partner": "Move them to the white-label partner pipeline, where they get the partnership pitch", "skip": "Skip them altogether"},
+     "about": "Software houses, web and app agencies, IT service firms and marketing agencies do not buy what you sell to customers. Judged from the company's own website and name. They never receive a customer email; you choose whether they are approached as partners instead."},
     {"key": "role", "name": "Hold shared mailboxes for review", "outcome": "review", "default": False,
      "about": "Addresses like info@, sales@ or support@ go to a shared inbox instead of a person. Paused so you can find a named contact first."},
     {"key": "free", "name": "Hold free email providers for review", "outcome": "review", "default": False,
@@ -186,7 +187,11 @@ def check(lead, network=True, rules=None, verify=True):
     st = rules or state()
     on = lambda k: st["builtin"][k]["on"]
     val = lambda k: st["builtin"][k]["value"]
-    hit = lambda key, reason: {"rule": key, "name": next(r["name"] for r in BUILTIN if r["key"] == key), "reason": reason, "outcome": next(r["outcome"] for r in BUILTIN if r["key"] == key)}
+    def hit(key, reason):
+        outcome = next(r["outcome"] for r in BUILTIN if r["key"] == key)
+        if key == "vendor" and val("vendor") != "skip" and partner_pipeline():
+            outcome = "partner"
+        return {"rule": key, "name": next(r["name"] for r in BUILTIN if r["key"] == key), "reason": reason, "outcome": outcome}
     email = (lead.get("email") or "").strip()
     local, _, domain = email.lower().rpartition("@")
     if email:
@@ -245,11 +250,40 @@ def describe(c):
 STAGE_FOR = {"fix": "needs_contact", "skip": "disqualified", "review": "paused"}
 
 
+def partner_pipeline():
+    """The pipeline where agencies are the customer (white label), if there is one."""
+    return next((k for k, p in db.products().items() if p.get("partner")), None)
+
+
 def apply(lead, hit):
     """Act on a rule that fired: move the lead, drop drafts waiting for it, and say why in its timeline."""
+    if hit["outcome"] == "partner":
+        return to_partner(lead, hit)
     db.update_lead(lead["id"], stage=STAGE_FOR[hit["outcome"]], next_action=None, next_action_at=None)
     db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action NOT IN ('reply','followup')", (db.now(), lead["id"]))
     db.log(lead["id"], "blocked", f"Rule: {hit['name']}. {hit['reason']}", channel="agent", status="blocked", payload={"rule": hit["rule"], "outcome": hit["outcome"]})
+
+
+def to_partner(lead, hit):
+    """A service provider is not a customer: move it to the partner pipeline and drop any customer email waiting for it.
+    One that never got an email starts fresh there, with the partnership pitch. One that already got a customer email is
+    paused, so a person decides whether a second, different approach is welcome."""
+    target = partner_pipeline()
+    try:
+        extra = json.loads(lead.get("extra") or "{}") or {}
+    except ValueError:
+        extra = {}
+    extra["moved_from"] = lead.get("product")
+    fresh = not lead.get("emails_sent")
+    fields = {"product": target, "segment": "Agency (possible partner)", "extra": json.dumps(extra, ensure_ascii=False), "next_action": None, "next_action_at": None,
+              "stage": "new" if fresh else "paused"}
+    if fresh:
+        fields.update(step=0, score=None, research=None)
+    db.update_lead(lead["id"], **fields)
+    db.ex("UPDATE approvals SET state='rejected', decided_at=? WHERE lead_id=? AND state='pending' AND action NOT IN ('reply','followup')", (db.now(), lead["id"]))
+    db.log(lead["id"], "blocked", f"Rule: {hit['name']}. {hit['reason']} Moved to the partner pipeline"
+           + ("." if fresh else ", and paused because it already received a customer email: start outreach by hand if you want to approach it as a partner."),
+           channel="agent", status="blocked", payload={"rule": hit["rule"], "outcome": "partner"})
 
 
 def preview(apply_now=False):

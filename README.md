@@ -143,6 +143,20 @@ before a lead is researched and before every email. A lead that breaks one waits
 its timeline says why. "Check current leads" shows what the rules would stop right now. Set `BRN_DNS_CHECK=0` to switch
 off the domain lookup.
 
+**Companies that sell what we sell never get a customer email.** Agencies, software houses and consultancies are spotted
+from their name, website and research. The rule "Never pitch companies that sell services like ours as customers" has two
+settings: move them to the partner pipeline (default) or skip them. It is checked when a lead is researched, before every
+email, and again when you approve a draft, so a customer pitch written earlier is not sent either.
+
+## Partners (white label)
+
+The **White-label partner (agencies)** pipeline is for agencies and tech partners we work behind: they keep the client,
+we deliver under their brand. It has its own pitch, ideal customer and search ("agency looking for a white label
+development partner"), and agencies are welcome there instead of being filtered out. An agency found by a customer
+pipeline is moved here and starts fresh with the partnership pitch. If it already received a customer email it is moved
+but paused, so it does not get a second, different pitch unless you start it by hand. In a pipeline's settings, Kind >
+"Partner" makes any pipeline behave this way.
+
 ## When the agent runs
 
 Settings > Agent & sending. The agent is on or off, and can be limited to working days and hours in a time zone you pick.
@@ -162,6 +176,10 @@ signed-in person's role does not allow.
 wins and bounces, broken down by pipeline, by email step, by subject-line version and by person. Rates are by cohort:
 of the emails sent in the period, how many were answered. Give a lead a **deal value** and **expected close** and the
 forecast shows open value, a likely figure (value x a chance for the lead's stage) and the months it falls in.
+
+The **funnel** at the top counts every lead through the steps: found, worth contacting, contacted, replied, replied
+positively, meeting, won, each with the share that made it from the step before, for all pipelines or one. Next to it,
+"Where leads drop out" lists the reasons: stopped by which rule, scored too low, no contact details, no reply, said no.
 
 **Subject line test**: each outreach email gets one of two subject lines, split evenly across leads; the report compares
 their reply rates. In Approvals you can switch a draft to the other version. Turn it off in Settings.

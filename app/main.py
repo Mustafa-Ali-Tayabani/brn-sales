@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import agent, assistant, auth, compliance, db, email_template, invites, quality
+from . import agent, assistant, auth, compliance, db, email_template, invites, quality, rules
 from urllib.parse import quote
 
 from .providers import channels, enrich, inbox, intent, llm, mailbox, sources, voice
@@ -1131,6 +1131,13 @@ def _decide(approval_id, approve, content=None):
     a = db.one("SELECT lead_id, action FROM approvals WHERE id=? AND state='pending'", (approval_id,))
     if not a:
         return "gone"
+    if approve and a["action"] not in ("reply", "followup"):
+        # a draft written before a rule existed (or before the company's site was read) must not slip out on approval
+        lead = agent.check_site(db.one("SELECT * FROM leads WHERE id=?", (a["lead_id"],)))
+        hit = rules.check(lead, network=False)
+        if hit:
+            rules.apply(lead, hit)
+            return f"Not sent. {hit['reason']}" + (" It was moved to the partner pipeline instead." if hit["outcome"] == "partner" else "")
     mark = db.one("SELECT COALESCE(MAX(id),0) n FROM activities")["n"]
     agent.decide(approval_id, approve, content)
     if not approve:
