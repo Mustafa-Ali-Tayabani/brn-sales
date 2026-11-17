@@ -36,8 +36,9 @@ def cfg(p):
 
 
 def titles(p):
-    """Job titles to look for, most wanted first: the pipeline's Apollo list, then its own titles, then the global list."""
-    own = cfg(p)["job_titles"] + [t.strip() for t in re.split(r"[,\n]", p.get("titles") or "") if t.strip()]
+    """Job titles to look for, most wanted first: the pipeline's own titles (what you typed in its editor), then the
+    titles that came with its Apollo search, then the global list."""
+    own = [t.strip() for t in re.split(r"[,\n]", p.get("titles") or "") if t.strip()] + cfg(p)["job_titles"]
     rest = [t.strip() for t in re.split(r"[,\n]", db.setting("dm_titles") or quality.DEFAULT_TITLES) if t.strip()]
     out = []
     for t in own + rest:

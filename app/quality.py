@@ -90,9 +90,9 @@ def backfill():
 # ---------- a named person ----------
 def titles_for(lead):
     p = db.products().get(lead.get("product") or "", {})
-    own = ((p.get("sources") or {}).get("apollo") or {}).get("job_titles") or []   # the pipeline's own list first, then its titles, then the global list
+    own = ((p.get("sources") or {}).get("apollo") or {}).get("job_titles") or []   # the pipeline's own titles first, then the ones that came with its Apollo search, then the global list
     own = own if isinstance(own, list) else re.split(r"[,\n]", str(own))
-    return [t for t in list(own) + re.split(r"[,\n]", (p.get("titles") or "") + "," + (db.setting("dm_titles") or DEFAULT_TITLES))]
+    return [t.strip() for t in re.split(r"[,\n]", p.get("titles") or "") + list(own) + re.split(r"[,\n]", db.setting("dm_titles") or DEFAULT_TITLES) if t.strip()]
 
 
 def domain_of(lead):

@@ -207,7 +207,7 @@ class Scoring(Case):
         p = db.products()
         self.assertEqual(prospect.titles(p["qapipeline"])[:4], ["cto", "vp engineering", "head of qa", "qa lead"])
         self.assertIn("founder", prospect.titles(p["qapipeline"]))                      # the global list follows
-        self.assertEqual(prospect.titles({"titles": "head chef", "sources": {}})[0], "head chef")
+        self.assertEqual(prospect.titles({"titles": "head chef", "sources": {"apollo": {"job_titles": ["owner"]}}})[:2], ["head chef", "owner"])   # what you typed on the pipeline comes first
         from app import quality
         self.assertEqual([t.strip() for t in quality.titles_for({"product": "qapipeline"})][:2], ["cto", "vp engineering"])
 
