@@ -112,7 +112,13 @@ for a named person at every lead that only has info@, sales@ and the like, befor
 person's own address goes ahead; one that does not is paused for you instead of being emailed. It is off by default,
 because many small businesses publish nothing but a shared address.
 
-**Claude credit.** Anthropic gives an app no way to read the credit balance, so enter it once under Settings > AI & cost
+**What Claude costs.** Each request's cost is worked out from the usage Anthropic returns with it: the text sent and
+written at the model's prices (cached text at its own rates, and Haiku's higher rate for very long prompts), the pages a
+web search reads (they are part of the text sent), and $10 per 1,000 web searches. One question may make at most three web
+searches (Settings > AI & cost, 1 to 5). The daily budget applies to every search, including "Find leads now", Find
+owners and the LinkedIn search: once it is reached, nothing more is asked of Claude that day.
+
+**Claude credit.** Only what is spent after you enter the balance is subtracted from it. Anthropic gives an app no way to read the credit balance, so enter it once under Settings > AI & cost
 (and again after a top-up). What is left (the balance minus what the agent has spent since) shows at the bottom of the menu
 on every page and turns red under $2.
 

@@ -72,36 +72,59 @@ def writer_down(task="email"):
     return None
 
 
+SEARCH_PRICE = 10.0 / 1000     # dollars per web search (Anthropic: $10 per 1,000), on top of the tokens
+LONG_PROMPT = {"claude-haiku-5-5": (100_000, 0.50, 2.50)}   # models that cost more per token once a prompt passes a size
+
+
+def cost_of(usage, m=None):
+    """(dollars, tokens in, tokens out, web searches) for one request, from the usage Anthropic returned with it.
+    Tokens in are everything the model read: the prompt, the pages its web searches brought back, and cached text.
+    Cached text is cheaper to read (a tenth) and dearer to store (a quarter more); each web search is charged on top."""
+    m = m or model()
+    pin, pout = PRICES.get(m, PRICES["claude-opus-5-5"])
+    g = lambda k: getattr(usage, k, None) or (usage.get(k) if isinstance(usage, dict) else 0) or 0
+    fresh, read, stored, out = g("input_tokens"), g("cache_read_input_tokens"), g("cache_creation_input_tokens"), g("output_tokens")
+    if m in LONG_PROMPT and fresh + read + stored > LONG_PROMPT[m][0]:
+        pin, pout = LONG_PROMPT[m][1:]
+    tools = g("server_tool_use")
+    searches = (getattr(tools, "web_search_requests", None) or (tools.get("web_search_requests") if isinstance(tools, dict) else 0) or 0) if tools else 0
+    dollars = (fresh * pin + read * pin * 0.1 + stored * pin * 1.25 + out * pout) / 1_000_000 + searches * SEARCH_PRICE
+    return dollars, fresh + read + stored, out, searches
+
+
 def _record(task, usage):
     m = model()
-    pin, pout = PRICES.get(m, PRICES["claude-opus-5-5"])
-    i, o = getattr(usage, "input_tokens", 0) or 0, getattr(usage, "output_tokens", 0) or 0
-    i += (getattr(usage, "cache_read_input_tokens", 0) or 0) + (getattr(usage, "cache_creation_input_tokens", 0) or 0)
-    cost = (i * pin + o * pout) / 1_000_000
-    db.ex("""INSERT INTO ai_usage(day, model, task, calls, input_tokens, output_tokens, cost) VALUES (?,?,?,1,?,?,?)
-             ON CONFLICT(day, model, task) DO UPDATE SET calls=calls+1, input_tokens=input_tokens+excluded.input_tokens,
-             output_tokens=output_tokens+excluded.output_tokens, cost=cost+excluded.cost""", (db.now()[:10], m, task, i, o, cost))
+    cost, i, o, searches = cost_of(usage, m)
+    db.ex("""INSERT INTO ai_usage(day, model, task, calls, input_tokens, output_tokens, cost, searches) VALUES (?,?,?,1,?,?,?,?)
+             ON CONFLICT(day, model, task) DO UPDATE SET calls=ai_usage.calls+1, input_tokens=ai_usage.input_tokens+excluded.input_tokens,
+             output_tokens=ai_usage.output_tokens+excluded.output_tokens, cost=ai_usage.cost+excluded.cost,
+             searches=COALESCE(ai_usage.searches,0)+excluded.searches""", (db.now()[:10], m, task, i, o, cost, searches))   # the table's name is spelled out: Postgres needs it
 
 
 def usage_report():
     """Spend per day (last 30 days), today, this month, and the estimated balance left."""
     today = db.now()[:10]
     month_ago = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
-    days = db.q("""SELECT day, SUM(calls) calls, SUM(input_tokens) input_tokens, SUM(output_tokens) output_tokens, SUM(cost) cost
+    days = db.q("""SELECT day, SUM(calls) calls, SUM(input_tokens) input_tokens, SUM(output_tokens) output_tokens, SUM(cost) cost, SUM(COALESCE(searches,0)) searches
                    FROM ai_usage WHERE day>=? GROUP BY day ORDER BY day DESC""", (month_ago,))
     tasks = db.q("SELECT task, SUM(calls) calls, SUM(cost) cost FROM ai_usage WHERE day>=? GROUP BY task ORDER BY cost DESC", (month_ago,))
     bal, bal_at = db.setting("ai_balance"), db.setting("ai_balance_at")
     left = None
     if bal and bal_at:
         try:
-            used = db.one("SELECT COALESCE(SUM(cost),0) c FROM ai_usage WHERE day>=?", (bal_at[:10],))["c"]
+            base = db.setting("ai_balance_base")
+            if base not in (None, ""):   # total spend at the moment the balance was typed in: only what came after is subtracted
+                used = max(0.0, db.one("SELECT COALESCE(SUM(cost),0) c FROM ai_usage")["c"] - float(base))
+            else:                        # a balance entered before this was recorded: the best that can be done is from that day on
+                used = db.one("SELECT COALESCE(SUM(cost),0) c FROM ai_usage WHERE day>=?", (bal_at[:10],))["c"]
             left = round(float(bal) - used, 2)
         except ValueError:
             left = None
     return {"model": model(), "mode": db.setting("ai_mode"), "budget": float(db.setting("ai_daily_budget") or 0),
             "today": round(spent()["c"], 4), "today_calls": spent()["n"], "month": round(spent(today[:8] + "01")["c"], 4),
             "balance_entered": bal or None, "balance_at": bal_at or None, "balance_left": left,
-            "days": days, "tasks": tasks, "prices": PRICES.get(model())}
+            "days": days, "tasks": tasks, "prices": PRICES.get(model()), "search_price": SEARCH_PRICE, "max_searches": max_searches(),
+            "searches_month": db.one("SELECT COALESCE(SUM(COALESCE(searches,0)),0) n FROM ai_usage WHERE day>=?", (today[:8] + "01",))["n"]}
 
 
 def status():
@@ -592,18 +615,35 @@ def explain(e):
     return msg
 
 
-def _web_json(prompt, max_uses=5, max_tokens=3000):
+def max_searches():
+    """How many web searches one question may make (Settings > AI & cost). Two or three is enough to find and check."""
+    try:
+        return max(1, min(int(db.setting("web_search_max_uses") or 3), 5))
+    except ValueError:
+        return 3
+
+
+def _budget_stop():
+    budget = float(db.setting("ai_daily_budget") or 0)
+    if budget > 0 and spent()["c"] >= budget:
+        raise RuntimeError(f"Today's Claude budget of ${budget:.2f} is used up, so no more web searches run today. Raise it under Settings > AI & cost to carry on.")
+
+
+def _web_json(prompt, max_uses=None, max_tokens=3000):
     """Ask Claude something it needs web search for, and return the JSON object it ends with."""
     if _client is None:
         raise RuntimeError("ANTHROPIC_API_KEY is not set, so web search is unavailable")
     if search_blocked():
         raise RuntimeError(search_blocked())
+    max_uses = min(int(max_uses or 99), max_searches())   # the ceiling counts for the whole question, also when it pauses and carries on
     msgs, text = [{"role": "user", "content": prompt}], ""
     for _ in range(4):  # a long search can pause: continue it
+        _budget_stop()   # the same daily limit whether the search was started by the schedule or by a button
         msg = None
         for n, tool in enumerate(list(WEB_TOOLS)):
             try:
-                msg = _client.messages.create(model=model(), max_tokens=max_tokens, messages=msgs, tools=[{"type": tool, "name": "web_search", "max_uses": max_uses}])
+                msg = _client.messages.create(model=model(), max_tokens=max_tokens, messages=msgs,
+                                              tools=[{"type": tool, "name": "web_search", "max_uses": max_uses, **({} if tool == "web_search_20250305" else {"allowed_callers": ["direct"]})}])
                 if n:   # the other version of the search tool is the one this model takes: use it first from now on
                     WEB_TOOLS.remove(tool); WEB_TOOLS.insert(0, tool)
                 break
@@ -714,21 +754,7 @@ def discover_businesses(query, country="US", limit=15):
     prompt = (f"Find up to {int(limit)} real, currently operating small businesses for this search: \"{query}\" (country: {country}). "
               "Use web search. Only include businesses that have their own website. Skip big chains, marketplaces, directories and social pages. "
               'Reply with ONLY JSON: {"businesses":[{"business":"name","url":"https://their-own-site","city":"city or null"}]}')
-    msgs = [{"role": "user", "content": prompt}]
-    text = ""
-    for _ in range(4):  # a long search can pause: continue it
-        msg = _client.messages.create(model=model(), max_tokens=3000, messages=msgs,
-                                      tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}])
-        if getattr(msg, "usage", None) is not None:
-            _record("discovery", msg.usage)
-        text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-        if getattr(msg, "stop_reason", None) != "pause_turn":
-            break
-        msgs = [msgs[0], {"role": "assistant", "content": msg.content}]
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise RuntimeError("web search returned no list")
-    items = json.loads(m.group(0)).get("businesses") or []
+    items = _web_json(prompt).get("businesses") or []   # the one way to search: budget, ceiling on searches and cost counting all apply
     rows, seen = [], set()
     for it in items:
         url = (it.get("url") or "").strip()

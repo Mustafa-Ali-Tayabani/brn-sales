@@ -285,6 +285,8 @@ DEFAULT_SETTINGS = {
     "ai_daily_budget": "0.50",
     "ai_balance": "",
     "ai_balance_at": "",
+    "ai_balance_base": "",        # everything spent up to the moment the balance was entered, so only later spending is subtracted
+    "web_search_max_uses": "3",   # web searches one question may make
     "pipeline_runs": "{}",
     "sequence": json.dumps([
         {"day": 0, "channel": "email", "action": "intro"},
@@ -298,6 +300,7 @@ DEFAULT_SETTINGS = {
 
 # Columns added after a table first shipped: (table, column, type). Applied on start when missing.
 MIGRATIONS = [
+    ("ai_usage", "searches", "INTEGER DEFAULT 0"),   # web searches Anthropic charged for
     ("leads", "product", "TEXT"), ("leads", "segment", "TEXT"), ("leads", "extra", "TEXT"),
     ("leads", "emails_sent", "INTEGER NOT NULL DEFAULT 0"), ("leads", "last_contacted_at", "TEXT"), ("leads", "replied_at", "TEXT"),
     ("leads", "mail_seen_at", "TEXT"),      # when a human last opened this lead's conversation in the Mailbox

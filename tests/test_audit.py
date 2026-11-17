@@ -273,3 +273,86 @@ class DeveloperList(Case):
             self.assertEqual(client.post("/api/inbound", json=body, headers={"origin": "https://www.brndynamics.com"}).status_code, 200)
         finally:
             db.set_setting("inbound_site", "")
+
+
+class Cost(Case):
+    def setUp(self):
+        super().setUp()
+        db.ex("DELETE FROM ai_usage")
+        for k, v in (("ai_model", "claude-haiku-5-5"), ("ai_daily_budget", "0.50"), ("ai_balance", ""), ("ai_balance_at", ""), ("ai_balance_base", ""), ("web_search_max_uses", "3"), ("ai_mode", "economy")):
+            db.set_setting(k, v)
+
+    def usage(self, i=0, o=0, read=0, stored=0, searches=0):
+        return types.SimpleNamespace(input_tokens=i, output_tokens=o, cache_read_input_tokens=read, cache_creation_input_tokens=stored,
+                                     server_tool_use=types.SimpleNamespace(web_search_requests=searches) if searches else None)
+
+    def client(self, seen, searches=2, tokens=40000):
+        outer = self
+        class Msg:
+            content = [types.SimpleNamespace(type="text", text='{"requests": [], "businesses": [], "sites": []}')]; stop_reason = "end_turn"
+            usage = outer.usage(i=tokens, o=500, searches=searches)
+        class Client:
+            class messages:
+                @staticmethod
+                def create(**k):
+                    seen.append(k["tools"][0]); return Msg
+        return Client
+
+    def test_cost_is_what_anthropic_reports(self):
+        cost, tin, tout, n = llm.cost_of(self.usage(i=40000, o=1000, searches=3), "claude-haiku-5-5")
+        self.assertEqual((tin, tout, n), (40000, 1000, 3))
+        self.assertAlmostEqual(cost, 40000 * 0.10 / 1e6 + 1000 * 0.50 / 1e6 + 3 * 0.01, 6)      # tokens (the pages read are in them) + $0.01 a search
+        self.assertAlmostEqual(llm.cost_of(self.usage(i=1000, read=10000, stored=2000), "claude-sonnet-5-5")[0], (1000 * 2 + 10000 * 2 * 0.1 + 2000 * 2 * 1.25) / 1e6, 8)
+        self.assertAlmostEqual(llm.cost_of(self.usage(i=150000, o=1000), "claude-haiku-5-5")[0], (150000 * 0.50 + 1000 * 2.50) / 1e6, 6)   # a long prompt costs more per token
+        self.assertAlmostEqual(llm.cost_of({"input_tokens": 100, "output_tokens": 10, "server_tool_use": {"web_search_requests": 1}}, "claude-haiku-5-5")[0], 0.010015, 6)
+
+    def test_searches_are_recorded_and_shown(self):
+        seen = []; llm._client = self.client(seen, searches=2)
+        try:
+            llm._web_json("find something")
+        finally:
+            llm._client = None
+        row = db.one("SELECT calls, searches, cost FROM ai_usage")
+        self.assertEqual((row["calls"], row["searches"]), (1, 2)); self.assertAlmostEqual(row["cost"], 40000 * 0.10 / 1e6 + 500 * 0.50 / 1e6 + 0.02, 6)
+        u = client.get("/api/ai/usage").json() if client.get("/api/ai/usage").status_code == 200 else llm.usage_report()
+        self.assertEqual((u["searches_month"], u["max_searches"]), (2, 3))
+
+    def test_every_search_is_held_to_the_ceiling(self):
+        seen = []; llm._client = self.client(seen)
+        try:
+            llm.find_requests("need a website"); llm.discover_businesses("gyms"); llm.find_websites(["Acme"]); llm.find_owner("Acme")
+            db.set_setting("web_search_max_uses", "2"); llm.find_requests("need a website")
+            db.set_setting("web_search_max_uses", "99"); llm.find_requests("need a website")
+        finally:
+            llm._client = None
+        self.assertEqual([t["max_uses"] for t in seen], [3, 3, 3, 3, 2, 5])
+        self.assertTrue(all(t["name"] == "web_search" for t in seen))
+
+    def test_the_daily_limit_also_stops_find_leads_now(self):
+        seen = []; llm._client = self.client(seen, searches=3, tokens=2_000_000)
+        try:
+            llm.discover_businesses("gyms in Riyadh")                                         # one very long search: about $1 spent, past the $0.50 limit
+            first = len(seen)
+            again = client.post("/api/pipelines/gym_club/discover").json()                   # the button
+            owner = None
+            try:
+                llm.find_owner("Acme")
+            except RuntimeError as e:
+                owner = str(e)
+        finally:
+            llm._client = None
+        self.assertGreaterEqual(llm.spent()["c"], 0.50)
+        self.assertEqual(len(seen), first)                                                    # nothing more was asked of Claude
+        self.assertTrue(any("budget" in x for x in again["notes"] + again["errors"]), again)
+        self.assertIn("Today's Claude budget of $0.50 is used up", owner)
+
+    def test_only_spending_after_the_balance_was_entered_is_subtracted(self):
+        db.ex("INSERT INTO ai_usage(day, model, task, calls, input_tokens, output_tokens, cost) VALUES (?,?,?,?,?,?,?)", (db.now()[:10], "claude-haiku-5-5", "email", 5, 1, 1, 1.30))
+        client.post("/api/settings", json={"ai_balance": "8.61"})
+        self.assertEqual(llm.usage_report()["balance_left"], 8.61)                            # what was spent earlier today is already out of the figure typed in
+        db.ex("UPDATE ai_usage SET cost=cost+0.40")
+        self.assertEqual(llm.usage_report()["balance_left"], 8.21)
+        client.post("/api/settings", json={"ai_balance": "8.61", "sender_name": "x"})         # saving other settings does not start the count again
+        self.assertEqual(llm.usage_report()["balance_left"], 8.21)
+        client.post("/api/settings", json={"ai_balance": "20"})
+        self.assertEqual(llm.usage_report()["balance_left"], 20.0)

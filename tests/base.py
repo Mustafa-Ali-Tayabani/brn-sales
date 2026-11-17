@@ -73,11 +73,11 @@ class Case(unittest.TestCase):
     """Each test starts with no leads, default settings, rules and pipelines, and a fresh stand-in Apollo."""
 
     def setUp(self):
-        for t in ("leads", "activities", "approvals", "suppression"):
+        for t in ("leads", "activities", "approvals", "suppression", "ai_usage"):
             db.ex(f"DELETE FROM {t}")
         for k in ("products", "rules", "apollo_usage"):
             db.set_setting(k, json.dumps(db.PRODUCTS) if k == "products" else "")
-        for k, v in (("ai_mode", "off"), ("mode", "approval"), ("min_score", "55"), ("dm_auto", "0"), ("apollo_daily_cap", "30"), ("contact_grades", "C"), ("lead_quality", "fit"), ("agent_enabled", "1")):
+        for k, v in (("ai_mode", "off"), ("mode", "approval"), ("min_score", "55"), ("dm_auto", "0"), ("apollo_daily_cap", "30"), ("ai_daily_budget", "0.50"), ("web_search_max_uses", "3"), ("contact_grades", "C"), ("lead_quality", "fit"), ("agent_enabled", "1")):
             db.set_setting(k, v)
         for k in ("pipeline_runs", "send_paused_until", "send_paused_why", "places_error", "inbound_key", "llm_error"):
             db.set_setting(k, "{}" if k == "pipeline_runs" else "")

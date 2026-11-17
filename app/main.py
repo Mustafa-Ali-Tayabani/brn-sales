@@ -1375,6 +1375,7 @@ def save_settings(payload: dict = Body(...)):
             raise HTTPException(400, f"\"{payload['timezone']}\" is not a time zone. Use a name like Asia/Karachi or Europe/London.")
     if "ai_balance" in payload and str(payload["ai_balance"]) != str(db.setting("ai_balance") or ""):
         db.set_setting("ai_balance_at", db.now())  # spend is counted from the moment the balance was entered
+        db.set_setting("ai_balance_base", db.one("SELECT COALESCE(SUM(cost),0) c FROM ai_usage")["c"])
     changed = []
     for k, v in payload.items():
         if k in db.DEFAULT_SETTINGS and k != "ai_balance_at":
