@@ -31,6 +31,7 @@ class FakeApollo:
     def __init__(self):
         self.orgs, self.hiring_ids, self.people, self.ads, self.persons = [], set(), {}, {}, {}
         self.calls, self.no_company_search, self.rate_limited = [], False, []
+        self.no_people_search, self.reject_tech, self.odd = False, False, False
 
     def request(self, method, url, params=None, headers=None, timeout=None):
         q = {}
@@ -45,8 +46,16 @@ class FakeApollo:
             if self.no_company_search:
                 return Resp(403, {"error": "This endpoint is only available to Apollo users on paid plans."})
             orgs = [o for o in self.orgs if o["id"] in self.hiring_ids] if "q_organization_job_titles[]" in q else self.orgs
+            if self.reject_tech and "currently_using_any_of_technology_uids[]" in q:
+                return Resp(422, {"error": "invalid technology uid"})
+            if self.odd:   # a shape the documentation does not show
+                return Resp(200, {"organizations": [{"id": "o9", "name": "Odd Co", "primary_domain": "odd.sa", "primary_phone": "+966 11 000", "technology_names": [{"name": "WordPress"}, None]}, "junk", {"id": "o8"}], "accounts": None})
             return Resp(200, {"organizations": orgs})
         if path == "/mixed_people/api_search":
+            if self.no_people_search:
+                return Resp(403, {"error": "api/v1/mixed_people/api_search is not accessible with this api_key"})
+            if self.reject_tech and "currently_using_any_of_technology_uids[]" in q:
+                return Resp(422, {"error": "invalid technology uid"})
             if "organization_ids[]" in q:
                 return Resp(200, {"people": self.people.get(q["organization_ids[]"][0], [])})
             everyone = [p for ps in self.people.values() for p in ps]

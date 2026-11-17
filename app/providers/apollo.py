@@ -142,11 +142,14 @@ def has_filters(cfg):
 
 def _org(o):
     site = o.get("website_url") or (f"https://{o['primary_domain']}" if o.get("primary_domain") else None)
-    phone = o.get("sanitized_phone") or (o.get("primary_phone") or {}).get("sanitized_number") or o.get("phone")
+    pp = o.get("primary_phone")
+    phone = o.get("sanitized_phone") or (pp.get("sanitized_number") or pp.get("number") if isinstance(pp, dict) else pp if isinstance(pp, str) else None) or o.get("phone")
+    tech = o.get("technology_names") or o.get("current_technologies") or []
+    tech = [t.get("name") if isinstance(t, dict) else t for t in tech if t] if isinstance(tech, list) else []
     return {"id": o.get("id"), "name": o.get("name"), "domain": (o.get("primary_domain") or enrich_domain(site) or "").lower() or None, "website": site,
             "linkedin": o.get("linkedin_url"), "phone": phone, "industry": o.get("industry"), "employees": o.get("estimated_num_employees"),
             "country": o.get("country"), "city": o.get("city"), "founded": o.get("founded_year"), "funding": o.get("latest_funding_stage") or o.get("total_funding_printed"),
-            "technologies": [t for t in (o.get("technology_names") or [])][:30]}
+            "technologies": [str(t) for t in tech if t][:30]}
 
 
 def enrich_domain(url):
@@ -155,17 +158,61 @@ def enrich_domain(url):
     return host if "." in host else None
 
 
+DROPPED = []   # optional filters Apollo rejected during the last search, so the caller can say so
+
+
+def _search(path, p, credits=0, pipeline=None):
+    """Run a search. If Apollo rejects the request as invalid, try again without the technology filter, then without the
+    keywords: those two are the ones whose values Apollo is strict about. What was left out is recorded in DROPPED."""
+    try:
+        return _call("POST", path, p, credits=credits, kind="search", pipeline=pipeline)
+    except NoPlan:
+        raise
+    except RuntimeError as e:
+        if "422" not in str(e) and "invalid" not in str(e).lower():
+            raise
+        for name, key in (("technologies", "currently_using_any_of_technology_uids[]"), ("keywords", "q_organization_keyword_tags[]")):
+            if key in p:
+                p = {k: v for k, v in p.items() if k != key}
+                try:
+                    out = _call("POST", path, p, credits=credits, kind="search", pipeline=pipeline)
+                    DROPPED.append(name)
+                    return out
+                except NoPlan:
+                    raise
+                except RuntimeError:
+                    continue
+        raise
+
+
+def check():
+    """What this Apollo key can do, found out with one free call: [{"what", "ok", "detail"}]."""
+    out = [{"what": "API key is set on the server", "ok": enrich.enabled(), "detail": "" if enrich.enabled() else "Add APOLLO_API_KEY in Railway Variables, then press Deploy so the app receives it."}]
+    if not enrich.enabled():
+        return out
+    try:
+        data = _call("POST", "/mixed_people/api_search", {"person_titles[]": ["owner"], "page": 1, "per_page": 1})
+        out.append({"what": "Finding people (free)", "ok": True, "detail": f"Works. Apollo knows {int(data.get('total_entries') or 0):,} people with that title."})
+    except NoPlan as e:
+        out.append({"what": "Finding people (free)", "ok": False, "detail": f"Apollo refused. The key must be a master key: in Apollo, Settings > Integrations > API keys, create a key with \"Set as master key\" switched on. Apollo said: {e}"})
+    except RuntimeError as e:
+        out.append({"what": "Finding people (free)", "ok": False, "detail": str(e)})
+    out.append({"what": "Finding companies (1 credit per search)", "ok": None, "detail": "Not tried here because it costs a credit. It needs a paid Apollo plan; without one, people are searched for directly, which is free."})
+    return out
+
+
 def companies(cfg, limit=25, hiring=False, pipeline=None):
     """Companies matching a pipeline's filters (1 credit). hiring=True narrows to those with an open job ad matching its hiring words."""
     p = _filters(cfg)
     if hiring:
         p["q_organization_job_titles[]"] = [k.strip() for k in cfg.get("hiring_keywords") or [] if k.strip()]
-    data = _call("POST", "/mixed_companies/search", {**p, "page": 1, "per_page": max(1, min(int(limit), 100))}, credits=1, kind="search", pipeline=pipeline)
-    return [_org(o) for o in (data.get("organizations") or []) + (data.get("accounts") or []) if o.get("name")]
+    data = _search("/mixed_companies/search", {**p, "page": 1, "per_page": max(1, min(int(limit), 100))}, credits=1, pipeline=pipeline)
+    return [_org(o) for o in list(data.get("organizations") or []) + list(data.get("accounts") or []) if isinstance(o, dict) and o.get("name")]
 
 
 def _person(p, wanted):
-    org = p.get("organization") or {}
+    p = p if isinstance(p, dict) else {}
+    org = p.get("organization") if isinstance(p.get("organization"), dict) else {}
     return {"id": p.get("id"), "first_name": p.get("first_name"), "title": p.get("title"), "has_email": bool(p.get("has_email")), "rank": enrich._rank(p.get("title"), wanted),
             "company": org.get("name"), "org_id": p.get("organization_id") or org.get("id")}
 
@@ -186,7 +233,7 @@ def people(cfg, titles, limit=25, hiring=False):
     p = _filters(cfg, people=True)
     if hiring:
         p["q_organization_job_titles[]"] = [k.strip() for k in cfg.get("hiring_keywords") or [] if k.strip()]
-    data = _call("POST", "/mixed_people/api_search", {**p, "person_titles[]": wanted[:8], "include_similar_titles": "true", "page": 1, "per_page": max(1, min(int(limit), 100))})
+    data = _search("/mixed_people/api_search", {**p, "person_titles[]": wanted[:8], "include_similar_titles": "true", "page": 1, "per_page": max(1, min(int(limit), 100))})
     found = [_person(x, wanted) for x in data.get("people") or []]
     return [f for f in found if f["rank"] is not None and f["first_name"] and f["company"]]
 

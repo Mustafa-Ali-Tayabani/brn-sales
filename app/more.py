@@ -557,6 +557,12 @@ def apollo_usage():
     return M.prospect.apollo.usage()
 
 
+@router.get("/api/apollo/check")
+def apollo_check():
+    """Try the Apollo key with one free call and say, in plain words, what it can and cannot do."""
+    return {"checks": M.prospect.apollo.check()}
+
+
 @router.post("/api/apollo/preview")
 def apollo_preview(p: dict = Body(...)):
     """Run a pipeline's Apollo search without saving anything: the first ten companies and who would be contacted there.
@@ -572,6 +578,9 @@ def apollo_preview(p: dict = Body(...)):
         found = pr.discover(p.get("key") or "preview", pipe, limit=10, preview=True)
     except RuntimeError as e:
         raise HTTPException(400, str(e))
+    except Exception as e:   # an answer from Apollo in a shape this app did not expect: say so, with the detail, instead of a bare server error
+        db.log(None, "system", f"Apollo preview failed: {type(e).__name__}: {e}", channel="system", status="error")
+        raise HTTPException(400, f"Apollo answered in a way the app did not expect ({type(e).__name__}: {str(e)[:200]}). Nothing was saved. Please pass this message on so it can be fixed.")
     rows = []
     for r in found["rows"]:
         a = r["extra"]["apollo"]

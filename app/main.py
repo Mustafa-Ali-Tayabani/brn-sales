@@ -391,7 +391,7 @@ def leads(request: Request):
 def facets():
     def counts(col):
         return db.q(f"SELECT {col} value, COUNT(*) n FROM leads WHERE {col} IS NOT NULL AND {col}<>'' GROUP BY {col} ORDER BY n DESC")
-    return {"stage": counts("stage"), "custom_stages": custom_stages(), "product": counts("product"), "segment": counts("segment"),
+    return {"stage": counts("stage"), "custom_stages": custom_stages(), "countries_all": sorted(({"code": c, "name": n} for c, n in countries.NAMES.items()), key=lambda x: x["name"]), "product": counts("product"), "segment": counts("segment"),
             "country": [{**c, "name": countries.name(c["value"])} for c in counts("country")] + [{"value": "__none", "name": "Unknown", "n": db.one("SELECT COUNT(*) n FROM leads WHERE country IS NULL OR country='' OR country='--'")["n"]}],
             "source": [{**c, "name": came_from({"source": c["value"]}, {})} for c in counts("source")],
             "products": list(db.products().values())}

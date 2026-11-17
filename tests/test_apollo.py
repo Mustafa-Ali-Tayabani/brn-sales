@@ -249,3 +249,35 @@ class Seeds(Case):
         self.assertEqual(p["security_testing"]["sources"]["apollo"]["job_titles"][1], "ciso")
         self.assertEqual((p["custom_ai"]["active"], p["new_websites"]["active"], p["gym_club"]["active"]), (False, True, True))
         self.assertEqual((p["custom_ai"]["type"], p["security_testing"]["type"], p["estimates"]["type"], p["white_label"]["type"]), ("service", "service", "product", "partner"))
+
+
+class Problems(Case):
+    BODY = {"key": "gym_club", "apollo": {"industries": ["health, wellness & fitness"], "technologies": ["WordPress"], "job_titles": ["owner"]}}
+
+    def test_a_key_that_cannot_search_says_what_to_do(self):
+        self.ap.no_company_search = self.ap.no_people_search = True
+        r = client.post("/api/apollo/preview", json=self.BODY)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("master API key", r.json()["detail"]); self.assertIn("paid Apollo plan", r.json()["detail"])
+        checks = client.get("/api/apollo/check").json()["checks"]
+        self.assertEqual([c["ok"] for c in checks], [True, False, None]); self.assertIn("master key", checks[1]["detail"])
+
+    def test_connection_check_when_it_works(self):
+        self.ap.people = {"a": [person(1, "Faisal", "Owner", company="Iron Gym")]}
+        checks = client.get("/api/apollo/check").json()["checks"]
+        self.assertEqual([c["ok"] for c in checks], [True, True, None])
+        self.assertEqual(apollo.used(), 0)                                               # the check itself is free
+
+    def test_a_rejected_filter_is_left_out_and_reported(self):
+        self.ap.orgs, self.ap.reject_tech = [org(1, "Iron Gym", "irongym.sa")], True
+        self.ap.people = {"org1": [person(1, "Faisal", "Owner")]}
+        r = client.post("/api/apollo/preview", json=self.BODY)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["rows"][0]["company"], "Iron Gym")
+        self.assertIn("technologies filter", " ".join(r.json()["notes"]))
+
+    def test_an_unexpected_answer_does_not_break_the_search(self):
+        self.ap.odd = True
+        r = client.post("/api/apollo/preview", json=self.BODY)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual([x["company"] for x in r.json()["rows"]], ["Odd Co"])

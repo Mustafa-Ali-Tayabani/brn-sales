@@ -284,6 +284,36 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
 #ai-form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#fff}#ai-form textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;max-height:90px;height:38px!important;min-height:0!important}
 
 .drawer:not(.open){box-shadow:none}
+/* pipeline board */
+#pbPitch{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}#pbPitch.open{display:block}
+.bstats{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.bstat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 14px;min-width:92px;box-shadow:var(--sh)}
+.bstat b{display:block;font:700 19px "Space Grotesk";line-height:1.2}.bstat span{font-size:12px;color:var(--mut)}
+.bstat.act{cursor:pointer;transition:.15s}.bstat.act:hover{border-color:#c5c8f3}.bstat.sel{border-color:var(--blue);box-shadow:0 0 0 3px #010ecf1f}
+.btool{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.kcol{width:272px;min-width:0}.kcol .kh{min-width:0}.kcol .kh h4{min-width:0}
+.kcol.bare{flex:0 0 136px;width:136px;background:#f0f0eb}.kcol.bare .kh h4{white-space:normal;line-height:1.25}.kcol.bare .kb{min-height:0}.kcol.bare .kempty{padding:14px 6px;font-size:11px;border-color:#dcdcd5}
+.kcol.bare.over{flex-basis:272px;width:272px}
+.kcol .kh h4{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcard{padding:11px 12px}.kcard .t .sc{margin-left:6px;align-self:flex-start}
+.kcard .ft{margin-top:9px;gap:5px}.kcard .ft .tag{font-size:11px;padding:2px 8px}
+.kcard .who{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:12px;min-width:0}.kcard .who i{width:6px;height:6px;border-radius:50%;flex:none;background:#cfcfc8}.kcard .who i.ok{background:var(--ok)}
+.kcard .who span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kmore{all:unset;display:block;width:100%;box-sizing:border-box;text-align:center;padding:8px;font-size:12px;color:var(--blue);cursor:pointer;border-radius:10px}.kmore:hover{background:#fff}
+/* on/off settings as switches, and the Add a lead form */
+.tglrow{display:flex;gap:14px;align-items:flex-start;padding:13px 15px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;margin:10px 0;transition:border-color .15s,background .15s;user-select:none}
+.tglrow:hover{border-color:#c9c9c2}.tglrow.on{background:#f4fbf7;border-color:#bfe6cf}
+.tglrow .agentsw{border:0;padding:0;background:none;flex:none;margin-top:1px}
+.tglrow b{display:block;font-size:14px;font-weight:600}.tglrow small{display:block;color:var(--mut);font-size:12.5px;margin-top:2px;line-height:1.45}
+.tglrow .st{margin-left:auto;font-size:12px;font-weight:600;color:var(--mut);flex:none;padding-top:2px}.tglrow.on .st{color:var(--ok)}
+.frow>div>.tglrow{margin:22px 0 0}
+.alsec{border:1px solid var(--line);border-radius:14px;padding:4px 16px 16px;margin-bottom:12px;background:#fff}
+.alsec h4{font:600 11px "DM Sans";text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:14px 0 2px}
+.algrid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.algrid .wide{grid-column:1/-1}.algrid input,.algrid select{width:100%}
+.alerr{color:var(--bad,#b42318);font-size:12px;margin-top:4px;display:none}.bad+.alerr,.alerr.show{display:block}input.bad,select.bad{border-color:#e5484d;box-shadow:0 0 0 3px #e5484d22}
+.alfoot{position:sticky;bottom:-18px;margin:14px -20px -18px;padding:12px 20px;background:#fff;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.alnote{flex:1;min-width:200px;font-size:12.5px;color:var(--mut)}.alnote.go{color:var(--ok)}
+@media(max-width:640px){.algrid{grid-template-columns:1fr}}
 /* ---------- small screens: tablets and phones ---------- */
 .mbar,.navshade,.fbtn{display:none}
 @media(max-width:900px){
@@ -433,8 +463,9 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
     <div id="plist"></div>
     <div id="pboard" class="hide">
       <div class="row" style="margin-bottom:6px"><button class="ghost" onclick="closeBoard()">← Pipelines</button><h2 id="pbTitle" style="flex:1;font-size:22px"></h2>
-        <button id="pbFind" onclick="findLeads(pbKey,this)">Find leads now</button><button id="pbClean" onclick="openCleanup(pbKey=='__all'?'':pbKey)" title="Check this pipeline's leads against your rules and for repeats">Clean up leads</button><button onclick="appPipe=pbKey=='__all'?'':pbKey;show('approvals')" title="The drafts waiting for your approval in this pipeline">Its approvals</button><button onclick="lProduct=pbKey=='__all'?'':pbKey;show('leads');loadFacets()">Open as list</button></div>
-      <p class="muted" id="pbPitch" style="margin:0 0 14px;max-width:900px"></p>
+        <button id="pbFind" class="pri" onclick="findLeads(pbKey,this)">Find leads now</button><button id="pbClean" onclick="openCleanup(pbKey=='__all'?'':pbKey)" title="Check this pipeline's leads against your rules and for repeats">Clean up leads</button><button onclick="appPipe=pbKey=='__all'?'':pbKey;show('approvals')" title="The drafts waiting for your approval in this pipeline">Its approvals</button><button onclick="lProduct=pbKey=='__all'?'':pbKey;show('leads');loadFacets()">Open as list</button></div>
+      <p class="muted" id="pbPitch" style="margin:0 0 12px;max-width:900px" title="Click to read it all" onclick="this.classList.toggle('open')"></p>
+      <div class="bstats" id="pbStats"></div>
       <div class="btool"><input id="bq" placeholder="Search this board" oninput="renderBoard()" style="width:260px"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--mut)"><input type="checkbox" id="bEmpty" onchange="renderBoard()"> Hide empty columns</label><button class="sm" data-perm="settings" onclick="stageAdd()" title="Add a status of your own, for example Demo done or Proposal sent">+ New status</button>
         <span class="muted" style="font-size:12px;margin-left:auto">Drag a card to another column to change its status</span></div>
       <div class="board" id="board"></div>
@@ -517,7 +548,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
         <label>Pipeline for leads that have none</label><select id="s-default_product"></select></div>
       <div class="card"><h3>Finding leads</h3>
         <label>Who the agent contacts</label><select id="s-lead_quality" style="width:100%"><option value="fit">Anyone who fits a pipeline's ideal customer</option><option value="signal">Only leads with a sign they need it now (asked, hiring, a problem found, or wrote to us)</option></select>
-        <p class="hint">With the second option, leads found by map or web search that show no such sign are kept under Nurture and not emailed. Leads you add or import yourself are always contacted.</p>
+        <p class="hint">When this is on, leads found by map or web search that show no such sign are kept under Nurture and not emailed. Leads you add or import yourself are always contacted.</p>
         <div class="frow"><div><label>Lowest grade the agent contacts</label><select id="s-contact_grades"><option value="C">C: everyone who qualifies</option><option value="B">B: skip C leads</option><option value="A">A only</option></select></div>
           <div><label>After "not now", check in after (days)</label><input id="s-nurture_days" type="number" min="0"><p class="hint">0 = never. The check-in is drafted for your approval.</p></div></div>
         <label>Named contacts</label><select id="s-dm_auto" style="width:100%"><option value="1">Look for a named decision-maker before emailing a shared mailbox</option><option value="0">Don't look automatically (use the button on a lead)</option></select>
@@ -671,7 +702,7 @@ function useStages(list){CUSTOM=list||[];const own=CUSTOM.map(c=>c.key);
   STAGES.length=0;BASE_STAGES.forEach(k=>{if(k=='won')STAGES.push(...own);STAGES.push(k)});
   for(let i=KCOLS.length-1;i>=0;i--)if(KCOLS[i].startsWith('c_'))KCOLS.splice(i,1);KCOLS.splice(KCOLS.indexOf('meeting_booked')+1,0,...own);
   CUSTOM.forEach(c=>{SL[c.key]=c.name;SCOL[c.key]=c.color||'#7c5cff'})}
-async function loadFacets(){const f=await api('/api/leads/facets');useStages(f.custom_stages);PRODUCTS={};f.products.forEach(p=>PRODUCTS[p.key]=p);
+async function loadFacets(){const f=await api('/api/leads/facets');useStages(f.custom_stages);COUNTRIES=f.countries_all||[];PRODUCTS={};f.products.forEach(p=>PRODUCTS[p.key]=p);
   const opt=(arr,all)=>`<option value="">${all}</option>`+arr.map(x=>`<option value="${esc(x.value)}">${esc(x.name||SL[x.value]||PRODUCTS[x.value]?.name||x.value)} (${x.n})</option>`).join('');
   const keep=id=>{const v=$(id).value;return v};
   [['#f-stage',f.stage,'All statuses'],['#f-segment',f.segment,'All categories'],['#f-country',f.country,'All countries'],['#f-source',f.source,'All sources']].forEach(([id,arr,all])=>{const v=keep(id);$(id).innerHTML=opt(arr,all);$(id).value=v});
@@ -1113,7 +1144,9 @@ async function apPreview(b,i){const t=b.textContent;b.disabled=true;b.textConten
    $('#apPrev').innerHTML=`<p class="hint" style="margin-top:10px">${r.rows.length} result${r.rows.length==1?'':'s'} · ${r.credits} credit${r.credits==1?'':'s'} used (${r.usage.today}${r.usage.cap?' of '+r.usage.cap:''} today). Nothing was saved.${r.notes.length?' '+esc(r.notes.join(' ')):''}</p>`
     +(r.rows.length?`<div class="tablewrap" style="max-height:320px;overflow:auto"><table><tr><th>Company</th><th>Who</th><th>Fit</th><th>Why</th></tr>${r.rows.map(x=>`<tr><td><b>${esc(x.company)}</b>${x.hiring?' <span class="tag ok">hiring for it</span>':''}${x.agency?' <span class="tag blocked">agency</span>':''}<br><small class="muted">${esc([x.website&&x.website.replace(/^https?:\/\/(www\.)?/,''),x.industry,x.employees&&x.employees+' staff',x.country].filter(Boolean).join(' · '))}</small></td>
       <td>${x.person?esc(x.person)+'<br><small class="muted">'+esc(x.title||'')+(x.has_email?' · has an email':' · no email on record')+'</small>':'<span class="muted">nobody with a suitable title</span>'}</td><td><b>${x.score}</b></td><td><small class="muted">${esc(x.why.join('; '))}</small></td></tr>`).join('')}</table></div>`:'<p class="muted">Nothing matched. Loosen the filters: fewer industries, a wider size range, or more countries.</p>')}
-  catch(e){}finally{b.disabled=false;b.textContent=t}}
+  catch(e){$('#banner').innerHTML='';$('#apPrev').innerHTML=`<div class="banner" style="margin-top:10px"><span><b>The search did not run.</b> ${esc(errText(e))}</span></div><div class="row" style="margin-top:8px"><button class="sm" onclick="apCheck('#apPrev')">Check the Apollo connection</button></div>`}finally{b.disabled=false;b.textContent=t}}
+async function apCheck(into){const el=$(into);el.innerHTML='<p class="muted">Checking…</p>';try{const r=await api('/api/apollo/check');
+  el.innerHTML=`<div style="margin-top:8px">${r.checks.map(c=>`<div class="trow"><span class="tag ${c.ok===true?'ok':c.ok===false?'blocked':'g'}">${c.ok===true?'works':c.ok===false?'problem':'not tried'}</span><div style="flex:1;min-width:0"><b>${esc(c.what)}</b>${c.detail?`<br><small class="muted">${esc(c.detail)}</small>`:''}</div></div>`).join('')}</div>`}catch(e){el.innerHTML=`<div class="banner"><span>${esc(errText(e))}</span></div>`}}
 async function plSuggest(a){a.textContent='Thinking…';try{const r=await api('/api/pipelines/suggest',{method:'POST',body:{name:$('#pl-name').value,pitch:$('#pl-pitch').value,icp:$('#pl-icp').value}});
   const add=(id,items)=>{const have=$(id).value.split('\n').map(x=>x.trim()).filter(Boolean);items.forEach(x=>{if(!have.some(h=>h.toLowerCase().startsWith(x.toLowerCase())))have.push(x)});$(id).value=have.join('\n')};
   add('#pl-intent',r.asks);add('#pl-hiring',r.hiring);toast(r.ai?'Suggestions added. Edit them to sound like your buyers.':'Claude is not available, so these are plain starting points. Edit them.')}finally{a.textContent='Suggest searches from the pitch'}}
@@ -1217,20 +1250,34 @@ function roleTick(i,k,on){const p=ROLESX[i].perms;on?p.push(k):p.splice(p.indexO
 async function rolesSave(){for(const x of ROLESX.filter(x=>x.changed))await api('/api/roles',{method:'POST',body:{key:x.key,label:x.label,about:x.about,perms:x.perms}});toast('Roles saved');await loadMe();loadPeople()}
 async function roleAdd(){const name=await askInput('Name of the new role. It starts with read-only access; tick what it may do afterwards.','e.g. Intern');if(!name)return;await api('/api/roles',{method:'POST',body:{label:name,perms:[]}});loadPeople()}
 async function roleDel(i){if(!await ask('Delete the role "'+ROLESX[i].label+'"?'))return;await api('/api/roles/'+ROLESX[i].key,{method:'DELETE'});loadPeople()}
-function openAdd(){const f=(k,n,ph,t)=>`<div><label>${n}</label><input id="al-${k}" placeholder="${ph||''}" ${t?`type="${t}"`:''} style="width:100%"></div>`;
-  openModal('Add a lead',`<div class="fgrid">${f('company','Company *','Pulse Fitness')}${f('contact_name','Contact name','Sara Ahmed')}${f('title','Job title','Operations Director')}${f('email','Email','sara@pulsefitness.com','email')}
-   ${f('phone','Phone','+966 5x xxx xxxx')}${f('website','Website','https://')}${f('linkedin','LinkedIn profile','linkedin.com/in/…')}${f('city','City','Jeddah')}
-   <div><label>Country</label><select id="al-country" style="width:100%">${['SA','KW','AE','QA','BH','OM','PK','US','GB','CA','AU','DE','FR','CH','IN'].map(c=>`<option>${c}</option>`).join('')}</select></div>
-   <div><label>Pipeline</label><select id="al-product" style="width:100%">${Object.values(PRODUCTS).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('')}</select></div>
-   ${f('segment','Category','gym, clinic, agency…')}<div><label>Lawful basis</label><select id="al-consent_basis" style="width:100%"><option value="legitimate_interest_b2b">B2B legitimate interest</option><option value="opt_in">Opted in</option><option value="existing_customer">Existing customer</option></select></div></div>
-   <label>Notes</label><textarea id="al-notes" style="min-height:70px" placeholder="Anything the agent should know: how you met, what they need…"></textarea>
-   <div class="row" style="margin-top:12px"><button class="pri" id="alBtn" onclick="doAdd()">Add lead</button><button onclick="doAdd(true)">Add and add another</button><span class="muted" style="font-size:12px">With an email or phone, the agent researches the lead and drafts the first email for your approval.</span></div>`);$('#al-company').focus()}
-async function doAdd(more){const b={};['company','contact_name','title','email','phone','website','linkedin','city','country','product','segment','consent_basis','notes'].forEach(k=>{const v=$('#al-'+k).value.trim();if(v)b[k]=v});
-  if(!b.company)return alertBanner('Enter the company name',true);const r=await api('/api/leads',{method:'POST',body:b});toast('Lead added: '+b.company);loadFacets();refresh();if(more)openAdd();else{closeModal();openLead(r.id)}}
+const COMMON_C=['PK','SA','AE','KW','QA','BH','OM','GB','US','CA','AU','DE','FR','CH','IN'];let COUNTRIES=[];
+const countryOpts=(sel,blank)=>`<option value="">${blank||'Not sure (worked out from the phone or website)'}</option><optgroup label="Most used">${COMMON_C.map(c=>{const n=(COUNTRIES.find(x=>x.code==c)||{}).name||c;return `<option value="${c}" ${c==sel?'selected':''}>${flag(c)} ${esc(n)}</option>`}).join('')}</optgroup><optgroup label="All countries">${COUNTRIES.filter(x=>!COMMON_C.includes(x.code)).map(x=>`<option value="${x.code}" ${x.code==sel?'selected':''}>${flag(x.code)} ${esc(x.name)}</option>`).join('')}</optgroup>`;
+function openAdd(){const f=(k,n,ph,t,cls)=>`<div class="${cls||''}"><label>${n}</label><input id="al-${k}" placeholder="${ph||''}" ${t?`type="${t}"`:''} oninput="alCheck()"><div class="alerr" id="alerr-${k}"></div></div>`;
+  const cur=(typeof pbKey!='undefined'&&pbKey&&pbKey!='__all'?pbKey:'')||lProduct||'',pipes=Object.values(PRODUCTS);
+  openModal('Add a lead',`<div class="alsec"><h4>The company</h4><div class="algrid">${f('company','Company name *','Pulse Fitness')}${f('website','Website','pulsefitness.com')}${f('segment','What kind of business','gym, clinic, restaurant…')}${f('city','City','Jeddah')}
+     <div class="wide"><label>Country</label><select id="al-country" onchange="alCheck()">${countryOpts('')}</select></div></div></div>
+   <div class="alsec"><h4>The person to contact</h4><div class="algrid">${f('contact_name','Name','Sara Ahmed')}${f('title','Job title','Operations Director')}${f('email','Email','sara@pulsefitness.com','email')}${f('phone','Phone, with country code','+966 5x xxx xxxx','tel')}${f('linkedin','LinkedIn profile','linkedin.com/in/…','','wide')}</div></div>
+   <div class="alsec"><h4>For the agent</h4><div class="algrid"><div><label>Pipeline (what you would sell them)</label><select id="al-product">${[['Products','product'],['Partners','partner'],['Services','service']].map(([t,k])=>{const g=pipes.filter(p=>KIND(p)==k);return g.length?`<optgroup label="${t}">${g.map(p=>`<option value="${p.key}" ${p.key==cur?'selected':''}>${esc(p.name)}${p.active===false?' (switched off)':''}</option>`).join('')}</optgroup>`:''}).join('')}</select></div>
+     <div><label>Why you may contact them</label><select id="al-consent_basis"><option value="legitimate_interest_b2b">A business I have a reason to write to</option><option value="opt_in">They asked to hear from us</option><option value="existing_customer">Already a customer</option></select></div>
+     <div class="wide"><label>Notes</label><textarea id="al-notes" style="min-height:64px;width:100%" placeholder="Anything the agent should know: how you met, what they need…"></textarea></div></div></div>
+   <div class="alfoot"><button class="pri" id="alBtn" onclick="doAdd()">Add lead</button><button onclick="doAdd(true)">Add and add another</button><span class="alnote" id="alNote"></span></div>`);$('#al-company').focus();alCheck()}
+function alCheck(show){const v=k=>$('#al-'+k).value.trim(),bad={};
+  if(!v('company'))bad.company='Give the company a name.';
+  if(v('email')&&!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v('email')))bad.email='This does not look like a complete email address.';
+  if(v('phone')&&!/^\+?[\d\s().-]{7,}$/.test(v('phone')))bad.phone='Use digits, starting with the country code, e.g. +966 50 123 4567.';
+  if(v('linkedin')&&!/linkedin\.com\//i.test(v('linkedin')))bad.linkedin='Paste the link to their LinkedIn profile.';
+  ['company','email','phone','linkedin'].forEach(k=>{const on=bad[k]&&(show||k!='company'||false),e=$('#al-'+k);e.classList.toggle('bad',!!on);$('#alerr-'+k).textContent=on?bad[k]:'';$('#alerr-'+k).classList.toggle('show',!!on)});
+  const n=$('#alNote'),off=(PRODUCTS[$('#al-product').value]||{}).active===false;n.className='alnote'+(v('email')||v('phone')?' go':'');
+  n.textContent=off?'This pipeline is switched off, so the lead will wait until you switch it on.':v('email')||v('phone')?'The agent will research this lead and draft the first email for your approval.':'Without an email or phone the lead waits under Needs contact until one is found.';
+  return !Object.keys(bad).length}
+async function doAdd(more){if(!alCheck(true)){const first=document.querySelector('#mBody .bad');first&&first.focus();return}
+  const b={};['company','contact_name','title','email','phone','website','linkedin','city','country','product','segment','consent_basis','notes'].forEach(k=>{const v=$('#al-'+k).value.trim();if(v)b[k]=v});
+  const btn=$('#alBtn');btn.disabled=true;try{const r=await api('/api/leads',{method:'POST',body:b});toast('Lead added: '+b.company);loadFacets();refresh();if(more)openAdd();else{closeModal();openLead(r.id)}}catch(e){const d=errText(e);$('#alNote').className='alnote';$('#alNote').innerHTML='<b style="color:#b42318">'+esc(d)+'</b>'}finally{btn.disabled=false}}
+const errText=e=>{let t=String(e&&e.message||e);try{const j=JSON.parse(t);t=typeof j.detail=='string'?j.detail:t}catch{}return t};
 function openImport(){openModal('Import leads',`<p class="muted" style="margin-top:0">Excel (.xlsx) or CSV. Columns are matched automatically (Business/Company, Email, Website, Phone, Segment/Category, City, Country, Status, Notes…). Everything else, like scan scores and issues, is kept for the agent to use. Duplicate emails are skipped.</p>
   <label>File</label><input type="file" id="imp-file" accept=".xlsx,.xlsm,.csv">
   <div class="fgrid" style="margin-top:6px"><div><label>Product for these leads</label><select id="imp-product"></select></div>
-   <div><label>Country (if not in the file)</label><select id="imp-country">${['US','SA','KW','AE','QA','BH','OM','PK','GB','CA','AU'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+   <div><label>Country (if not in the file)</label><select id="imp-country">${countryOpts('','Not sure (worked out for each lead)')}</select></div>
    <div><label>Category (if not in the file)</label><input id="imp-segment" placeholder="optional"></div>
    <div><label>Lawful basis</label><select id="imp-basis"><option value="legitimate_interest_b2b">B2B legitimate interest</option><option value="opt_in">Opted in</option><option value="existing_customer">Existing customer</option></select></div></div>
   <label>…or paste CSV</label><textarea id="imp-csv" placeholder="company,email,website,city,country"></textarea>
@@ -1438,14 +1485,31 @@ const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_da
 const TZTOP=[['Asia/Karachi','Pakistan'],['Asia/Riyadh','Saudi Arabia'],['Asia/Dubai','UAE'],['Asia/Kuwait','Kuwait'],['Asia/Qatar','Qatar'],['Asia/Kolkata','India'],['Europe/London','United Kingdom'],['Europe/Berlin','Central Europe'],['America/New_York','US East'],['America/Los_Angeles','US West'],['UTC','UTC']];
 function tzOptions(cur){let all=[];try{all=Intl.supportedValuesOf('timeZone')}catch{}const top=TZTOP.map(t=>t[0]);if(cur&&!top.includes(cur)&&!all.includes(cur))all.unshift(cur);
   $('#s-timezone').innerHTML=`<optgroup label="Common">${TZTOP.map(([z,n])=>`<option value="${z}">${n} (${z})</option>`).join('')}</optgroup><optgroup label="All time zones">${all.filter(z=>!top.includes(z)).map(z=>`<option value="${z}">${z}</option>`).join('')}</optgroup>`}
+const TG={'s-lead_quality':{on:'signal',off:'fit',title:'Only contact leads that show a need now',d1:'Leads that asked, are hiring for it, show a problem, or wrote to you. Others found by search wait under Nurture.',d0:'Anyone who fits a pipeline\'s ideal customer is contacted.'},
+  's-agent_schedule':{on:'1',off:'0',title:'Limit the agent to working days and hours',d1:'It only works on the days and hours below.',d0:'It works around the clock while it is on.'},
+  's-agent_enabled':{title:'Agent',d1:'Researching leads, drafting emails and reading replies.',d0:'Stopped: nothing runs.'},
+  's-dm_auto':{title:'Find a named person before emailing a shared mailbox',d1:'For info@, sales@ and the like, the agent first looks for a decision-maker.',d0:'Not automatic: use the button on a lead.'},
+  's-web_search_leads':{title:'Find leads by web search',d1:'People asking online for what you sell, businesses that fit, and public LinkedIn posts.',d0:'No web search leads. Apollo, Google Maps and job ads carry on.'},
+  's-auto_discovery':{title:'Search for new leads every day',d1:'Once a day, each switched-on pipeline searches its own sources.',d0:'Only when you press "Find leads now".'},
+  's-ab_subjects':{title:'Test two subject lines',d1:'Each step gets two subject lines, compared in Reports.',d0:'One subject line per email.'},
+  's-meeting_followup':{title:'Draft a follow-up after each meeting',d1:'It waits in Approvals for you to add what was agreed.',d0:'No follow-up is drafted.'},
+  's-booking_enabled':{title:'Booking page',d1:'Leads can pick a meeting time themselves.',d0:'The page is closed.'}};
+function toggleize(){Object.entries(TG).forEach(([id,t])=>{const sel=document.getElementById(id);if(!sel)return;const on=t.on||'1',off=t.off||'0';
+  let row=sel.previousElementSibling&&sel.previousElementSibling.classList.contains('tglrow')?sel.previousElementSibling:null;
+  if(!row){const lab=sel.previousElementSibling&&sel.previousElementSibling.tagName=='LABEL'?sel.previousElementSibling:null;if(lab)lab.classList.add('hide');
+    row=document.createElement('div');row.className='tglrow';row.setAttribute('role','switch');row.tabIndex=0;sel.before(row);sel.classList.add('hide');
+    const flip=()=>{if(sel.disabled)return;sel.value=sel.value==on?off:on;sel.dispatchEvent(new Event('input',{bubbles:true}));sel.dispatchEvent(new Event('change',{bubbles:true}));if(sel.onchange)try{}catch{};setDirty();toggleize()};
+    row.onclick=flip;row.onkeydown=e=>{if(e.key==' '||e.key=='Enter'){e.preventDefault();flip()}}}
+  const isOn=sel.value==on;row.classList.toggle('on',isOn);row.setAttribute('aria-checked',isOn);
+  row.innerHTML=`<div class="agentsw ${isOn?'on':''}"><span class="tg"></span></div><div><b>${t.title}</b><small>${isOn?t.d1:t.d0}</small></div><span class="st">${isOn?'On':'Off'}</span>`})}
 async function loadApollo(){if(!$('#apolloUse'))return;const u=await api('/api/apollo/usage'),k=u.labels;
-  $('#apolloUse').innerHTML=!u.connected?'<p class="muted" style="margin:0">Apollo is not connected. Add <b>APOLLO_API_KEY</b> in Railway Variables.</p>'
+  $('#apolloUse').innerHTML=!u.connected?'<p class="muted" style="margin:0">Apollo is not connected: the app has not received a key. Add <b>APOLLO_API_KEY</b> under the brn-sales service in Railway Variables, then press <b>Deploy</b> so the change is applied.</p>'
    :`<div class="kpis" style="margin-bottom:8px"><div class="kpi"><span>Used today</span><b>${u.today}${u.cap?' / '+u.cap:''}</b><span>${u.cap?'daily cap':'no daily cap'}</span></div><div class="kpi"><span>Used this month</span><b>${u.month}</b></div>${Object.keys(k).map(x=>`<div class="kpi"><span>${k[x][0].toUpperCase()+k[x].slice(1)}</span><b>${u.month_by_kind[x]}</b><span>this month · ${u.today_by_kind[x]} today</span></div>`).join('')}</div>
-     <p class="hint">Counted by this app for every Apollo call that costs a credit: 1 per company search, 1 per job ad look-up, 1 per revealed email. Finding people is free. Change the daily cap under Agent &amp; sending. Your Apollo account page has the balance.</p>`}
+     <p class="hint">Counted by this app for every Apollo call that costs a credit: 1 per company search, 1 per job ad look-up, 1 per revealed email. Finding people is free. Change the daily cap under Agent &amp; sending. Your Apollo account page has the balance.</p><button class="sm" onclick="apCheck('#apChk')">Check the Apollo connection</button><div id="apChk"></div>`}
 async function loadSettings(){if(setDirtyFlag)return;loadApollo();setTab(setCur);loadPeople();renderTemplates();loadRules();loadVoice();const s=await api('/api/settings');bookingCard(s);
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
   tzOptions(s.timezone);SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');SEQ=s.sequence||[];$('#s-sequence').value=JSON.stringify(SEQ,null,1);seqRender();PL=s.products||[];$('#s-products').value=JSON.stringify(PL,null,1);plRender();
-  $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');dayChips('agDays',s.agent_days);schedShow();
+  $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');dayChips('agDays',s.agent_days);schedShow();toggleize();
   api('/api/stats').then(st=>{$('#agNow').textContent='Right now: '+agentNow(st.agent).toLowerCase();$('#agNow').className='tag '+(st.agent.active?'ok':st.agent.on?'pending_approval':'blocked')});
   $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;$('#logoNote').textContent=s.logo_effective?'Leave empty to use the built-in brn dynamics logo. Emails load it from '+s.logo_effective:'No public address for this server is known, so emails show the name as text instead of the logo. Paste a logo address to fix that.';
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
@@ -1542,17 +1606,23 @@ let BOARD=[];
 async function loadBoard(){const all=pbKey=='__all',p=all?{name:'All leads',pitch:'Every pipeline on one board. Drag a card to change its status.'}:PIPES.find(x=>x.key==pbKey);if(!p)return closeBoard();
   $('#plist').classList.add('hide');$('#pboard').classList.remove('hide');$('#pbTitle').textContent=p.name;$('#pbPitch').textContent=p.pitch;
   $('#pbFind').classList.toggle('hide',all);
-  const r=await api('/api/leads?'+qs({...(all?{}:{product:pbKey}),limit:1000,sort:'updated'}));BOARD=r.rows;renderBoard()}
-function renderBoard(){const q=($('#bq').value||'').toLowerCase();const rows=BOARD.filter(l=>!q||[l.company,l.email,l.city,l.contact_name].join(' ').toLowerCase().includes(q));
+  bGrade='';bMore={};const r=await api('/api/leads?'+qs({...(all?{}:{product:pbKey}),limit:1000,sort:'updated'}));BOARD=r.rows;renderBoard()}
+let bGrade='',bMore={};
+function boardStats(){const n=f=>BOARD.filter(f).length,st=k=>n(l=>l.stage==k),g=k=>n(l=>(l.grade||'C')==k&&!['disqualified','opted_out','lost'].includes(l.stage));
+  const tile=(v,t,cls,click)=>`<div class="bstat ${cls||''}" ${click?`onclick="${click}"`:''}><b>${v}</b><span>${t}</span></div>`;
+  $('#pbStats').innerHTML=tile(BOARD.length,'leads')+tile(st('in_sequence'),'being contacted')+tile(st('awaiting_approval'),'waiting for approval','act',"appPipe=pbKey=='__all'?'':pbKey;show('approvals')")
+   +tile(st('replied')+st('reply_manually'),'replied')+tile(st('meeting_booked'),'meetings')+tile(st('won'),'won')
+   +['A','B','C'].map(k=>tile(g(k),'grade '+k,'act'+(bGrade==k?' sel':''),`bGrade=bGrade=='${k}'?'':'${k}';renderBoard()`)).join('')}
+function renderBoard(){boardStats();const q=($('#bq').value||'').toLowerCase();const rows=BOARD.filter(l=>(!q||[l.company,l.email,l.city,l.contact_name].join(' ').toLowerCase().includes(q))&&(!bGrade||(l.grade||'C')==bGrade));
   const by={};rows.forEach(l=>(by[l.stage]=by[l.stage]||[]).push(l));const hideEmpty=$('#bEmpty').checked;
   const cols=KCOLS.filter(k=>by[k]||(!hideEmpty&&['new','needs_contact','in_sequence','replied','meeting_booked','won'].includes(k))||(!hideEmpty&&k.startsWith('c_')));
   const card=l=>{const sc=l.score==null?'':`<span class="sc ${l.score>=70?'hi':l.score>=55?'md':'lo'}">${l.score}</span>`;
    return `<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('id',${l.id});this.classList.add('drag')" ondragend="this.classList.remove('drag')" onclick="openLead(${l.id})">
-    <div class="t">${avatar(l.company)}<div style="min-width:0;flex:1"><div class="nm">${esc(l.company)}</div><div class="sub">${esc(l.contact_name||l.email||l.phone||'No contact yet')}</div></div></div>
-    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${gradeTag(l.grade)}${sigTag(l.signal)}${l.deal_value?`<span class="tag g">${money(l.deal_value)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}${sc}</div></div>`};
-  $('#board').innerHTML=cols.map(k=>{const L=by[k]||[];return `<div class="kcol" style="--c:${SCOL[k]}" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
+    <div class="t">${avatar(l.company)}<div style="min-width:0;flex:1"><div class="nm">${esc(l.company)}</div><div class="who"><i class="${l.email||l.phone?'ok':''}" title="${l.email||l.phone?'Can be reached':'No email or phone yet'}"></i><span>${esc(l.contact_name||l.email||l.phone||'No contact yet')}${l.contact_name&&l.title?' · '+esc(l.title):''}</span></div></div>${sc}</div>
+    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${gradeTag(l.grade)}${sigTag(l.signal)}${l.deal_value?`<span class="tag g">${money(l.deal_value)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}</div></div>`};
+  $('#board').innerHTML=cols.map(k=>{const L=by[k]||[];const show=bMore[k]||40;return `<div class="kcol ${L.length?'':'bare'}" style="--c:${SCOL[k]}" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
    <div class="kh"><h4>${esc(SL[k])}</h4><span class="cnt">${L.length}</span>${k.startsWith('c_')&&can('settings')?`<a class="muted" style="cursor:pointer;font-size:12px;margin-left:6px" title="Rename or remove this status" onclick="stageEdit('${k}')">edit</a>`:''}</div>
-   <div class="kb">${L.slice(0,100).map(card).join('')||'<div class="kempty">Drop leads here</div>'}${L.length>100?`<div class="muted" style="font-size:12px;text-align:center;padding:6px">+${L.length-100} more in the list view</div>`:''}</div></div>`}).join('')}
+   <div class="kb">${L.slice(0,show).map(card).join('')||'<div class="kempty">Drop here</div>'}${L.length>show?`<button class="kmore" onclick="bMore['${k}']=${show}+60;renderBoard()">Show ${Math.min(60,L.length-show)} more of ${L.length-show}</button>`:''}</div></div>`}).join('')}
 async function stageAdd(){const name=await askInput('Name of the new status','e.g. Proposal sent');if(!name)return;
   const r=await api('/api/stages',{method:'POST',body:{name}});useStages(r.custom);toast('Status added: '+r.stage.name);await loadFacets();renderBoard()}
 function stageEdit(k){const c=CUSTOM.find(x=>x.key==k);openModal('Status: '+c.name,`<label>Name</label><input id="stName" style="width:100%" value="${esc(c.name)}"><label>Colour</label><input id="stColor" type="color" value="${c.color||'#7c5cff'}" style="width:70px;height:38px;padding:2px">

@@ -102,6 +102,7 @@ def discover(key, p, limit=None, preview=False):
     hiring company for the job ad that proves it, at most 5 a run. Finding the people is free."""
     c, before = cfg(p), apollo.used()
     out = {"rows": [], "notes": [], "how": "companies"}
+    del apollo.DROPPED[:]
     if not apollo.has_filters(c):
         out["notes"].append("This pipeline has no Apollo search set up yet: add industries, size or countries under Pipelines > Edit > Apollo search.")
         return {**out, "credits": 0}
@@ -145,7 +146,12 @@ def discover(key, p, limit=None, preview=False):
         # a free Apollo plan has no company search: look for the people directly (free), and learn the company's web address when one is revealed
         out["how"] = "people"
         out["notes"].append("Your Apollo plan has no company search, so people were searched for directly. Company web addresses arrive when a person's email is revealed.")
-        found = apollo.people(c, want, limit=min(100, limit * 3))
+        try:
+            found = apollo.people(c, want, limit=min(100, limit * 3))
+        except apollo.NoPlan as e:
+            raise RuntimeError("This Apollo key cannot run searches. Searching for companies needs a paid Apollo plan, and searching for people needs a master API key "
+                               "(Apollo > Settings > Integrations > API keys > create a key with \"Set as master key\" on), then put that key in APOLLO_API_KEY. "
+                               f"Apollo said: {e}")
         hiring_names = set()
         if c["hiring_keywords"]:
             try:
@@ -161,6 +167,8 @@ def discover(key, p, limit=None, preview=False):
             if n in names or db.one("SELECT 1 x FROM leads WHERE extra LIKE ?", (f'%"person_id": "{f["id"]}"%',)):
                 continue
             out["rows"].append(_row({"id": f.get("org_id"), "name": f["company"]}, f, c, key, {} if n in hiring_names else None))
+    if apollo.DROPPED:
+        out["notes"].append(f"Apollo rejected the {' and '.join(dict.fromkeys(apollo.DROPPED))} filter, so the search ran without it. Check the spelling against Apollo's own names.")
     return {**out, "credits": apollo.used() - before}
 
 
