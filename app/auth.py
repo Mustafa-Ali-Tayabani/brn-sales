@@ -133,7 +133,7 @@ def required(method, path):
         return "send"
     if path.startswith("/api/calendar"):
         return "calendar"
-    if path.startswith(("/api/leads", "/api/assistant", "/api/tasks")):
+    if path.startswith(("/api/leads", "/api/assistant", "/api/tasks", "/api/cleanup")):
         return "leads.write"
     if path.startswith(("/api/templates", "/api/coach")):
         return "send"

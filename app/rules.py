@@ -34,6 +34,8 @@ BUILTIN = [
      "about": "No @, spaces, a missing or impossible ending, or a common typo such as gmial.com. The lead waits under Needs contact until the address is fixed."},
     {"key": "dead_domain", "name": "Skip addresses whose domain cannot receive email", "outcome": "fix", "default": True,
      "about": "Before the first email, the domain is looked up (through a public DNS service) to see whether it accepts mail at all. Saves bounces, which hurt your sender reputation."},
+    {"key": "verify_mailbox", "name": "Check that the mailbox exists before the first email", "outcome": "fix", "default": True,
+     "about": "Asks a verification service whether the address really exists. Catches addresses that look fine but bounce. Works once HUNTER_API_KEY is set on the server; each check uses one verification from your Hunter allowance."},
     {"key": "noreply", "name": "Skip no-reply addresses", "outcome": "fix", "default": True,
      "about": "Addresses like noreply@ or donotreply@ are never read by anyone."},
     {"key": "disposable", "name": "Skip throwaway email services", "outcome": "skip", "default": True,
@@ -153,7 +155,33 @@ def _custom_hit(rule, lead):
     return {"contains": want in text, "not_contains": want not in text, "equals": text == want, "starts": text.startswith(want), "ends": text.endswith(want)}[t]
 
 
-def check(lead, network=True, rules=None):
+_verified = {"day": "", "n": 0}
+
+
+def mailbox_status(lead):
+    """What the verifier says about this lead's mailbox, asked once and remembered on the lead. None when not checked."""
+    try:
+        extra = json.loads(lead.get("extra") or "{}") or {}
+    except ValueError:
+        extra = {}
+    seen = extra.get("email_check") or {}
+    if seen.get("email") == lead["email"].lower():
+        return seen.get("status")
+    from .providers import enrich
+    today = db.now()[:10]
+    if _verified["day"] != today:
+        _verified.update(day=today, n=0)
+    if not enrich.verifier() or _verified["n"] >= int(db.setting("verify_daily_cap") or 100):
+        return None
+    _verified["n"] += 1
+    status = enrich.verify_email(lead["email"])
+    if status and lead.get("id"):
+        extra["email_check"] = {"email": lead["email"].lower(), "status": status, "at": today}
+        db.ex("UPDATE leads SET extra=? WHERE id=?", (json.dumps(extra, ensure_ascii=False), lead["id"]))
+    return status
+
+
+def check(lead, network=True, rules=None, verify=True):
     """The first rule this lead breaks, as {"rule", "name", "reason", "outcome"}, or None when it may go ahead."""
     st = rules or state()
     on = lambda k: st["builtin"][k]["on"]
@@ -176,6 +204,10 @@ def check(lead, network=True, rules=None):
                 return hit("free", f"{email} is a free personal address ({domain}).")
             if on("dead_domain") and network and not lead.get("emails_sent") and domain_accepts_mail(domain) is False:
                 return hit("dead_domain", f"The domain {domain} cannot receive email, so {email} would bounce.")
+            if on("verify_mailbox") and network and verify and not lead.get("emails_sent"):
+                status = mailbox_status(lead)
+                if status in ("invalid", "disposable"):
+                    return hit("verify_mailbox", f"{email} does not exist ({status})." if status == "invalid" else f"{email} is a throwaway inbox.")
             if on("one_per_company") and domain not in FREE and lead.get("id"):
                 other = db.one("""SELECT company, contact_name FROM leads WHERE id<>? AND lower(email) LIKE ? AND
                                   stage IN ('in_sequence','awaiting_approval','replied','meeting_booked') LIMIT 1""", (lead["id"], f"%@{domain}"))

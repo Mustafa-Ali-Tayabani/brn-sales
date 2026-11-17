@@ -14,10 +14,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import agent, assistant, auth, compliance, db, email_template, invites
+from . import agent, assistant, auth, compliance, db, email_template, invites, quality
 from urllib.parse import quote
 
-from .providers import channels, enrich, inbox, intent, llm, mailbox, sources
+from .providers import channels, enrich, inbox, intent, llm, mailbox, sources, voice
 
 app = FastAPI(title="brn pipeline")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -266,6 +266,8 @@ def _lead_filters(f):
         w.append("l.email IS NOT NULL AND l.email<>''")
     elif f.get("has") == "phone":
         w.append("l.phone IS NOT NULL AND l.phone<>''")
+    if f.get("grade"):
+        multi("l.grade", f["grade"].upper())
     if f.get("score_min") not in (None, ""):
         w.append("l.score>=?"); a.append(int(f["score_min"]))
     if f.get("score_max") not in (None, ""):
@@ -281,7 +283,7 @@ def _lead_filters(f):
 
 
 SORTS = {"updated": "l.updated_at DESC", "created": "l.created_at DESC", "score": "l.score DESC", "company": "l.company COLLATE NOCASE",
-         "contacted": "l.last_contacted_at DESC", "value": "COALESCE(l.deal_value,0) DESC", "next": "l.next_action_at IS NULL, l.next_action_at"}
+         "contacted": "l.last_contacted_at DESC", "value": "COALESCE(l.deal_value,0) DESC", "grade": "COALESCE(l.grade,'D'), COALESCE(l.score,0) DESC", "next": "l.next_action_at IS NULL, l.next_action_at"}
 
 
 @app.get("/api/stats")
@@ -338,7 +340,7 @@ def leads(request: Request):
     offset = int(f.get("offset", 0))
     rows = db.q(f"""SELECT l.id, l.company, l.contact_name, l.title, l.email, l.phone, l.website, l.city, l.country, l.industry,
                     l.segment, l.product, l.source, l.stage, l.score, l.step, l.next_action, l.next_action_at, l.emails_sent,
-                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at, l.deal_value, l.expected_close, l.extra
+                    l.last_contacted_at, l.replied_at, l.created_at, l.updated_at, l.deal_value, l.expected_close, l.grade, l.extra
                     FROM leads l WHERE {where} ORDER BY {SORTS.get(f.get('sort'), SORTS['updated'])} LIMIT ? OFFSET ?""",
                 (*args, limit, offset))
     for r in rows:  # why each lead is worth contacting, without sending the whole research blob to the page
@@ -365,6 +367,9 @@ def lead(lead_id: int):
     l["extra"] = json.loads(l["extra"] or "null")
     l["activities"] = db.q("SELECT * FROM activities WHERE lead_id=? ORDER BY id DESC", (lead_id,))
     l["signal"] = agent.signal({**l, "extra": l["extra"] or {}})
+    l["grade"], l["grade_why"] = quality.grade({**l, "extra": l["extra"] or {}})
+    l["can_find_person"] = bool(enrich.people_finder())
+    l["bad_reasons"] = quality.BAD_REASONS
     l["approvals"] = db.q("SELECT * FROM approvals WHERE lead_id=? ORDER BY id DESC", (lead_id,))
     l["tasks"] = db.q("SELECT t.*, u.name assignee FROM tasks t LEFT JOIN users u ON u.id=t.assigned_to WHERE t.lead_id=? ORDER BY t.done_at IS NOT NULL, t.due_at IS NULL, t.due_at, t.id DESC LIMIT 30", (lead_id,))
     l["meetings"] = [_meeting(m) for m in db.q("SELECT m.*, NULL company FROM meetings m WHERE m.lead_id=? ORDER BY m.starts_at DESC", (lead_id,))]
@@ -408,6 +413,7 @@ def _insert(row, source="manual", defaults=None):
                  row.get("source") or source, row.get("consent_basis") or d.get("consent_basis") or "legitimate_interest_b2b",
                  row.get("notes"), stage, row.get("date_contacted"), t, t))
     db.log(lid, "system", f"Lead added from {row.get('source') or source}" + (f" ({stage})" if stage != "new" else ""), channel="system")
+    quality.regrade(lid)
     return lid
 
 
@@ -632,6 +638,12 @@ def bulk(payload: dict = Body(...)):
             db.update_lead(i, **{action[4:]: value or None})
         elif action == "pause":
             db.update_lead(i, stage="paused", next_action=None, next_action_at=None)
+        elif action == "find_people":
+            if ids.index(i) >= 25:
+                continue   # a safe batch: each lookup can cost a credit
+            lead = db.one("SELECT * FROM leads WHERE id=?", (i,))
+            if lead and quality.needs_person(lead):
+                quality.find_person(lead, manual=True)
         elif action == "resume":
             db.update_lead(i, stage="in_sequence", next_action_at=db.now())
         elif action == "restart":
@@ -1181,7 +1193,7 @@ def get_settings(request: Request):
     s["booking_url"] = _public_base(request) + "/book"
     s["app_url"] = _public_base(request)
     s["providers"] = {"claude": llm.enabled(), "email": bool(channels.email_provider()), "inbox": inbox.enabled(),
-                      "voice": bool(os.environ.get("VAPI_API_KEY")), "enrich": enrich.enabled(), "meet": bool(invites.meet_links()), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
+                      "voice": voice.ready(), "enrich": enrich.enabled(), "meet": bool(invites.meet_links()), "people": bool(enrich.people_finder()), "verify": bool(enrich.verifier()), "places": bool(os.environ.get("GOOGLE_PLACES_API_KEY"))}
     return s
 
 
@@ -1283,18 +1295,29 @@ def check_inbox():
         raise HTTPException(502, f"Could not read the mailbox: {e}")
 
 
-def _request_leads(need, country, limit):
+def _request_leads(need, country, limit, linkedin=False):
     """Public requests for something we sell, as lead rows. A request whose page loads but does not contain the quoted
     words is dropped: only what can be checked is kept."""
     rows = []
-    for it in llm.find_requests(need, country, limit):
+    for it in llm.find_requests(need, country, limit, linkedin):
         ok = intent.verify(it["quote"], it["url"])
         if ok is False:
             continue
-        rows.append({"company": it["who"], "website": it["website"] or it["url"], "email": it["email"], "country": country if country and country != "--" else None,
+        person = {}
+        if it.get("profile") and not it["email"] and enrich.enabled() and quality.lookups_today() < int(db.setting("dm_daily_cap") or 20):
+            # LinkedIn shows no contact details, and reading profiles by machine is against its rules: Apollo matches the profile to its own records instead
+            try:
+                person = enrich.find_person(it["who"], it["profile"], want_phone=False) or {}
+                db.log(None, "enrich", f"Looked up {it['who']} from their LinkedIn post: " + ("email found" if person.get("email") else "no email on record"), channel="system")
+            except RuntimeError:
+                person = {}
+        rows.append({"company": person.get("company") or it["who"], "contact_name": person.get("contact_name") or (it["who"] if it.get("profile") else None),
+                     "title": person.get("title") or it.get("title"), "website": person.get("website") or it["website"] or it["url"], "email": person.get("email") or it["email"],
+                     "country": person.get("country") or (country if country and country != "--" else None),
                      "source": "intent", "consent_basis": "legitimate_interest_b2b" if it["website"] or it["email"] else "public_post", "notes": f'They wrote: "{it["quote"]}"',
                      "extra": {"intent": {"level": "asked", "quote": it["quote"], "url": it["url"], "posted": it["posted"], "where": it["where"],
-                                          "checked": "the quote was found on the page" if ok else "the page could not be opened to check the quote"}, "found_by": need}})
+                                          "checked": "the quote was found on the page" if ok else "the page could not be opened to check the quote"},
+                               "found_by": need, **({"linkedin": it["profile"]} if it.get("profile") else {})}})
     with_site = [r for r in rows if r["extra"]["intent"]["url"] != r["website"] and not r.get("email")]
     if with_site:
         sources.enrich(with_site)   # their own site may publish a contact email
@@ -1349,7 +1372,10 @@ def discover_pipeline(key, sources_only=None):
             for qd in places:
                 try:
                     rows = sources.google_places(qd["query"], qd.get("country", "SA"), int(qd.get("limit", 20)),
-                                                 bool(src.get("only_without_website")))
+                                                 bool(src.get("only_without_website")), src.get("review_words") or None)
+                    if any(r.get("website") for r in rows):   # a map listing has a phone number but no email: the business's own site often does
+                        with_site = [r for r in rows if r.get("website")]
+                        sources.enrich(with_site)
                     res = _import(rows, f"google_places: {qd['query']}", {"product": key, "segment": qd.get("segment") or p.get("name")})
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
@@ -1384,10 +1410,12 @@ def discover_pipeline(key, sources_only=None):
         elif llm.over_budget():
             out["notes"].append("Today's Claude budget is used up, so the search for people asking was skipped.")
         else:
-            for qd in asks[:4]:
+            for n, qd in enumerate(asks[:4]):
                 qd = {"query": qd} if isinstance(qd, str) else qd
                 try:
                     rows = _request_leads(qd["query"], qd.get("country") or "", int(qd.get("limit") or 8))
+                    if src.get("linkedin") and n < 2:   # an extra search of public LinkedIn posts, for the first two phrases
+                        rows += _request_leads(qd["query"], qd.get("country") or "", 6, linkedin=True)
                     res = _import(rows, f"intent: {qd['query']}", {"product": key, "segment": "Asked for it", "country": qd.get("country") or "US"})
                     out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
                 except Exception as e:
@@ -1495,6 +1523,8 @@ def _loop():
 
 from . import jobs, more  # noqa: E402  (they build on what is defined above)
 app.include_router(more.router)
+
+threading.Thread(target=lambda: quality.backfill(), daemon=True).start()   # grade leads that have none yet
 
 if os.environ.get("BRN_SCHEDULER", "1") == "1":
     threading.Thread(target=_loop, daemon=True).start()

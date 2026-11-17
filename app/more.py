@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse, Response
 
 from . import agent, auth, compliance, db
 from . import main as M
-from . import invites, rules
+from . import invites, quality, rules
+from .providers import sources, voice
 from .providers import llm
 
 router = APIRouter()
@@ -248,6 +249,114 @@ def rewrite_draft(approval_id: int, p: dict = Body(...)):
         g["all"] = (g["all"] + "\n" if g["all"] else "") + "- " + feedback
         db.set_setting("email_guidance", json.dumps(g, ensure_ascii=False))
     return {"subject": new["subject"], "body": new["body"], "remembered": bool(p.get("remember"))}
+
+
+# ---------- lead quality: clean-up, named contacts, good / bad marks ----------
+@router.get("/api/cleanup")
+def cleanup_state():
+    return quality.cleanup_state()
+
+
+@router.post("/api/cleanup")
+def cleanup(p: dict = Body(...)):
+    """start: check every lead the agent could still contact against the rules and for duplicates (runs in the background).
+    apply: act on what was found. cancel: stop a running check."""
+    if p.get("action") == "start":
+        if not quality.cleanup_start():
+            raise HTTPException(409, "A check is already running.")
+    elif p.get("action") == "apply":
+        M._need("leads.delete")
+        n = quality.cleanup_apply()
+        db.log(None, "system", f"Lead clean-up applied: {n} leads set aside", channel="system")
+    elif p.get("action") == "cancel":
+        quality.CLEAN["cancel"] = True
+    return quality.cleanup_state()
+
+
+@router.post("/api/leads/{lead_id}/decision-maker")
+def decision_maker(lead_id: int):
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        raise HTTPException(404)
+    return quality.find_person(lead, manual=True)
+
+
+@router.post("/api/leads/{lead_id}/feedback")
+def lead_feedback(lead_id: int, p: dict = Body(...)):
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        raise HTTPException(404)
+    quality.set_feedback(lead, p.get("verdict"), p.get("reason"), p.get("note"))
+    return {"ok": True}
+
+
+@router.get("/api/feedback/suggestions")
+def feedback_suggestions():
+    return {**quality.suggestions(), "reasons": quality.BAD_REASONS}
+
+
+@router.post("/api/leads/{lead_id}/similar")
+def similar_leads(lead_id: int, p: dict = Body(default={})):
+    """Find more companies like this one (a lead that replied, bought, or that you marked good) and add them to its pipeline."""
+    lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        raise HTTPException(404)
+    if not llm.enabled():
+        raise HTTPException(400, "Finding similar companies needs Claude's web search (ANTHROPIC_API_KEY).")
+    if llm.over_budget():
+        raise HTTPException(400, "Today's Claude budget is used up. Try again tomorrow, or raise it in Settings.")
+    x = quality._extra(lead)
+    what = x.get("site_description") or x.get("site_title") or lead.get("segment") or lead.get("industry") or ""
+    place = " in " + lead["city"] if lead.get("city") else ""
+    try:
+        rows = llm.discover_businesses(f"businesses similar to {lead['company']}{place}" + (f" ({what[:160]})" if what else "") + ", same kind and size, not the same company",
+                                       lead.get("country") or "US", int(p.get("limit") or 10))
+        rows = sources.enrich(rows)
+    except Exception as e:
+        raise HTTPException(502, f"The search did not work: {e}")
+    for r in rows:
+        r.setdefault("extra", {})["similar_to"] = lead["company"]
+    res = M._import(rows, f"similar to {lead['company']}", {"product": lead.get("product"), "segment": lead.get("segment") or f"Like {lead['company']}", "country": lead.get("country") or "US"})
+    db.log(lead_id, "system", f"Looked for companies like this one: {len(res['imported'])} added", channel="system")
+    return {"added": len(res["imported"]), "skipped": res["skipped"]}
+
+
+# ---------- AI phone calls ----------
+@router.get("/api/voice")
+def voice_status():
+    out = voice.status()
+    if out["connected"]:
+        try:
+            out["numbers"] = voice.numbers()
+        except RuntimeError as e:
+            out["error"] = str(e)
+    return out
+
+
+@router.post("/api/voice/setup")
+def voice_setup(request: Request, p: dict = Body(default={})):
+    """Create (or refresh) the AI caller in Vapi and choose the number it calls from."""
+    try:
+        out = voice.setup(M._public_base(request) + "/webhooks/voice", p.get("phone_id") or None)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    db.log(None, "system", "AI caller set up in Vapi", channel="phone")
+    return out
+
+
+@router.post("/api/voice/test")
+def voice_test(p: dict = Body(...)):
+    """Have the AI caller phone a number you give (your own), to hear how it sounds."""
+    number = re.sub(r"[^\d+]", "", p.get("number") or "")
+    if not re.fullmatch(r"\+\d{8,15}", number):
+        raise HTTPException(400, "Enter the number in international form, for example +966501234567.")
+    try:
+        cid = voice.call(number, "Test call", {"company": "your company", "contact_name": "", "opening": f"Hello, this is a test call from {db.setting('sender_name')}. Can you hear me clearly?",
+                                               "talking_points": "This is only a test of the calling assistant. Ask how the line sounds, thank them, and end the call."})
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    db.log(None, "system", f"Test call placed to {number}", channel="phone")
+    return {"ok": True, "call_id": cid}
 
 
 # ---------- lead sources ----------

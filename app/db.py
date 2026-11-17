@@ -221,7 +221,16 @@ DEFAULT_SETTINGS = {
     # fit: contact anyone who matches the pipeline's ideal customer. signal: only leads with a sign they need it now
     # (asked for it, hiring for it, a problem we found, or they wrote to us); the rest are kept under Nurture, not emailed.
     "lead_quality": "fit",
+    "contact_grades": "C",        # lowest grade the agent contacts: C = everyone, B = skip C leads, A = only A leads
+    "dm_auto": "1",               # look for a named decision-maker before emailing a shared mailbox (needs Apollo or Hunter)
+    "dm_daily_cap": "20",         # lookups per day at most, to protect credits
+    "dm_min_score": "60",
+    "dm_titles": "owner, founder, ceo, managing director, general manager, director, head",
+    "nurture_days": "60",         # after "not now": how long to wait before drafting a check-in (0 = never)
+    "verify_daily_cap": "100",    # mailbox checks per day at most
     "rules": "{}",                # which leads the agent may work on: see rules.py
+    "vapi_assistant_id": "",      # the AI caller created in Vapi from Settings > Connections
+    "vapi_phone_id": "",          # which of your Vapi phone numbers it calls from
     "meet_links": "",             # permanent Google Meet links, one per line; each meeting gets one that is free at that time
     # when the agent runs: always while it is on, or only inside these hours
     "agent_schedule": "0",
@@ -278,6 +287,7 @@ MIGRATIONS = [
     ("leads", "deal_value", "REAL"),        # what the deal is worth, in the currency set in Settings
     ("leads", "expected_close", "TEXT"),    # date the deal is expected to close
     ("leads", "closed_at", "TEXT"),         # when it was marked won or lost
+    ("leads", "grade", "TEXT"),             # A, B or C: see quality.py
     ("activities", "actor", "TEXT"),        # who did it, when a person did
     ("meetings", "reminded_at", "TEXT"), ("meetings", "followup_at", "TEXT"),
     ("meetings", "ics_seq", "INTEGER NOT NULL DEFAULT 0"),   # version of the invitation, raised on every change
@@ -491,3 +501,6 @@ def update_lead(lead_id, **fields):
         fields.setdefault("closed_at", now() if fields["stage"] in ("won", "lost") else None)
     cols = ", ".join(f"{k}=?" for k in fields)
     ex(f"UPDATE leads SET {cols} WHERE id=?", (*fields.values(), lead_id))
+    if fields.keys() & {"email", "contact_name", "phone", "score", "extra", "replied_at"}:  # what the grade is made of
+        from . import quality
+        quality.regrade(lead_id)

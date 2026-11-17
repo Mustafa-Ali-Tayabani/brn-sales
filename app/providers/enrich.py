@@ -127,3 +127,106 @@ def phone_result(request_id):
     if r.status_code == 429:
         return "pending", 60
     return "gone", None
+
+
+# ---------- the right person at a company, and whether a mailbox exists ----------
+# Two services can do this. Apollo (APOLLO_API_KEY) searches its people database for free and spends a credit to
+# reveal the chosen person's email. Hunter (HUNTER_API_KEY) lists the people it knows at a domain with their
+# emails in one call, and can also check whether a single mailbox exists. Apollo is used when both are set.
+SENIOR = ("owner", "founder", "co-founder", "cofounder", "ceo", "chief executive", "managing director", "president", "principal", "general manager",
+          "partner", "chief", "director", "head of", "head", "vp", "vice president", "manager", "lead")
+NOT_THEM = ("assistant", "intern", "student", "trainee", "receptionist", "recruit", "hr ", "human resources", "talent", "junior")
+
+
+def people_finder():
+    return "apollo" if os.environ.get("APOLLO_API_KEY") else "hunter" if os.environ.get("HUNTER_API_KEY") else None
+
+
+def verifier():
+    return "hunter" if os.environ.get("HUNTER_API_KEY") else None
+
+
+def _rank(title, wanted):
+    """How good a contact this job title makes: the pipeline's own titles first, then seniority. Lower is better; None = not them."""
+    t = f" {(title or '').lower()} "
+    if not t.strip() or any(w in t for w in NOT_THEM):
+        return None
+    for i, w in enumerate(wanted):
+        if w and w in t:
+            return i
+    for i, w in enumerate(SENIOR):
+        if w in t:
+            return 100 + i
+    return None
+
+
+def _apollo_person(domain, wanted):
+    r = httpx.post(f"{API}/mixed_people/api_search", headers=_headers(), timeout=40, params=[
+        ("q_organization_domains_list[]", domain), ("per_page", "25"), ("page", "1"),
+        *[("person_seniorities[]", s) for s in ("owner", "founder", "c_suite", "partner", "vp", "head", "director", "manager")]])
+    if r.status_code >= 400:
+        raise _fail(r)
+    people = [(p, _rank(p.get("title"), wanted)) for p in (r.json() or {}).get("people") or [] if p.get("has_email")]
+    people = sorted([x for x in people if x[1] is not None], key=lambda x: x[1])
+    for p, _ in people[:2]:   # revealing an email costs a credit: try the best match, then one more
+        m = httpx.post(f"{API}/people/match", params={"id": p["id"]}, headers=_headers(), timeout=40)
+        if m.status_code >= 400:
+            raise _fail(m)
+        person = (m.json() or {}).get("person") or {}
+        email = (person.get("email") or "").lower()
+        if email and "not_unlocked" not in email and person.get("email_status") not in ("unavailable", "bounced"):
+            return {"contact_name": person.get("name") or p.get("first_name"), "title": person.get("title") or p.get("title"), "email": email,
+                    "email_status": person.get("email_status"), "linkedin": person.get("linkedin_url"), "via": "Apollo"}
+    return None
+
+
+def _hunter_person(domain, wanted):
+    r = httpx.get("https://api.hunter.io/v2/domain-search", params={"domain": domain, "type": "personal", "limit": 10, "api_key": os.environ["HUNTER_API_KEY"]}, timeout=30)
+    if r.status_code in (401, 403):
+        raise RuntimeError("Hunter refused the request: check HUNTER_API_KEY.")
+    if r.status_code == 429:
+        raise RuntimeError("Hunter's limit for this month or minute is reached.")
+    if r.status_code >= 400:
+        raise RuntimeError(f"Hunter error {r.status_code}: {r.text[:200]}")
+    best = None
+    for e in ((r.json() or {}).get("data") or {}).get("emails") or []:
+        rank = _rank(e.get("position") or ("executive" if e.get("seniority") == "executive" else ""), wanted + ["executive"])
+        if rank is None or not e.get("value") or not (e.get("first_name") or e.get("last_name")) or (e.get("verification") or {}).get("status") == "invalid":
+            continue
+        key = (rank, -int(e.get("confidence") or 0))
+        if best is None or key < best[0]:
+            best = (key, e)
+    if not best:
+        return None
+    e = best[1]
+    return {"contact_name": " ".join(x for x in (e.get("first_name"), e.get("last_name")) if x), "title": e.get("position"), "email": e["value"].lower(),
+            "email_status": (e.get("verification") or {}).get("status"), "linkedin": e.get("linkedin"), "via": "Hunter"}
+
+
+def find_decision_maker(domain, titles=()):
+    """A named person worth writing to at this company: {contact_name, title, email, email_status, via}, or None."""
+    wanted = [t.strip().lower() for t in titles if t and t.strip()]
+    who = people_finder()
+    if not who:
+        raise RuntimeError("No people finder is connected. Set APOLLO_API_KEY or HUNTER_API_KEY.")
+    domain = re.sub(r"^(https?://)?(www\.)?", "", (domain or "").strip().lower()).split("/")[0]
+    if not domain or "." not in domain:
+        return None
+    return _apollo_person(domain, wanted) if who == "apollo" else _hunter_person(domain, wanted)
+
+
+def verify_email(address):
+    """Does this mailbox exist? "valid", "invalid", "accept_all" (the server accepts anything, so unknowable), "webmail",
+    "disposable" or "unknown"; None when no verifier is connected or it could not be asked."""
+    if not verifier():
+        return None
+    try:
+        for _ in range(2):   # 202 means Hunter is still checking: ask once more
+            r = httpx.get("https://api.hunter.io/v2/email-verifier", params={"email": address, "api_key": os.environ["HUNTER_API_KEY"]}, timeout=30)
+            if r.status_code != 202:
+                break
+        if r.status_code != 200:
+            return None
+        return ((r.json() or {}).get("data") or {}).get("status")
+    except Exception:
+        return None

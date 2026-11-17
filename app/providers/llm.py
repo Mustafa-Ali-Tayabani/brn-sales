@@ -384,6 +384,27 @@ Return JSON: {{"subject": str, "body": str}}""", 600, "reply")
                     f"[add what we agreed and the next step]\n\nIf anything comes up in the meantime, just reply to this email.\n\nBest regards,\n{sender}"}
 
 
+def write_checkin(lead, research_, settings, their_text):
+    """A short check-in to someone who said the timing was wrong. A person approves it."""
+    name = (lead.get("contact_name") or "").split(" ")[0]
+    sender = settings.get("sender_name") or "brn dynamics"
+    if _usable("reply"):
+        try:
+            out = _ask_json(SYSTEM, f"""A while ago a prospect told us the timing was not right. Write a short, friendly check-in.
+What they said then: {their_text!r}
+Product: {settings.get('product_name', '')}. Offer: {settings['offer']}
+Lead: {json.dumps(_lead_view(lead), ensure_ascii=False, default=str)}
+Rules: under 70 words, plain text, no pressure, no "just following up". Refer lightly to what they said, ask one easy question about whether
+the timing is better now, and make it easy to say no. Start with "Hi {name or 'there'}," and end with a short sign-off from {sender}.{house_style(settings)}
+Return JSON: {{"subject": str, "body": str}}""", 500, "reply")
+            if out.get("body"):
+                return {"subject": out.get("subject") or "Checking in", "body": out["body"]}
+        except Exception as e:
+            _note_error(e)
+    return {"subject": "Checking in", "body": f"Hi {name or 'there'},\n\nWhen we last spoke you said the timing wasn't right, so I left it there. "
+            f"Has anything changed at {lead.get('company') or 'your end'}, or should I check back later in the year?\n\nEither answer is fine.\n\nBest regards,\n{sender}"}
+
+
 def write_reply(lead, research_, settings, their_text, intent, last_sent=None):
     """Draft an answer to a lead's reply. A person approves it before it goes out, so it must be safe to send as is."""
     name = (lead.get("contact_name") or "").split(" ")[0]
@@ -470,18 +491,18 @@ def _web_json(prompt, max_uses=5, max_tokens=3000):
     return json.loads(m.group(0))
 
 
-def find_requests(need, country="", limit=10):
+def find_requests(need, country="", limit=10, linkedin=False):
     """People and businesses who said in public that they need this. Each comes with the page and their own words,
     so it can be checked. Returns [{who, website, email, url, quote, posted, where}]."""
     place = f" Prefer {country}." if country and country != "--" else ""
     data = _web_json(f"""Find up to {int(limit)} RECENT public requests (last 60 days) where a business or person says, in their own words, that they
 are looking for this: "{need}".{place}
-Good places: forum and community posts, Q&A sites, requests for proposals and tenders, project briefs, freelance or job-board gigs,
-social posts that are publicly readable, local business groups. Use web search.
+{"Search PUBLIC LinkedIn posts only (linkedin.com/posts/... and linkedin.com/feed/update/...): people writing that they are looking for a provider, an agency, a freelancer or recommendations. Use web search with site:linkedin.com." if linkedin else "Good places: forum and community posts, Q&A sites, requests for proposals and tenders, project briefs, freelance or job-board gigs, social posts that are publicly readable (LinkedIn included), local business groups. Use web search."}
 Only include an item when the BUYER states the need. Never include providers advertising their services, agency websites, listicles,
 directories of vendors, or news articles. Do not guess: if you cannot quote their words from the page, leave it out.
 Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","website":"their own website or null","email":"only if shown publicly on that page, else null",
-"url":"the exact page where they said it","quote":"their words, copied exactly, at most 200 characters","posted":"YYYY-MM-DD or null","where":"name of the site"}}]}}""")
+"url":"the exact page where they said it","quote":"their words, copied exactly, at most 200 characters","posted":"YYYY-MM-DD or null","where":"name of the site",
+"profile":"the author's LinkedIn profile URL (linkedin.com/in/...) if the page shows it, else null","title":"their job title and company if shown, else null"}}]}}""")
     out, seen = [], set()
     for it in data.get("requests") or []:
         url, quote = (it.get("url") or "").strip(), (it.get("quote") or "").strip()
@@ -489,7 +510,8 @@ Reply with ONLY JSON: {{"requests":[{{"who":"company or person name","website":"
             continue
         seen.add(url)
         out.append({"who": str(it["who"])[:120], "website": (it.get("website") or "").strip() or None, "email": (it.get("email") or "").strip().lower() or None,
-                    "url": url, "quote": quote[:300], "posted": (it.get("posted") or "")[:10] or None, "where": str(it.get("where") or "")[:60]})
+                    "url": url, "quote": quote[:300], "posted": (it.get("posted") or "")[:10] or None, "where": str(it.get("where") or "")[:60],
+                    "profile": (it.get("profile") or "").strip() if "linkedin.com/in/" in str(it.get("profile") or "") else None, "title": str(it.get("title") or "")[:120] or None})
     return out[:int(limit)]
 
 

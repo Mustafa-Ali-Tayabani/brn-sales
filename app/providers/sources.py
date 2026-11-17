@@ -116,7 +116,23 @@ def _site_key(url):
     return u[4:] if u.startswith("www.") else u
 
 
-def google_places(query, country="SA", limit=20, only_without_website=False):
+def review_signal(place, words):
+    """A reason to write to a local business, from its Google listing: a recent poor review that mentions something we fix,
+    or a low rating over many reviews. Returns extra fields to add to the lead."""
+    out = {}
+    rating, count = place.get("rating"), place.get("userRatingCount") or 0
+    if rating is not None and rating < 4.0 and count >= 15:
+        out["low_rating"] = True
+    for rv in place.get("reviews") or []:
+        text = ((rv.get("originalText") or rv.get("text") or {}).get("text") or "").strip()
+        if (rv.get("rating") or 5) <= 3 and text and any(w in text.lower() for w in words):
+            out["intent"] = {"level": "problem", "quote": text[:240], "where": "Google review", "posted": (rv.get("publishTime") or "")[:10],
+                             "url": place.get("googleMapsUri")}
+            break
+    return out
+
+
+def google_places(query, country="SA", limit=20, only_without_website=False, review_words=None):
     """e.g. google_places('gyms in Riyadh'). Business listings only: these are company lines, not personal numbers.
     With only_without_website, keeps businesses that have no website listed (pages through up to 60 results)."""
     key = os.environ.get("GOOGLE_PLACES_API_KEY")
@@ -131,7 +147,8 @@ def google_places(query, country="SA", limit=20, only_without_website=False):
             "https://places.googleapis.com/v1/places:searchText",
             headers={"X-Goog-Api-Key": key,
                      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.internationalPhoneNumber,"
-                                         "places.websiteUri,places.primaryType,places.rating,places.userRatingCount,places.googleMapsUri,nextPageToken"},
+                                         "places.websiteUri,places.primaryType,places.rating,places.userRatingCount,places.googleMapsUri,nextPageToken"
+                                         + (",places.reviews" if review_words else "")},   # reviews cost more per search: only when asked for
             json=body, timeout=20,
         )
         if r.status_code >= 400:
@@ -148,7 +165,8 @@ def google_places(query, country="SA", limit=20, only_without_website=False):
                 "consent_basis": "legitimate_interest_b2b",
                 "extra": {k: v for k, v in {"address": addr, "rating": p.get("rating"), "reviews": p.get("userRatingCount"),
                                             "google_maps": p.get("googleMapsUri"), "place_id": p.get("id"),
-                                            "has_website": bool(p.get("websiteUri")), "found_by": query}.items() if v not in (None, "")},
+                                            "has_website": bool(p.get("websiteUri")), "found_by": query,
+                                            **review_signal(p, [w.lower() for w in review_words or []])}.items() if v not in (None, "")},
             })
         token = data.get("nextPageToken")
         if len(out) >= limit or not token:

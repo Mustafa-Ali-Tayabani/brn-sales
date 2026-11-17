@@ -77,6 +77,37 @@ exempt). And Settings > Agent & sending > **Who the agent contacts** can be set 
 matches from map and web search are then kept under Nurture instead of being emailed. Scoring also now rewards
 evidence of a current need over a profile match. Set `BRN_SITE_CHECK=0` to switch off the home-page read.
 
+## Lead quality
+
+Every lead has a **grade**, A to C, from three things shown on its page: is there a sign of need (asked, wrote to us,
+hiring, a problem found), is there a named person with their own address, and how well it fits. The agent works the best
+grades first, and Settings > Agent & sending can stop it contacting grades below a level.
+
+* **Named contacts.** Before emailing a shared mailbox like info@, the agent looks for the owner or a manager at the
+  company and writes to them instead (the shared address is kept). Needs `APOLLO_API_KEY` or `HUNTER_API_KEY`; a daily
+  limit protects your credits. Also a button on each lead and a bulk action. Job titles to look for are set in Settings
+  and per pipeline.
+* **Mailbox check.** With `HUNTER_API_KEY`, the address is verified before the first email; a mailbox that does not
+  exist waits under Needs contact instead of bouncing.
+* **Clean up leads** (Leads page). Checks every lead the agent could still contact against the rules and for companies
+  entered twice, shows what it found, and sets those aside when you agree. Nothing is deleted.
+* **Good lead / Bad lead** on each lead. A bad mark sets the lead aside with a reason; when a pattern shows, Settings >
+  Rules suggests a rule. A good mark raises the grade, and **Find similar companies** searches for more like it.
+* **Reviews as a reason to write.** A pipeline can list words (booking, waiting, phone); map searches then read each
+  business's Google reviews and a poor review mentioning one becomes the reason to write. A low rating over many reviews
+  counts too.
+* **Not now.** A lead who says the timing is wrong gets a check-in drafted for approval after a set number of days.
+* **LinkedIn posts.** A pipeline can also search public LinkedIn posts for people asking for what it sells. LinkedIn shows
+  no contact details and may not be read by machine, so the author is matched to a contact through Apollo.
+* Map results now also get the email each business publishes on its own website.
+
+## AI phone calls
+
+Settings > Connections > AI phone calls. With `VAPI_API_KEY` set, **Set up the AI caller** creates the caller in your
+Vapi account (script, the result it reports, and where it reports to); you choose which of your Vapi numbers it calls from
+and can have it phone you to hear it. Calls are placed as the phone step of a sequence, within calling hours and the
+daily limit, and after your approval in approval mode. Without it, the agent leaves a call brief for you to phone by hand.
+
 ## Email coach
 
 The **Email coach** page is where you tell the agent how your emails should be written, the way you would brief a new
@@ -206,6 +237,8 @@ Lead sources ──► Research + score (Claude) ──► Qualified? ──no�
 * `app/providers/inbox.py`: reads replies from your mailbox (IMAP) every 5 minutes, records them once and lets the agent act on them
 * `app/providers/mailbox.py`: the Mailbox page's IMAP client (folders, reading, drafts, moving, Sent copies)
 * `app/auth.py`: accounts, sign-in sessions, roles and what each may do
+* `app/quality.py`: grades, named contacts, clean-up, good/bad marks
+* `app/providers/voice.py`: AI phone calls through Vapi
 * `app/providers/intent.py`: buying signals (verified public requests, hiring ads)
 * `app/invites.py`: Meet links and emailed meeting invitations (.ics)
 * `app/rules.py`: lead rules

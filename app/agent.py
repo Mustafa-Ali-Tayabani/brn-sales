@@ -123,9 +123,15 @@ def signal(lead):
         return "asked"
     if lead.get("source") in ("booking", "website", "inbound") or lead.get("replied_at"):
         return "inbound"
-    if extra.get("issues") or extra.get("top_issue") or extra.get("has_website") is False:
+    if extra.get("issues") or extra.get("top_issue") or extra.get("has_website") is False or extra.get("low_rating"):
         return "problem"
     return None
+
+
+def _below_grade(lead_id):
+    lowest = (db.setting("contact_grades") or "C").upper()
+    g = (db.one("SELECT grade FROM leads WHERE id=?", (lead_id,)) or {}).get("grade") or "C"
+    return lowest in ("A", "B") and g > lowest   # "C" > "B" > "A"
 
 
 def research_lead(lead):
@@ -158,6 +164,12 @@ def research_lead(lead):
         return
     score = int(r.get("score") or 0)
     why = signal(lead)
+    from . import quality
+    if (db.setting("dm_auto") == "1" and score >= int(db.setting("dm_min_score") or 60) and quality.needs_person(lead) and not lead.get("emails_sent")
+            and "person_lookup" not in (json.loads(lead.get("extra") or "{}") or {})):
+        found = quality.find_person(lead)   # a named decision-maker instead of info@, when a people finder is connected
+        if found["found"]:
+            lead = db.one("SELECT * FROM leads WHERE id=?", (lead["id"],))
     if r.get("_engine") == "template" and why in ("asked", "inbound", "hiring"):  # built-in scoring knows nothing about intent: a stated need outranks a profile match
         score = max(score, {"asked": 90, "inbound": 92, "hiring": 78}[why])
         r["score"], r["score_reason"] = score, f"{SIGNALS[why].lower()}; {r.get('score_reason', '')}".strip("; ")
@@ -172,6 +184,9 @@ def research_lead(lead):
     if score < int(db.setting("min_score")):
         db.update_lead(lead["id"], stage="disqualified", next_action=None, next_action_at=None)
         db.log(lead["id"], "stage_change", f"Disqualified (score {score}): {r.get('score_reason', '')}", status="ok")
+    elif _below_grade(lead["id"]):
+        db.update_lead(lead["id"], stage="nurture", next_action=None, next_action_at=None)
+        db.log(lead["id"], "stage_change", f"Kept under Nurture, not contacted: grade {db.one('SELECT grade FROM leads WHERE id=?', (lead['id'],))['grade']} is below the lowest grade the agent contacts (Settings > Agent & sending).")
     elif db.setting("lead_quality") == "signal" and not why and str(lead.get("source") or "").split(":")[0].strip() not in CHOSEN_SOURCES:
         # it fits the profile, but nothing says it needs this now: keep it, don't email it
         db.update_lead(lead["id"], stage="nurture", next_action=None, next_action_at=None)
@@ -247,7 +262,11 @@ def apply_outcome(lead_id, outcome):
     if outcome not in stop:
         return False
     stage = stop[outcome]
-    db.update_lead(lead_id, stage=stage, next_action=("human_followup" if stage in ("replied", "meeting_booked") else None), next_action_at=None)
+    days = int(db.setting("nurture_days") or 0)
+    if outcome == "not_now" and days > 0:  # they said the timing is wrong: come back to them, don't forget them
+        db.update_lead(lead_id, stage=stage, next_action="check_in", next_action_at=_iso(datetime.now(timezone.utc) + timedelta(days=days)))
+    else:
+        db.update_lead(lead_id, stage=stage, next_action=("human_followup" if stage in ("replied", "meeting_booked") else None), next_action_at=None)
     db.log(lead_id, "stage_change", f"Moved to {stage} ({outcome})")
     if outcome == "unsubscribe":
         lead = db.one("SELECT * FROM leads WHERE id=?", (lead_id,))
@@ -465,7 +484,7 @@ def tick(at=None, force=False):
     for lead in db.q("SELECT * FROM leads WHERE stage='new' LIMIT 25"):
         research_lead(lead)
         done += 1
-    due = db.q("SELECT * FROM leads WHERE stage='in_sequence' AND next_action_at IS NOT NULL AND next_action_at<=? ORDER BY next_action_at LIMIT 50", (_iso(at),))
+    due = db.q("SELECT * FROM leads WHERE stage='in_sequence' AND next_action_at IS NOT NULL AND next_action_at<=? ORDER BY COALESCE(grade,'C'), next_action_at LIMIT 50", (_iso(at),))  # best leads first
     for lead in due:
         run_step(lead, at)
         done += 1

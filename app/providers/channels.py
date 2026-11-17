@@ -15,7 +15,7 @@ from email.utils import formataddr, formatdate, getaddresses, make_msgid
 import httpx
 
 from .. import db, email_template
-from . import mailbox
+from . import mailbox, voice
 
 
 def email_provider():
@@ -131,22 +131,10 @@ def send_email(lead, subject, body, cta=None, cta_label=None):
 
 
 def place_call(lead, script):
-    key = os.environ.get("VAPI_API_KEY")
-    if not key:
-        return {"status": "skipped"}  # no AI calling connected: the agent leaves the brief for a person to call
-    r = httpx.post(
-        "https://api.vapi.ai/call",
-        headers={"Authorization": f"Bearer {key}"},
-        json={
-            "phoneNumberId": os.environ["VAPI_PHONE_NUMBER_ID"],
-            "assistantId": os.environ["VAPI_ASSISTANT_ID"],
-            "customer": {"number": lead["phone"], "name": lead.get("contact_name") or lead["company"]},
-            "assistantOverrides": {"metadata": {"lead_id": lead["id"]},
-                                   "variableValues": {"company": lead["company"], "contact_name": lead.get("contact_name") or "", "opening": script.get("opening", ""),
-                                                      "talking_points": "; ".join(script.get("talking_points", []))}},
-        },
-        timeout=20,
-    )
-    r.raise_for_status()
-    # Final outcome arrives later through the /webhooks/voice endpoint.
-    return {"status": "ok", "provider_id": r.json().get("id"), "outcome": "in_progress"}
+    if not voice.ready():
+        return {"status": "skipped"}  # AI calling is not set up: the agent leaves the brief for a person to call
+    cid = voice.call(lead["phone"], lead.get("contact_name") or lead["company"],
+                     {"company": lead["company"], "contact_name": lead.get("contact_name") or "", "opening": script.get("opening", ""),
+                      "talking_points": "; ".join(script.get("talking_points", []))}, lead["id"])
+    # What was said arrives later at /webhooks/voice.
+    return {"status": "ok", "provider_id": cid, "outcome": "in_progress"}

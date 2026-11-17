@@ -250,6 +250,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
 .dot.rest{background:#f0b400;box-shadow:0 0 0 3px #f0b40033}.agentsw.rest .tg{background:#e0a800}.agentsw.rest .st{color:var(--warn)}
 @media(max-width:1000px){.setwrap{grid-template-columns:1fr}.settabs{position:static;flex-direction:row;flex-wrap:wrap}.savebar{margin-left:0}}
 .rmx td,.rmx th{padding:8px 10px}.rmx input{width:16px;height:16px}.rmx td:first-child{font-size:13px}
+.grade{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;font:700 12px "Space Grotesk";flex:none}.grade.gA{background:var(--ok);color:#fff}.grade.gB{background:#e9f3ff;color:#0b5cad}.grade.gC{background:#efefe9;color:var(--mut)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;z-index:30;font-size:13px;box-shadow:0 10px 30px #0005;animation:tin .2s ease-out}
 @keyframes tin{from{opacity:0;transform:translate(-50%,8px)}}
 .steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px}
@@ -338,11 +339,12 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
     <div class="fbox">
       <div class="fgrid">
         <div><label>Status</label><select id="f-stage" onchange="loadLeads(0)"></select></div>
+        <div><label>Grade</label><select id="f-grade" onchange="loadLeads(0)"><option value="">Any grade</option><option value="A">A: need, named contact and fit</option><option value="A,B">A and B</option><option value="B">B</option><option value="C">C: weakest</option></select></div>
         <div><label>Buying signal</label><select id="f-signal" onchange="loadLeads(0)"><option value="">Any lead</option><option value="any">Has a signal</option><option value="asked">Asked for it</option><option value="hiring">Hiring for it</option><option value="inbound">Wrote to us</option><option value="none">No signal (profile match only)</option></select></div>
         <div><label>Email</label><select id="f-email_status" onchange="loadLeads(0)">
           <option value="">Any</option><option value="never">Not emailed yet</option><option value="sent">Emailed</option>
           <option value="no_reply">Emailed, no reply</option><option value="replied">Replied</option><option value="no_email">No email address</option></select></div>
-        <div><label>Sort by</label><select id="f-sort" onchange="loadLeads(0)"><option value="updated">Recently updated</option><option value="created">Newest</option><option value="score">Highest score</option><option value="contacted">Last contacted</option><option value="value">Highest deal value</option><option value="next">Next action due</option><option value="company">Company A–Z</option></select></div>
+        <div><label>Sort by</label><select id="f-sort" onchange="loadLeads(0)"><option value="updated">Recently updated</option><option value="created">Newest</option><option value="score">Highest score</option><option value="contacted">Last contacted</option><option value="value">Highest deal value</option><option value="grade">Best grade first</option><option value="next">Next action due</option><option value="company">Company A–Z</option></select></div>
       </div>
       <div class="fgrid adv hide" id="advF">
         <div><label>Category / segment</label><select id="f-segment" onchange="loadLeads(0)"></select></div>
@@ -357,12 +359,12 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
       </div>
       <div class="row" style="margin-top:10px"><span class="muted" id="lcount"></span><span style="flex:1"></span>
         <button class="sm" id="advBtn" onclick="$('#advF').classList.toggle('hide');this.textContent=$('#advF').classList.contains('hide')?'More filters ▾':'Fewer filters ▴'">More filters ▾</button>
-        <button class="sm" onclick="clearFilters()">Clear filters</button><button class="sm" data-perm="export" onclick="exportLeads()">Export these (CSV)</button></div>
+        <button class="sm" onclick="clearFilters()">Clear filters</button><button class="sm" data-perm="leads.write" onclick="openCleanup()">Clean up leads</button><button class="sm" data-perm="export" onclick="exportLeads()">Export these (CSV)</button></div>
     </div>
     <div class="bulk" id="bulk"><b id="bulkN"></b>
       <select id="bulkStage"><option value="">Set status…</option></select><button onclick="bulkDo('set_stage',$('#bulkStage').value)">Apply</button>
       <select id="bulkProd"><option value="">Set product…</option></select><button onclick="bulkDo('set_product',$('#bulkProd').value)">Apply</button>
-      <button onclick="bulkDo('resume')">Start / resume sequence</button><button onclick="bulkDo('pause')">Pause</button>
+      <button onclick="bulkDo('find_people')" title="Look for a named decision-maker at each company (up to 25 at a time)">Find named contacts</button><button onclick="bulkDo('resume')">Start / resume sequence</button><button onclick="bulkDo('pause')">Pause</button>
       <button onclick="bulkDo('restart')">Re-research</button><button class="danger" data-perm="leads.delete" onclick="ask('Delete the selected leads? This cannot be undone.').then(ok=>ok&&bulkDo('delete'))">Delete</button>
       <span style="flex:1"></span><label style="color:#c9cad1;margin:0"><input type="checkbox" id="bulkAll"> all <span id="bulkAllN"></span> matching</label>
       <button onclick="clearSel()">✕</button>
@@ -459,6 +461,11 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
       <div class="card"><h3>Finding leads</h3>
         <label>Who the agent contacts</label><select id="s-lead_quality" style="width:100%"><option value="fit">Anyone who fits a pipeline's ideal customer</option><option value="signal">Only leads with a sign they need it now (asked, hiring, a problem found, or wrote to us)</option></select>
         <p class="hint">With the second option, leads found by map or web search that show no such sign are kept under Nurture and not emailed. Leads you add or import yourself are always contacted.</p>
+        <div class="frow"><div><label>Lowest grade the agent contacts</label><select id="s-contact_grades"><option value="C">C: everyone who qualifies</option><option value="B">B: skip C leads</option><option value="A">A only</option></select></div>
+          <div><label>After "not now", check in after (days)</label><input id="s-nurture_days" type="number" min="0"><p class="hint">0 = never. The check-in is drafted for your approval.</p></div></div>
+        <label>Named contacts</label><select id="s-dm_auto" style="width:100%"><option value="1">Look for a named decision-maker before emailing a shared mailbox</option><option value="0">Don't look automatically (use the button on a lead)</option></select>
+        <div class="frow"><div><label>Lookups per day at most</label><input id="s-dm_daily_cap" type="number" min="0"></div><div><label>Only for leads scoring at least</label><input id="s-dm_min_score" type="number" min="0" max="100"></div></div>
+        <label>Job titles to look for, best first</label><input id="s-dm_titles" style="width:100%"><p class="hint">Needs a people finder (Apollo or Hunter, see Connections). Each successful lookup can use a credit, so the daily limit protects your allowance. A pipeline can list its own titles.</p>
         <label>Automatic lead search</label><select id="s-auto_discovery" style="width:100%"><option value="1">On: once a day, each pipeline searches its own sources</option><option value="0">Off: only when I click "Find leads now"</option></select>
         <label>Extra Google Maps searches, daily</label><textarea id="s-discovery" placeholder="gyms in Riyadh | SA | 20"></textarea><p class="hint">One per line: what to search | country code | how many.</p></div>
      </div>
@@ -479,6 +486,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
      <div class="setpane" data-tab="rules"><h2>Rules</h2><p class="lead">Which leads the agent may work on. Rules are checked before a lead is researched and again before every email.</p>
       <div class="card"><h3>Ready-made rules</h3><div id="rulesBuiltin"></div></div>
       <div class="card"><h3>Your own rules</h3><div id="rulesCustom"></div></div>
+      <div class="card" data-nosave><h3>Suggested from the leads you marked bad</h3><div id="rulesIdeas"></div></div>
       <div class="card" data-nosave><h3>Check current leads</h3><p class="muted" style="margin:0 0 10px">See which leads the agent is working on right now would be stopped by the rules as they are set above.</p>
         <button onclick="rulesPreview()">Save and check current leads</button><div id="rulesOut" style="margin-top:12px"></div></div>
      </div>
@@ -521,6 +529,7 @@ details.adv>summary{cursor:pointer;color:var(--mut);font-size:13px}details.adv[o
      <div class="setpane" data-tab="connections" data-nosave><h2>Connections</h2><p class="lead">The outside services this app talks to. They are switched on with variables on the server.</p>
       <div class="card"><h3>Your website's contact form</h3><p class="muted" style="margin:-6px 0 8px">People who write to you are the best leads. Have the form on your website send its fields here: each enquiry becomes a lead marked "Wrote to us", with an answer drafted for your approval.</p>
         <pre id="inboundCode" style="user-select:all;margin:0"></pre><p class="hint">Fields: name, email (required), company, phone, message, product (a pipeline key, optional). Give this to whoever maintains the website.</p></div>
+      <div class="card"><h3>AI phone calls</h3><div id="voiceCard"></div></div>
       <div class="card"><h3>Services</h3><table id="prov"></table>
         <div class="row" style="margin-top:12px"><button onclick="testEmail(this)">Send test email to myself</button><button onclick="checkInbox()">Check inbox for replies</button></div></div>
      </div>
@@ -647,7 +656,7 @@ function filterStage(x){show('leads');$('#f-stage').value=x;loadLeads(0)}
 
 const logRow=a=>`<tr class="click" onclick="openLead(${a.lead_id||0})"><td class="muted" style="white-space:nowrap">${fmt(a.created_at)}</td><td>${esc(a.company||'System')}</td><td>${a.product?prodTag(a.product):''}</td><td><span class="tag g">${a.kind}</span></td><td><span class="tag ${a.status}">${a.status}</span></td><td>${esc(a.summary)}${a.actor?` <span class="muted">· ${esc(a.actor)}</span>`:''}</td></tr>`;
 const logHead='<tr><th>When</th><th>Lead</th><th>Product</th><th>Event</th><th>Status</th><th>Detail</th></tr>';
-const KI={email_bounce:['⤺','#fdecea','#b42318'],meeting:['📅','#e7f6ee','#127a4a'],task:['☑','#fff4e0','#a15c00'],email_sent:['✉','#eef0ff','#010ECF'],email_reply:['↩','#e9f3ff','#0b5cad'],call_completed:['☎','#ecedff','#3a46d8'],research:['🔎','#f2f2ec','#4a4b52'],stage_change:['→','#f2f2ec','#4a4b52'],approval:['✓','#fff4e0','#a15c00'],blocked:['⦸','#fdecea','#b42318'],system:['⚙','#f2f2ec','#6b6d76']};
+const KI={enrich:['👤','#eef0ff','#010ECF'],email_bounce:['⤺','#fdecea','#b42318'],meeting:['📅','#e7f6ee','#127a4a'],task:['☑','#fff4e0','#a15c00'],email_sent:['✉','#eef0ff','#010ECF'],email_reply:['↩','#e9f3ff','#0b5cad'],call_completed:['☎','#ecedff','#3a46d8'],research:['🔎','#f2f2ec','#4a4b52'],stage_change:['→','#f2f2ec','#4a4b52'],approval:['✓','#fff4e0','#a15c00'],blocked:['⦸','#fdecea','#b42318'],system:['⚙','#f2f2ec','#6b6d76']};
 const ago=t=>{if(!t)return'';const m=(Date.now()-new Date(t))/6e4;return m<1?'now':m<60?Math.round(m)+'m':m<1440?Math.round(m/60)+'h':Math.round(m/1440)+'d'};
 async function loadRecent(){const r=await api('/api/activities?limit=10'+(ovProduct?'&product='+ovProduct:''));
   $('#recent').innerHTML=r.map(a=>{const [i,bg,c]=a.status=='error'?['!','#fdecea','#b42318']:(KI[a.kind]||KI.system);
@@ -656,7 +665,7 @@ function logParams(){return ['q','kind','status','channel','product','date_from'
 async function loadLog(){const r=await api('/api/activities?limit=1000&'+logParams());$('#gcount').textContent=r.length+(r.length==1000?'+':'')+' events';$('#log').innerHTML=logHead+r.map(logRow).join('')}
 function exportLog(){location.href='/api/export/activities.csv?'+logParams()}
 
-const FKEYS=['stage','segment','email_status','country','source','score_min','score_max','created_from','created_to','contacted_from','contacted_to','replied_from','sort','signal'];
+const FKEYS=['stage','segment','email_status','country','source','score_min','score_max','created_from','created_to','contacted_from','contacted_to','replied_from','sort','signal','grade'];
 function leadFilters(){const f={};if($('#lq').value)f.q=$('#lq').value;if(lProduct)f.product=lProduct;FKEYS.forEach(k=>{const v=$('#f-'+k).value;if(v)f[k]=v});return f}
 const qs=o=>Object.entries(o).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
 function clearFilters(){$('#lq').value='';lProduct='';FKEYS.forEach(k=>$('#f-'+k).value=k=='sort'?'updated':'');loadFacets();loadLeads(0)}
@@ -668,7 +677,7 @@ async function loadLeads(p){if(p!==undefined)page=p;const r=await api('/api/lead
   <td class="cell2"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(l.company)}<div><b>${esc(l.company)}</b>${l.website?`<small>${esc(l.website.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''))}</small>`:''}</div></div></td>
   <td>${prodTag(l.product)}<br><span class="muted">${esc(l.segment||l.industry||'')}</span></td>
   <td class="cell2">${l.contact_name?esc(l.contact_name)+'<small>':'<small style="color:inherit">'}${esc(l.email||l.phone||'No contact yet')}</small></td>
-  <td>${esc(l.city||'')} ${esc(l.country||'')}</td><td>${l.score??'–'}</td><td>${stageTag(l.stage)}${l.signal?'<br>'+sigTag(l.signal):''}${l.deal_value?`<br><span class="muted">${money(l.deal_value)}</span>`:''}</td>
+  <td>${esc(l.city||'')} ${esc(l.country||'')}</td><td style="white-space:nowrap">${gradeTag(l.grade)} ${l.score??'–'}</td><td>${stageTag(l.stage)}${l.signal?'<br>'+sigTag(l.signal):''}${l.deal_value?`<br><span class="muted">${money(l.deal_value)}</span>`:''}</td>
   <td>${l.emails_sent?`<span class="tag ok">${l.emails_sent} sent</span>`:'<span class="muted">none</span>'}${l.replied_at?'<br><span class="tag replied">replied</span>':''}</td>
   <td class="muted">${fdate(l.last_contacted_at)}</td><td class="muted">${esc(l.next_action||'')} ${fmt(l.next_action_at)}</td></tr>`).join('');
   const pages=Math.ceil(r.total/PAGE);$('#pager').innerHTML=pages>1?`<button class="sm" ${page==0?'disabled':''} onclick="loadLeads(${page-1})">← Prev</button><span class="muted">Page ${page+1} of ${pages}</span><button class="sm" ${page+1>=pages?'disabled':''} onclick="loadLeads(${page+1})">Next →</button>`:'';updBulk()}
@@ -683,7 +692,8 @@ async function bulkDo(action,value){if(action.startsWith('set_')&&!value)return 
 async function openLead(id){if(!id)return;const l=await api('/api/leads/'+id),r=l.research||{},x=l.extra||{};window.LEAD=l;l.meetings.forEach(m=>{m.company=l.company;m.contact_name=l.contact_name;MEET[m.id]=m});
   const issues=x.issues||[];const xr=Object.entries(x).filter(([k])=>!['issues','intent'].includes(k)),it=x.intent||null;
   $('#drawer').innerHTML=`<div class="row"><h2 style="flex:1">${esc(l.company)}</h2><button onclick="$('#drawer').classList.remove('open')">Close</button></div>
-  <div class="qa">${quickActions(l)}</div>
+  <div class="qa">${quickActions(l)}${can('leads.write')&&l.can_find_person&&(!l.contact_name||!l.email||/^(info|sales|contact|hello|support|admin|office|team|mail|enquiries|inquiries|marketing)@/i.test(l.email))?`<button class="sm" onclick="findPerson(${l.id},this)" title="Look for the owner or a manager at this company">Find a named contact</button>`:''}${can('leads.write')&&(l.replied_at||['won','meeting_booked','replied'].includes(l.stage)||((l.extra||{}).feedback||{}).verdict=='good')?`<button class="sm" onclick="findSimilar(${l.id},this)">Find similar companies</button>`:''}</div>
+  ${qualityRow(l)}
   <div class="row" style="margin:10px 0">${stageTag(l.stage)} ${prodTag(l.product)} ${l.segment?`<span class="tag g">${esc(l.segment)}</span>`:''}<span class="muted">score ${l.score??'–'} · ${l.emails_sent} emails sent${l.replied_at?' · replied '+fdate(l.replied_at):''}</span></div>
   ${x.email_bounced?`<div class="banner"><span><b>Emails to ${esc(x.email_bounced)} bounced</b>, so that address is on the do-not-contact list. Enter a working address below and save to restart outreach.</span></div>`:''}
   <div class="card"><h3>Details</h3><div class="fgrid">
@@ -837,6 +847,39 @@ function schedLead(){const l=window.LEAD;openMeeting({lead_id:l.id,company:l.com
 /* ---- why a lead is worth contacting ---- */
 const SIG={asked:['ok','Asked for it'],inbound:['ok','Wrote to us'],hiring:['replied','Hiring for it'],problem:['pending_approval','Shows the problem']};
 const sigTag=k=>SIG[k]?`<span class="tag ${SIG[k][0]}">${SIG[k][1]}</span>`:'';
+/* ---- lead quality: grade, named contact, good / bad, clean-up ---- */
+const gradeTag=g=>g?`<span class="grade g${g}" title="Grade ${g}">${g}</span>`:'';
+async function findPerson(id,b){b.disabled=true;const t=b.textContent;b.textContent='Looking…';try{const r=await api(`/api/leads/${id}/decision-maker`,{method:'POST'});alertBanner(r.found?'Found a named contact: '+r.detail:r.detail,!r.found);openLead(id);refresh()}finally{b.disabled=false;b.textContent=t}}
+async function markLead(id,verdict){if(verdict=='bad'){const R=(window.LEAD.bad_reasons)||{};openModal('Why is this a bad lead?',`<p class="muted" style="margin-top:0">It is set aside and not contacted. Your reasons are used to suggest rules, so fewer leads like it come in.</p>
+   <div class="chips" id="badWhy">${Object.entries(R).map(([k,n],i)=>`<span class="chip ${i==0?'on':''}" data-k="${k}" onclick="document.querySelectorAll('#badWhy .chip').forEach(c=>c.classList.remove('on'));this.classList.add('on')">${esc(n)}</span>`).join('')}</div>
+   <label>Anything to add? (optional)</label><input id="badNote" style="width:100%" placeholder="e.g. they only sell to consumers">
+   <div class="row" style="margin-top:14px"><button class="pri" onclick="sendMark(${id},'bad',document.querySelector('#badWhy .chip.on').dataset.k,$('#badNote').value)">Mark as a bad lead</button></div>`);return}
+  sendMark(id,verdict)}
+async function sendMark(id,verdict,reason,note){await api(`/api/leads/${id}/feedback`,{method:'POST',body:{verdict,reason,note}});closeModal();toast(verdict=='good'?'Marked as a good lead':verdict=='bad'?'Marked as a bad lead and set aside':'Mark removed');openLead(id);refresh()}
+async function findSimilar(id,b){b.disabled=true;const t=b.textContent;b.textContent='Searching the web…';try{const r=await api(`/api/leads/${id}/similar`,{method:'POST',body:{}});alertBanner(r.added?`Added ${r.added} similar ${r.added==1?'company':'companies'} to the same pipeline. They are researched like any new lead.`:'No new similar companies were found.',!r.added);loadFacets();refresh()}finally{b.disabled=false;b.textContent=t}}
+const qualityRow=l=>`<div class="row" style="margin:0 0 12px;gap:6px">${gradeTag(l.grade)}<span class="muted" style="font-size:13px">${esc((l.grade_why||[]).join(' · '))}</span><span style="flex:1"></span>
+  ${can('leads.write')?`${(l.extra||{}).feedback?`<span class="tag ${l.extra.feedback.verdict=='good'?'ok':'error'}">${l.extra.feedback.verdict=='good'?'Good lead':'Bad lead'}</span><a class="muted" style="cursor:pointer;font-size:12px" onclick="sendMark(${l.id},null)">undo</a>`
+    :`<button class="sm" onclick="markLead(${l.id},'good')" title="Tell the agent this is the kind of lead you want">👍 Good lead</button><button class="sm" onclick="markLead(${l.id},'bad')" title="Set it aside and say why">👎 Bad lead</button>`}`:''}</div>`;
+let cleanTimer=null;
+async function openCleanup(){openModal('Clean up your leads',`<div id="cleanBody"><p class="muted">Loading…</p></div>`);cleanRender(await api('/api/cleanup'))}
+function cleanRender(s){if(!$('#cleanBody'))return clearInterval(cleanTimer);const G=s.grades||{},gline=`<div class="row" style="margin:0 0 14px">${['A','B','C'].map(g=>`<span class="row" style="gap:6px">${gradeTag(g)}<b>${G[g]||0}</b></span>`).join('<span style="width:10px"></span>')}<span class="muted" style="font-size:12px">leads by grade, not counting ones already set aside</span></div>`;
+  $('#cleanBody').innerHTML=gline+(s.running?`<p><b>Checking ${s.checked} of ${s.total} leads…</b></p><div class="mini" style="height:8px"><i style="width:${s.total?s.checked/s.total*100:0}%"></i></div>
+     <p class="muted" style="font-size:13px">Each company's home page is read once, so this takes a few minutes for a long list. You can close this window; it carries on.</p><button onclick="cleanDo('cancel')">Stop</button>`
+   :s.applied!=null?`<div class="banner good"><span><b>${s.applied} ${s.applied==1?'lead was':'leads were'} set aside.</b> Nothing was deleted: each one's page says why, and you can move it back.</span></div><button onclick="cleanDo('start')">Check again</button>`
+   :s.finished&&s.found?`<p style="margin-top:0"><b>${s.found} of ${s.total} leads</b> should not be contacted as they are:</p><table><tr><th>Why</th><th>Leads</th><th>For example</th></tr>${s.groups.map(g=>`<tr><td>${esc(g.reason)}</td><td><b>${g.leads}</b></td><td class="muted">${esc(g.examples.join(', '))}</td></tr>`).join('')}</table>
+     <div class="row" style="margin-top:14px"><button class="pri" data-perm="leads.delete" onclick="cleanDo('apply')">Set these ${s.found} aside</button><button onclick="cleanDo('start')">Check again</button><span class="hint" style="margin:0">Nothing is deleted. Wrong addresses wait under Needs contact; competitors and repeats are disqualified.</span></div>`
+   :s.finished?`<div class="banner good"><span><b>All ${s.total} leads passed.</b> None breaks a rule or is entered twice.</span></div><button onclick="cleanDo('start')">Check again</button>`
+   :`<p style="margin-top:0">This checks every lead the agent could still contact against your rules (wrong or dead addresses, competitors, throwaway inboxes and so on) and looks for companies entered more than once. You see what it finds before anything changes.</p><button class="pri" onclick="cleanDo('start')">Check my leads</button>`);
+  clearInterval(cleanTimer);if(s.running)cleanTimer=setInterval(async()=>cleanRender(await api('/api/cleanup')),1500)}
+async function cleanDo(action){if(action=='apply'&&!await ask('Set these leads aside? Nothing is deleted, and each one says why on its page.',{ok:'Set them aside',danger:false}))return;cleanRender(await api('/api/cleanup',{method:'POST',body:{action}}));if(action=='apply'){loadFacets();refresh()}}
+async function rulesIdeas(){if(!$('#rulesIdeas'))return;const r=await api('/api/feedback/suggestions');window._ideas=r.suggestions;
+  $('#rulesIdeas').innerHTML=r.suggestions.length?r.suggestions.map((s,i)=>`<div class="trow"><div style="flex:1"><div class="tt">${esc(s.text)}</div><small class="muted">${esc(s.why)}</small></div>${s.kind=='search'?'':`<button class="sm" onclick="ideaAdd(${i},this)">Add this rule</button>`}</div>`).join('')
+   :`<p class="muted" style="margin:0">${r.marked_bad?`You have marked ${r.marked_bad} ${r.marked_bad==1?'lead':'leads'} as bad. No pattern is clear enough yet to suggest a rule.`:'Nothing yet. Open a lead and press “Bad lead” with a reason; when a pattern shows, a rule is suggested here.'}</p>`}
+function ideaAdd(i,b){const s=window._ideas[i],bi=k=>RULES.builtin.find(r=>r.key==k);
+  if(s.kind=='country'){const r=bi('countries');r.on=true;r.value=[r.value,s.value].filter(Boolean).join(', ')}
+  else if(s.kind=='keyword'){const r=bi('keywords');r.on=true;r.value=[r.value,s.value].filter(Boolean).join(', ')}
+  else RULES.custom.push({field:'segment',test:'equals',value:s.value,outcome:'skip',on:true});
+  setDirty();rulesRender();b.disabled=true;b.textContent='Added';toast('Added. Press Save settings to keep it.')}
 /* ---- money ---- */
 let CUR='USD';const money=v=>v==null||v===''?'–':new Intl.NumberFormat([], {style:'currency',currency:CUR,maximumFractionDigits:0}).format(+v);
 const pct=v=>v==null?'–':v+'%';
@@ -943,12 +986,17 @@ function plEdit(i){const p=i<0?{name:'',type:'product',pitch:'',icp:'',sources:{
   openModal(i<0?'New pipeline':'Edit pipeline',`<div class="fgrid"><div><label>Name</label><input id="pl-name" value="${esc(p.name)}"></div><div><label>Kind</label><select id="pl-type"><option value="product" ${p.type!='service'?'selected':''}>Product</option><option value="service" ${p.type=='service'?'selected':''}>Service</option></select></div></div>
    <label>Pitch (what the agent says you offer)</label><textarea id="pl-pitch" style="min-height:80px">${esc(p.pitch||'')}</textarea>
    <label>Ideal customer</label><input id="pl-icp" style="width:100%" value="${esc(p.icp||'')}">
+   <label>Who to write to at these companies (job titles, best first; optional)</label><input id="pl-titles" style="width:100%" value="${esc(p.titles||'')}" placeholder="e.g. gym manager, operations manager, owner">
    <label>Its own button link in emails (optional)</label><input id="pl-link" style="width:100%" value="${esc(p.booking_link||'')}" placeholder="Leave empty to use the general one">
    <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-tech" ${p.sells_to_tech?'checked':''}> This is sold to software and IT companies (don't skip them as competitors)</label>
    <h3 style="font-size:14px;margin:18px 0 0">Leads who need this now</h3><p class="hint">These bring people with a reason to talk today. <a style="cursor:pointer;text-decoration:underline" onclick="plSuggest(this)">Suggest searches from the pitch</a></p>
    <label>What a buyer says when they need this</label><textarea id="pl-intent" style="min-height:72px" placeholder="need someone to fix my wordpress site | US | 8">${esc(lines(s.intent))}</textarea><p class="hint">The agent searches the web for people who said this in public, and keeps only those whose words it can find on the page. One per line: their words | country code | how many.</p>
+   <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-li" ${s.linkedin?'checked':''}> Also search public LinkedIn posts for the first two phrases, and look up the author's contact details</label>
+   <p class="hint">LinkedIn does not show email addresses and may not be read by machine, so this finds posts that are publicly searchable and matches the author to a contact through Apollo. Each lookup can use a credit.</p>
    <label>Jobs a company advertises when it needs this</label><textarea id="pl-hiring" style="min-height:56px" placeholder="wordpress developer">${esc(lines(s.hiring))}</textarea><p class="hint">Read from public job boards. A company hiring for the work may prefer a ready service. One job title per line.</p>
    <h3 style="font-size:14px;margin:18px 0 0">Businesses that fit the profile</h3><p class="hint">Larger numbers, but nothing says they need this now. One search per line: what to search | country code | how many.</p>
+   <label>Words in poor Google reviews that point to a need (optional)</label><input id="pl-reviews" style="width:100%" value="${esc((s.review_words||[]).join(', '))}" placeholder="e.g. booking, waiting, phone, app">
+   <p class="hint">With words here, map searches also read each business's reviews: a poor review that mentions one becomes the reason to write. Reading reviews makes each map search cost more on Google's side.</p>
    <label>Google Maps searches</label><textarea id="pl-places" style="min-height:64px" placeholder="salons in Riyadh | SA | 20">${esc(lines(s.places))}</textarea>
    <label style="display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="pl-nosite" ${s.only_without_website?'checked':''}> Keep only businesses with no website</label>
    <label>Web searches (finds businesses and their published emails)</label><textarea id="pl-web" style="min-height:64px" placeholder="dentists in Austin TX | US | 15">${esc(lines(s.web))}</textarea>
@@ -960,8 +1008,8 @@ function plSave(i){const name=$('#pl-name').value.trim();if(!name)return alertBa
   if(i<0){let k=p.key,n=2;while(PL.some(x=>x.key==p.key))p.key=k+'_'+n++}
   Object.assign(p,{name,type:$('#pl-type').value,pitch:$('#pl-pitch').value.trim(),icp:$('#pl-icp').value.trim()});
   if($('#pl-link').value.trim())p.booking_link=$('#pl-link').value.trim();else delete p.booking_link;
-  if($('#pl-tech').checked)p.sells_to_tech=true;else delete p.sells_to_tech;
-  p.sources={...(p.sources||{}),intent:$('#pl-intent').value.split('\n').map(l=>l.split('|').map(x=>x.trim())).filter(x=>x[0]).map(([query,country,limit])=>({query,country:(country||'').toUpperCase(),limit:Math.min(+limit||8,15)})),hiring:unlines($('#pl-hiring').value,false),places:unlines($('#pl-places').value,true),web:unlines($('#pl-web').value,true),reddit:unlines($('#pl-reddit').value,false),only_without_website:$('#pl-nosite').checked,wordpress_only:$('#pl-wp').checked};
+  if($('#pl-tech').checked)p.sells_to_tech=true;else delete p.sells_to_tech;if($('#pl-titles').value.trim())p.titles=$('#pl-titles').value.trim();else delete p.titles;
+  p.sources={...(p.sources||{}),intent:$('#pl-intent').value.split('\n').map(l=>l.split('|').map(x=>x.trim())).filter(x=>x[0]).map(([query,country,limit])=>({query,country:(country||'').toUpperCase(),limit:Math.min(+limit||8,15)})),hiring:unlines($('#pl-hiring').value,false),places:unlines($('#pl-places').value,true),web:unlines($('#pl-web').value,true),reddit:unlines($('#pl-reddit').value,false),linkedin:$('#pl-li').checked,only_without_website:$('#pl-nosite').checked,review_words:$('#pl-reviews').value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean),wordpress_only:$('#pl-wp').checked};
   if(i<0)PL.push(p);closeModal();plSync()}
 async function plSuggest(a){a.textContent='Thinking…';try{const r=await api('/api/pipelines/suggest',{method:'POST',body:{name:$('#pl-name').value,pitch:$('#pl-pitch').value,icp:$('#pl-icp').value}});
   const add=(id,items)=>{const have=$(id).value.split('\n').map(x=>x.trim()).filter(Boolean);items.forEach(x=>{if(!have.some(h=>h.toLowerCase().startsWith(x.toLowerCase())))have.push(x)});$(id).value=have.join('\n')};
@@ -970,7 +1018,18 @@ async function plDel(i){if(!await ask('Delete the pipeline "'+PL[i].name+'"? Its
 
 /* ---- rules ---- */
 let RULES=null;const ROUT={fix:['needs_contact','waits for a fix'],skip:['blocked','lead is skipped'],review:['pending_approval','paused for you']};
-async function loadRules(){if(!can('settings'))return;RULES=await api('/api/rules');rulesRender()}
+async function loadVoice(){if(!can('settings')||!$('#voiceCard'))return;const v=await api('/api/voice');
+  $('#voiceCard').innerHTML=!v.connected?`<p class="muted" style="margin:0 0 8px">Not connected. The agent can phone leads as a step of a sequence, in Arabic or English, and report what they said. Until then it leaves a call brief for you to phone by hand.</p>
+     <ol class="muted" style="margin:0;padding-left:18px;font-size:13px"><li>Create an account at vapi.ai and copy the <b>private</b> API key.</li><li>Add it to the server as <code>VAPI_API_KEY</code>.</li>
+     <li>In Vapi, add a phone number that can call your leads' countries. Vapi's own numbers are US-only, so for Saudi Arabia or Kuwait import a number from a carrier such as Twilio or Telnyx.</li><li>Come back here and press “Set up the AI caller”.</li></ol>`
+   :v.error?`<div class="banner"><span>${esc(v.error)}</span></div>`
+   :`<p style="margin:0 0 10px"><span class="tag ${v.ready?'ok':'pending_approval'}">${v.ready?'ready':'not finished'}</span> ${v.ready?'The agent places calls as the phone step of a sequence, within calling hours and the daily limit.':v.assistant?'Choose the number to call from.':'The key works. Press the button to create the caller in your Vapi account.'}</p>
+     <label>Call from</label><select id="vPhone" style="width:100%">${(v.numbers||[]).map(n=>`<option value="${n.id}" ${n.id==v.phone_id?'selected':''}>${esc(n.number)}${n.name?' · '+esc(n.name):''} (${esc(n.provider||'')})</option>`).join('')||'<option value="">No phone numbers in your Vapi account yet</option>'}</select>
+     <div class="row" style="margin-top:10px"><button class="${v.ready?'':'pri'}" onclick="voiceSetup(this)">${v.assistant?'Update the AI caller':'Set up the AI caller'}</button><span class="hint" style="margin:0">Creates the caller's script, the result it reports, and where it reports to. Safe to press again.</span></div>
+     ${v.ready?`<label style="margin-top:14px">Hear it: have it call you</label><div class="row"><input id="vTest" placeholder="+9665…" style="width:200px"><button onclick="voiceTest(this)">Call this number</button></div><p class="hint">Uses your Vapi credit like any call.</p>`:''}`}
+async function voiceSetup(b){b.disabled=true;b.textContent='Setting up…';try{await api('/api/voice/setup',{method:'POST',body:{phone_id:$('#vPhone').value||null}});toast('AI caller is set up');loadSettings()}finally{loadVoice()}}
+async function voiceTest(b){if(!await ask('Call '+$('#vTest').value+' now? This is a real phone call.',{ok:'Call',danger:false}))return;b.disabled=true;try{await api('/api/voice/test',{method:'POST',body:{number:$('#vTest').value}});alertBanner('Calling now. Pick up to hear the AI caller.')}finally{b.disabled=false}}
+async function loadRules(){if(!can('settings'))return;RULES=await api('/api/rules');rulesRender();rulesIdeas()}
 function rulesRender(){if(!RULES)return;
   $('#rulesBuiltin').innerHTML=RULES.builtin.map((r,i)=>`<div class="rule"><input type="checkbox" class="sw" ${r.on?'checked':''} onchange="RULES.builtin[${i}].on=this.checked;setDirty();rulesRender()" title="${r.on?'On':'Off'}">
     <div style="flex:1;min-width:0"><div class="tt">${esc(r.name)} <span class="tag ${ROUT[r.outcome][0]}">${ROUT[r.outcome][1]}</span></div><div class="hint" style="margin:2px 0 0">${esc(r.about)}</div>
@@ -1090,8 +1149,8 @@ async function loadApps(){ALLAPPS=await api('/api/approvals');appsDirty=false;[.
 function renderApps(){const nr=ALLAPPS.filter(isReply).length,no=ALLAPPS.length-nr,rep=appTab=='replies';APPS=ALLAPPS.filter(a=>isReply(a)==rep);
   const tabs=`<div class="chips" style="margin-bottom:14px"><span class="chip ${rep?'':'on'}" onclick="setAppTab('outreach')">Outreach<small>${no}</small></span><span class="chip ${rep?'on':''}" onclick="setAppTab('replies')">Replies &amp; follow-ups<small>${nr}</small></span></div>`;
   const card=a=>{const c=a.content,head=`<div class="row"><input type="checkbox" class="apck" data-id="${a.id}" ${appSel.has(a.id)?'checked':''} onchange="this.checked?appSel.add(${a.id}):appSel.delete(${a.id});appBar()" title="Select">`;
-   if(isReply(a))return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · ${a.action=='followup'?'follow-up after meeting':'reply'}</h3>${c.intent?`<span class="tag replied" title="${esc(c.summary||'')}">${esc(c.intent.replace(/_/g,' '))}</span>`:''}<span class="muted">to ${esc(c.to||a.email||'')}</span></div>
-    ${a.action=='followup'?`<p class="muted" style="margin:8px 0 0">After “${esc(c.meeting_title||'your meeting')}” on ${fmt(c.meeting_at)}. Fill in what you agreed before sending.</p>`:`<label>They wrote</label><pre style="max-height:180px;overflow:auto">${esc(c.their_text||'')}</pre>`}
+   if(isReply(a))return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · ${a.action=='followup'?(c.checkin?'check-in after “not now”':'follow-up after meeting'):'reply'}</h3>${c.intent?`<span class="tag replied" title="${esc(c.summary||'')}">${esc(c.intent.replace(/_/g,' '))}</span>`:''}<span class="muted">to ${esc(c.to||a.email||'')}</span></div>
+    ${a.action=='followup'?`<p class="muted" style="margin:8px 0 0">${c.checkin?`They said the timing was wrong${c.meeting_at?' on '+fdate(c.meeting_at):''}${c.their_text?': “'+esc(c.their_text.slice(0,200))+'”':''}. This asks whether it is better now.`:`After “${esc(c.meeting_title||'your meeting')}” on ${fmt(c.meeting_at)}. Fill in what you agreed before sending.`}</p>`:`<label>They wrote</label><pre style="max-height:180px;overflow:auto">${esc(c.their_text||'')}</pre>`}
     <label>Subject</label><input id="as${a.id}" style="width:100%" value="${esc(c.subject)}"><label>Your answer (sent as a plain email in the same thread)</label><textarea id="ab${a.id}" style="min-height:170px">${esc(c.body)}</textarea>${rewriteBox(a)}
     <div class="row" style="margin-top:10px"><button class="pri" onclick="decide(${a.id},true,'email',this)">Approve and send</button><button onclick="decide(${a.id},false)">Skip</button><button onclick="openMail(${a.lead_id})">Open conversation</button>${can('calendar')?`<button onclick="openMeeting({lead_id:${a.lead_id},company:APPS.find(x=>x.id==${a.id}).company,title:'Intro call: '+APPS.find(x=>x.id==${a.id}).company,attendees:APPS.find(x=>x.id==${a.id}).content.to||''})">📅 Schedule meeting</button>`:''}</div></div>`;
    return `<div class="card">${head}<h3 style="flex:1;margin:0">${esc(a.company)} · ${a.channel} · ${a.action}</h3><span class="muted">${esc(a.channel=='email'?a.email:a.phone)}</span></div>
@@ -1255,15 +1314,15 @@ async function setMode(m){await api('/api/settings',{method:'POST',body:{mode:m}
 async function decide(id,ok,ch,b){const body={approve:ok};if(ok&&ch=='email')body.content=appContent(id);if(b){b.disabled=true;b.textContent='Sending…'}
   try{await api('/api/approvals/'+id,{method:'POST',body});toast(ok?'Sent':'Skipped')}finally{appSel.delete(id);appsDirty=false;refresh()}}
 
-const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product','currency','ab_subjects','meeting_reminder_min','meeting_followup','agent_schedule','agent_start','agent_end','agent_timezone','meet_links','lead_quality'];
-async function loadSettings(){if(setDirtyFlag)return;setTab(setCur);loadPeople();renderTemplates();loadRules();const s=await api('/api/settings');bookingCard(s);
+const SKEYS=['mode','agent_enabled','auto_discovery','ai_mode','ai_model','ai_daily_budget','ai_balance','sender_name','sender_email','booking_link','company_address','logo_url','daily_email_cap','daily_call_cap','min_score','default_product','currency','ab_subjects','meeting_reminder_min','meeting_followup','agent_schedule','agent_start','agent_end','agent_timezone','meet_links','lead_quality','contact_grades','nurture_days','dm_auto','dm_daily_cap','dm_min_score','dm_titles'];
+async function loadSettings(){if(setDirtyFlag)return;setTab(setCur);loadPeople();renderTemplates();loadRules();loadVoice();const s=await api('/api/settings');bookingCard(s);
   const popts=(s.products||[]).map(p=>`<option value="${p.key}">${esc(p.name)}</option>`).join('');$('#s-default_product').innerHTML=popts;$('#pvProd').innerHTML=popts;
   SKEYS.forEach(k=>$('#s-'+k).value=s[k]??'');SEQ=s.sequence||[];$('#s-sequence').value=JSON.stringify(SEQ,null,1);seqRender();PL=s.products||[];$('#s-products').value=JSON.stringify(PL,null,1);plRender();
   $('#s-discovery').value=(s.discovery_queries||[]).map(q=>[q.query,q.country||'',q.limit||''].join(' | ')).join('\n');dayChips('agDays',s.agent_days);schedShow();
   api('/api/stats').then(st=>{$('#agNow').textContent='Right now: '+agentNow(st.agent).toLowerCase();$('#agNow').className='tag '+(st.agent.active?'ok':st.agent.on?'pending_approval':'blocked')});
   $('#s-mode').querySelector('[value=live]').disabled=!s.live_allowed;$('#logoNote').textContent=s.logo_effective?'Leave empty to use the built-in brn dynamics logo. Emails load it from '+s.logo_effective:'No public address for this server is known, so emails show the name as text instead of the logo. Paste a logo address to fix that.';
   $('#liveNote').textContent=s.live_allowed?'Live mode is unlocked on the server.':'Live mode is locked. To unlock, add BRN_ALLOW_LIVE = 1 in Railway Variables.';
-  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['Google Meet links for meetings','meet','Paste them under Meetings & booking'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
+  $('#prov').innerHTML=[['Claude (research, writing, reply triage)','claude','ANTHROPIC_API_KEY'],['Email sending'+(s.email_via?' (via '+s.email_via+')':''),'email','RESEND_API_KEY or SMTP_*'],['Reading replies (your inbox)','inbox','IMAP_HOST'],['Google Meet links for meetings','meet','Paste them under Meetings & booking'],['Finding a named person at a company','people','APOLLO_API_KEY or HUNTER_API_KEY'],['Checking that a mailbox exists','verify','HUNTER_API_KEY'],['AI voice calls (Vapi)','voice','VAPI_API_KEY'],['Contact finder: email and phone from a name and LinkedIn (Apollo)','enrich','APOLLO_API_KEY'],['Lead discovery (Google Places)','places','GOOGLE_PLACES_API_KEY']]
    .map(([n,k,e])=>`<tr><td>${n}<br><span class="muted">${e}</span></td><td><span class="tag ${s.providers[k]?'ok':'blocked'}">${s.providers[k]?'connected':'not set'}</span></td></tr>`).join('');
   $('#inboundCode').textContent=`fetch("${s.app_url}/api/inbound", {\n  method: "POST",\n  headers: {"Content-Type": "application/json"},\n  body: JSON.stringify({name, email, company, phone, message})\n})`;
   setDirty(false);setTab(setCur);
@@ -1319,7 +1378,7 @@ function renderBoard(){const q=($('#bq').value||'').toLowerCase();const rows=BOA
   const card=l=>{const sc=l.score==null?'':`<span class="sc ${l.score>=70?'hi':l.score>=55?'md':'lo'}">${l.score}</span>`;
    return `<div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('id',${l.id});this.classList.add('drag')" ondragend="this.classList.remove('drag')" onclick="openLead(${l.id})">
     <div class="t">${avatar(l.company)}<div style="min-width:0;flex:1"><div class="nm">${esc(l.company)}</div><div class="sub">${esc(l.contact_name||l.email||l.phone||'No contact yet')}</div></div></div>
-    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${sigTag(l.signal)}${l.deal_value?`<span class="tag g">${money(l.deal_value)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}${sc}</div></div>`};
+    <div class="ft">${pbKey=='__all'?prodTag(l.product):''}${l.city?`<span class="tag g">${esc(l.city)}</span>`:''}${gradeTag(l.grade)}${sigTag(l.signal)}${l.deal_value?`<span class="tag g">${money(l.deal_value)}</span>`:''}${l.emails_sent?`<span class="tag ok">✉ ${l.emails_sent}</span>`:''}${l.source=='reddit'?'<span class="tag">asked online</span>':''}${l.next_action_at&&l.stage=='in_sequence'?`<span class="tag g" title="next step">⏱ ${fdate(l.next_action_at)}</span>`:''}${sc}</div></div>`};
   $('#board').innerHTML=cols.map(k=>{const L=by[k]||[];return `<div class="kcol" style="--c:${SCOL[k]}" data-stage="${k}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="if(!this.contains(event.relatedTarget))this.classList.remove('over')" ondrop="dropLead(event,'${k}')">
    <div class="kh"><h4>${SL[k]}</h4><span class="cnt">${L.length}</span></div>
    <div class="kb">${L.slice(0,100).map(card).join('')||'<div class="kempty">Drop leads here</div>'}${L.length>100?`<div class="muted" style="font-size:12px;text-align:center;padding:6px">+${L.length-100} more in the list view</div>`:''}</div></div>`}).join('')}

@@ -101,6 +101,28 @@ def task_reminders(now):
     return len(due)
 
 
+def checkins(now):
+    """Leads who said "not now" a while ago: draft a check-in for approval."""
+    due = db.q("SELECT * FROM leads WHERE stage='nurture' AND next_action='check_in' AND next_action_at IS NOT NULL AND next_action_at<=?", (_iso(now),))
+    for lead in due:
+        db.update_lead(lead["id"], next_action=None, next_action_at=None)   # first, so it can never repeat
+        if not lead.get("email"):
+            continue
+        last = db.q("SELECT payload, created_at FROM activities WHERE lead_id=? AND kind='email_reply' ORDER BY id DESC LIMIT 1", (lead["id"],))
+        said = (json.loads(last[0]["payload"] or "{}").get("text") or "") if last else ""
+        try:
+            draft = llm.write_checkin(lead, json.loads(lead.get("research") or "{}") or {}, agent._settings(lead), said[:600])
+        except Exception as e:
+            db.log(lead["id"], "system", f"Could not draft the check-in: {e}", status="error")
+            continue
+        content = {"subject": draft["subject"], "body": draft["body"], "to": lead["email"], "checkin": True, "their_text": said.partition("\n\n")[2].strip() or said,
+                   "meeting_at": last[0]["created_at"] if last else None}
+        db.ex("DELETE FROM approvals WHERE lead_id=? AND state='pending' AND action='followup'", (lead["id"],))
+        db.ex("INSERT INTO approvals(lead_id, channel, action, content, created_at) VALUES (?,?,?,?,?)", (lead["id"], "email", "followup", json.dumps(content, ensure_ascii=False), db.now()))
+        db.log(lead["id"], "approval", "They said the timing was wrong a while ago: drafted a check-in, waiting in Approvals > Replies", channel="email", status="pending_approval", payload=content)
+    return len(due)
+
+
 def run(now=None):
     now = now or datetime.now(timezone.utc)
-    return {"reminders": meeting_reminders(now), "followups": meeting_followups(now), "tasks": task_reminders(now)}
+    return {"reminders": meeting_reminders(now), "followups": meeting_followups(now), "tasks": task_reminders(now), "checkins": checkins(now)}
