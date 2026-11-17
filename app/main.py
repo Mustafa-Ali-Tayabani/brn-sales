@@ -391,7 +391,7 @@ def leads(request: Request):
 def facets():
     def counts(col):
         return db.q(f"SELECT {col} value, COUNT(*) n FROM leads WHERE {col} IS NOT NULL AND {col}<>'' GROUP BY {col} ORDER BY n DESC")
-    return {"stage": counts("stage"), "product": counts("product"), "segment": counts("segment"),
+    return {"stage": counts("stage"), "custom_stages": custom_stages(), "product": counts("product"), "segment": counts("segment"),
             "country": [{**c, "name": countries.name(c["value"])} for c in counts("country")] + [{"value": "__none", "name": "Unknown", "n": db.one("SELECT COUNT(*) n FROM leads WHERE country IS NULL OR country='' OR country='--'")["n"]}],
             "source": [{**c, "name": came_from({"source": c["value"]}, {})} for c in counts("source")],
             "products": list(db.products().values())}
@@ -413,6 +413,28 @@ def lead(lead_id: int):
     l["tasks"] = db.q("SELECT t.*, u.name assignee FROM tasks t LEFT JOIN users u ON u.id=t.assigned_to WHERE t.lead_id=? ORDER BY t.done_at IS NOT NULL, t.due_at IS NULL, t.due_at, t.id DESC LIMIT 30", (lead_id,))
     l["meetings"] = [_meeting(m) for m in db.q("SELECT m.*, NULL company FROM meetings m WHERE m.lead_id=? ORDER BY m.starts_at DESC", (lead_id,))]
     return l
+
+
+BUILTIN_STAGES = ("new", "needs_contact", "researched", "reply_manually", "in_sequence", "awaiting_approval", "paused", "replied", "meeting_booked", "nurture",
+                  "completed", "won", "lost", "disqualified", "opted_out")
+STAGE_COLORS = ("#7c5cff", "#0e9f9a", "#d9480f", "#c2255c", "#2f9e44", "#1c7ed6", "#e67700", "#5f3dc4")
+
+
+def custom_stages():
+    """Statuses added by the team, on top of the built-in ones. The agent never moves a lead out of one by itself:
+    a lead in a custom status waits there until a person moves it (a reply from the lead still shows up as usual)."""
+    try:
+        return [c for c in json.loads(db.setting("custom_stages") or "[]") if c.get("key") and c.get("name")]
+    except ValueError:
+        return []
+
+
+def _delete_lead(lead_id):
+    """Remove a lead and what hangs off it. Meetings still to come stay in the calendar, without the lead."""
+    db.ex("DELETE FROM meetings WHERE lead_id=? AND status<>'scheduled'", (lead_id,)); db.ex("UPDATE meetings SET lead_id=NULL WHERE lead_id=?", (lead_id,))
+    db.ex("UPDATE tasks SET lead_id=NULL WHERE lead_id=?", (lead_id,))
+    db.ex("DELETE FROM approvals WHERE lead_id=?", (lead_id,)); db.ex("DELETE FROM activities WHERE lead_id=?", (lead_id,))
+    db.ex("DELETE FROM leads WHERE id=?", (lead_id,))
 
 
 STATUS_MAP = {"new": "new", "contacted": "completed", "replied": "replied", "interested": "replied", "meeting": "meeting_booked",
@@ -443,7 +465,8 @@ def _insert(row, source="manual", defaults=None):
         SKIPPED_COUNTRY[country] = SKIPPED_COUNTRY.get(country, 0) + 1
         return None  # not a country leads are brought in from (Settings > Rules)
     t = db.now()
-    stage = STATUS_MAP.get(str(row.get("status") or "new").strip().lower(), "new")
+    given = str(row.get("status") or "new").strip().lower()
+    stage = STATUS_MAP.get(given) or next((c["key"] for c in custom_stages() if c["name"].lower() == given), "new")   # an imported status may be one of your own
     if row.get("date_contacted") and stage == "new":
         stage = "completed"
     extra = row.get("extra") or {}
@@ -663,8 +686,12 @@ def edit_lead(lead_id: int, payload: dict = Body(...)):
             raise HTTPException(400, "The deal value must be a number.")
     if "expected_close" in allowed:
         allowed["expected_close"] = allowed["expected_close"] or None
+    if "stage" in allowed and allowed["stage"] not in BUILTIN_STAGES and allowed["stage"] not in [c["key"] for c in custom_stages()]:
+        raise HTTPException(400, "That status does not exist. Add it on the pipeline board first.")
     if allowed.get("stage") == "in_sequence":
         allowed["next_action_at"] = db.now()
+    elif str(allowed.get("stage") or "").startswith("c_"):   # a status of your own: the agent leaves the lead there
+        allowed["next_action"], allowed["next_action_at"] = None, None
     cur = db.one("SELECT stage FROM leads WHERE id=?", (lead_id,))
     if cur and cur["stage"] == "needs_contact" and (allowed.get("email") or allowed.get("phone")) and "stage" not in allowed:
         allowed["stage"] = "new"
@@ -672,6 +699,75 @@ def edit_lead(lead_id: int, payload: dict = Body(...)):
         db.update_lead(lead_id, **allowed)
         db.log(lead_id, "stage_change" if "stage" in allowed else "system", f"Edited by user: {', '.join(k for k in allowed if k != 'next_action_at')}", channel="system")
     return {"ok": True}
+
+
+@app.delete("/api/leads/{lead_id}")
+def delete_lead(lead_id: int):
+    """Delete one lead for good, with its timeline and drafts."""
+    _need("leads.delete")
+    lead = db.one("SELECT company FROM leads WHERE id=?", (lead_id,))
+    if not lead:
+        raise HTTPException(404, "lead not found")
+    _delete_lead(lead_id)
+    db.log(None, "system", f"Lead deleted: {lead['company']}", channel="system")
+    return {"ok": True}
+
+
+@app.post("/api/pipelines/{key}/active")
+def set_pipeline_active(key: str, p: dict = Body(...)):
+    """Switch a pipeline on or off. Off: no new leads are looked for and the agent does no research or outreach for its
+    leads. They stay where they are, replies are still read, and drafts already waiting can still be approved."""
+    prods = db.products()
+    if key not in prods:
+        raise HTTPException(404, "unknown pipeline")
+    prods[key]["active"] = bool(p.get("active"))
+    db.set_setting("products", json.dumps(list(prods.values()), ensure_ascii=False))
+    db.log(None, "system", f"Pipeline {prods[key].get('name', key)} switched {'on' if prods[key]['active'] else 'off'}", channel="system")
+    return {"key": key, "active": prods[key]["active"]}
+
+
+@app.get("/api/stages")
+def list_stages():
+    counts = {r["stage"]: r["n"] for r in db.q("SELECT stage, COUNT(*) n FROM leads GROUP BY stage")}
+    return {"custom": [{**c, "leads": counts.get(c["key"], 0)} for c in custom_stages()]}
+
+
+@app.post("/api/stages")
+def save_stage(p: dict = Body(...)):
+    """Add a status of your own (name), or rename / recolour one (key + name)."""
+    name = re.sub(r"\s+", " ", str(p.get("name") or "")).strip()[:30]
+    if len(name) < 2:
+        raise HTTPException(400, "Give the status a name.")
+    stages = custom_stages()
+    taken = {s.replace("_", " ") for s in BUILTIN_STAGES} | {"sequence done", "awaiting approval"} | {c["name"].lower() for c in stages if c["key"] != p.get("key")}
+    if name.lower() in taken:
+        raise HTTPException(400, f'There is already a status called "{name}".')
+    if p.get("key"):
+        cur = next((c for c in stages if c["key"] == p["key"]), None)
+        if not cur:
+            raise HTTPException(404, "unknown status")
+        cur.update(name=name, color=p.get("color") or cur.get("color"))
+    else:
+        if len(stages) >= 12:
+            raise HTTPException(400, "Twelve statuses of your own is the most a board can show. Remove one first.")
+        key = "c_" + (re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "status")
+        while any(c["key"] == key for c in stages):
+            key += "_2"
+        cur = {"key": key, "name": name, "color": p.get("color") or STAGE_COLORS[len(stages) % len(STAGE_COLORS)]}
+        stages.append(cur)
+    db.set_setting("custom_stages", json.dumps(stages, ensure_ascii=False))
+    db.log(None, "system", f"Status saved: {name}", channel="system")
+    return {"stage": cur, "custom": stages}
+
+
+@app.delete("/api/stages/{key}")
+def delete_stage(key: str):
+    n = db.one("SELECT COUNT(*) n FROM leads WHERE stage=?", (key,))["n"]
+    if n:
+        raise HTTPException(409, f"{n} lead{'s have' if n != 1 else ' has'} this status. Move {'them' if n != 1 else 'it'} to another status first.")
+    stages = [c for c in custom_stages() if c["key"] != key]
+    db.set_setting("custom_stages", json.dumps(stages, ensure_ascii=False))
+    return {"custom": stages}
 
 
 @app.post("/api/leads/bulk")
@@ -702,9 +798,7 @@ def bulk(payload: dict = Body(...)):
             db.update_lead(i, stage="new", step=0, next_action=None, next_action_at=None, emails_sent=0, last_contacted_at=None)
         elif action == "delete":
             _need("leads.delete")
-            db.ex("DELETE FROM meetings WHERE lead_id=? AND status<>'scheduled'", (i,)); db.ex("UPDATE meetings SET lead_id=NULL WHERE lead_id=?", (i,))
-            db.ex("DELETE FROM approvals WHERE lead_id=?", (i,)); db.ex("DELETE FROM activities WHERE lead_id=?", (i,))
-            db.ex("DELETE FROM leads WHERE id=?", (i,))
+            _delete_lead(i)
         else:
             raise HTTPException(400, "unknown action")
     db.log(None, "system", f"Bulk {action}{' = ' + str(value) if value else ''} on {len(ids)} leads", channel="system")
@@ -1172,7 +1266,7 @@ def cancel_meeting(meeting_id: int):
 # ---------- approvals ----------
 @app.get("/api/approvals")
 def approvals(state: str = "pending"):
-    rows = db.q("SELECT a.*, l.company, l.contact_name, l.email, l.phone FROM approvals a JOIN leads l ON l.id=a.lead_id WHERE a.state=? ORDER BY a.id", (state,))
+    rows = db.q("SELECT a.*, l.company, l.contact_name, l.email, l.phone, l.product, l.grade, l.score, l.country FROM approvals a JOIN leads l ON l.id=a.lead_id WHERE a.state=? ORDER BY a.id", (state,))
     for r in rows:
         r["content"] = json.loads(r["content"])
     return rows
@@ -1517,8 +1611,11 @@ def discover_pipeline(key, sources_only=None):
             out["imported"] += len(res["imported"]); out["skipped"] += res["skipped"]
         except Exception as e:
             out["errors"].append(f"Reddit '{phrase}': {e}")
+    searching = db.setting("web_search_leads") != "0"
+    if not searching and sources_only in (None, "web", "intent") and (src.get("web") or src.get("intent") or src.get("reddit")):
+        out["notes"].append("Finding leads by web search is switched off (Settings > Agent & sending), so web searches and people asking online were skipped.")
     web = src.get("web") or []
-    if web and (sources_only in (None, "web")):
+    if web and searching and (sources_only in (None, "web")):
         if not llm.enabled():
             out["notes"].append("ANTHROPIC_API_KEY is not set, so web search was skipped.")
         else:
@@ -1534,7 +1631,7 @@ def discover_pipeline(key, sources_only=None):
     asks = src.get("intent")
     if asks is None:  # not set up yet for this pipeline: start from the phrases it already searches Reddit for
         asks = [{"query": q} for q in (src.get("reddit") or [])[:2]]
-    if asks and sources_only in (None, "intent"):
+    if asks and searching and sources_only in (None, "intent"):
         if not llm.enabled():
             out["notes"].append("ANTHROPIC_API_KEY is not set, so the search for people asking was skipped.")
         elif llm.over_budget():

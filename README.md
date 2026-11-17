@@ -176,6 +176,28 @@ filed as automatic messages and not as replies; Reports > By person names who ap
 
 Tests: `python -m unittest discover -s tests -t . -v` (no outside service is called; Apollo is replaced by a stand-in).
 
+## Phones and tablets
+
+The dashboard adapts to the screen. Under 900px wide the menu slides in from a button in a top bar (with the number of
+drafts waiting), pop-ups and a lead's page fill the screen, the Leads filters fold behind a Filters button, wide tables
+scroll sideways inside their card, and on a phone the Leads table keeps company, score and status only.
+
+## Deleting leads, your own statuses, switching pipelines and web search off
+
+- **Delete**: a lead's page has "Delete lead"; in the Leads list, tick several and press Delete. The lead goes with its
+  timeline and drafts; tasks and coming meetings stay, without the lead. Needs the "Delete leads" permission.
+- **Statuses of your own**: on a pipeline board, "+ New status" adds a column (for example Proposal sent). Move a lead
+  there by dragging it, from "Move to…" on its page, or with "Set status" in the Leads list. A lead in one of your
+  statuses waits for you: the agent sends it nothing and does not move it, though a reply from the lead still shows up.
+  "edit" on the column renames, recolours or removes it (only when no lead is in it).
+- **Pipeline on / off**: each pipeline card has a switch. Off means no new leads are looked for and the agent does no
+  research or outreach for that pipeline's leads; they are kept, replies are still read, and drafts already waiting can
+  still be approved. Switching it on again carries on where it stopped.
+- **Clean-up per pipeline**: "Clean up leads" on a board checks only that pipeline's leads. On the Approvals page,
+  drafts can be filtered by pipeline, step and words, and Clean up then covers the pipeline chosen.
+- **Web search leads on / off**: Settings > Agent & sending > "Find leads by web search". Off stops the searches for
+  people asking online, business web searches and LinkedIn posts; Apollo, Google Maps and job ads carry on.
+
 ## Owners and decision-makers
 
 A company with only info@ is half a lead. Each pipeline card shows how many of its live leads have a named person and how

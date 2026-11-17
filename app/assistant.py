@@ -204,7 +204,10 @@ def _tool(name, a, ctx):
             return {"error": "lead not found"}
         if fields.get("stage") == "in_sequence" and db.setting("mode") == "live":
             return {"error": "Refused: send mode is live, so starting a sequence would email without approval. Use the dashboard for this."}
-        if fields.get("stage") and fields["stage"] not in STAGES:
+        own = {c["name"].lower(): c["key"] for c in main.custom_stages()}   # a status the team added, by its name or key
+        if fields.get("stage"):
+            fields["stage"] = own.get(str(fields["stage"]).lower(), fields["stage"])
+        if fields.get("stage") and fields["stage"] not in STAGES + tuple(own.values()):
             return {"error": f"stage must be one of: {', '.join(STAGES)}. (Unsubscribes are done from the lead page so the contact is also suppressed.)"}
         main.edit_lead(lid, fields)
         db.log(lid, "system", f"Updated by the assistant: {', '.join(fields)}", channel="system")
@@ -213,7 +216,9 @@ def _tool(name, a, ctx):
     if name == "move_leads":
         from . import main
         ids = [int(i) for i in (a.get("ids") or [])][:50]
-        if a.get("stage") not in STAGES:
+        own = {c["name"].lower(): c["key"] for c in main.custom_stages()}
+        a["stage"] = own.get(str(a.get("stage")).lower(), a.get("stage"))
+        if a.get("stage") not in STAGES + tuple(own.values()):
             return {"error": f"stage must be one of: {', '.join(STAGES)}"}
         if a["stage"] == "in_sequence" and db.setting("mode") == "live":
             return {"error": "Refused: send mode is live, so starting sequences would email without approval. Use the dashboard for this."}

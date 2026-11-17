@@ -304,9 +304,9 @@ def _host(lead):
     return re.sub(r"^(https?://)?(www\.)?", "", (lead.get("website") or "").lower()).split("/")[0].strip()
 
 
-def _scan():
+def _scan(product=None):
     try:
-        leads = db.q(f"SELECT * FROM leads WHERE stage IN ({','.join('?' * len(SCOPE))})", SCOPE)
+        leads = db.q(f"SELECT * FROM leads WHERE stage IN ({','.join('?' * len(SCOPE))})" + (" AND product=?" if product else ""), SCOPE + ((product,) if product else ()))
         CLEAN.update(total=len(leads), checked=0, proposals=[])
         st = rules.state()
 
@@ -344,12 +344,13 @@ def _scan():
             CLEAN.update(running=False, finished=db.now())
 
 
-def cleanup_start():
+def cleanup_start(product=None):
+    """Check the leads the agent could still contact: all of them, or one pipeline's."""
     with LOCK:
         if CLEAN["running"]:
             return False
-        CLEAN.update(running=True, cancel=False, started=db.now(), finished=None, applied=None, proposals=[], checked=0, total=0)
-    threading.Thread(target=_scan, daemon=True).start()
+        CLEAN.update(running=True, cancel=False, started=db.now(), finished=None, applied=None, proposals=[], checked=0, total=0, product=product or None)
+    threading.Thread(target=_scan, args=(product or None,), daemon=True).start()
     return True
 
 
@@ -364,6 +365,7 @@ def cleanup_state():
             g["examples"].append(p["company"] + (f" ({p['email']})" if p.get("email") else ""))
     grades = {r["grade"] or "?": r["n"] for r in db.q("SELECT grade, COUNT(*) n FROM leads WHERE stage NOT IN ('disqualified','opted_out','lost') GROUP BY grade")}
     return {**{k: snap[k] for k in ("running", "checked", "total", "started", "finished", "applied")}, "found": len(snap["proposals"]),
+            "product": snap.get("product"), "pipeline": db.products().get(snap.get("product") or "", {}).get("name"),
             "groups": sorted(groups.values(), key=lambda g: -g["leads"]), "grades": grades}
 
 

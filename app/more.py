@@ -333,7 +333,7 @@ def cleanup(p: dict = Body(...)):
     """start: check every lead the agent could still contact against the rules and for duplicates (runs in the background).
     apply: act on what was found. cancel: stop a running check."""
     if p.get("action") == "start":
-        if not quality.cleanup_start():
+        if not quality.cleanup_start(p.get("product")):
             raise HTTPException(409, "A check is already running.")
     elif p.get("action") == "apply":
         M._need("leads.delete")
@@ -404,12 +404,14 @@ CLEAN_KINDS = {  # kind: (what it says on the page, ticked by default)
 }
 
 
-def _approval_scan():
-    """Drafts in Approvals that should not go out as they are: [{id, lead_id, kind, company, action, hit}]."""
+def _approval_scan(product=None):
+    """Drafts in Approvals that should not go out as they are: [{id, lead_id, kind, company, action, hit}]. One pipeline's, or all."""
     old = _iso(datetime.now(timezone.utc) - timedelta(days=STALE_DAYS))
     out, seen = [], set()
     for a in db.q("SELECT id, lead_id, channel, action, created_at FROM approvals WHERE state='pending' ORDER BY id DESC"):   # newest first
         lead = db.one("SELECT * FROM leads WHERE id=?", (a["lead_id"],))
+        if product and (lead or {}).get("product") != product:
+            continue
         outreach = a["action"] not in ("reply", "followup")
         key, kind, hit = (a["lead_id"], "outreach" if outreach else a["action"]), None, None
         if not lead or lead["stage"] in ("opted_out", "disqualified", "lost") or compliance.is_suppressed(lead):
@@ -430,8 +432,8 @@ def _approval_scan():
 
 
 @router.get("/api/approvals-cleanup")
-def approvals_cleanup():
-    found, groups = _approval_scan(), []
+def approvals_cleanup(product: str = None):
+    found, groups = _approval_scan(product), []
     for kind, (label, on) in CLEAN_KINDS.items():
         mine = [p for p in found if p["kind"] == kind]
         if mine:
@@ -444,7 +446,7 @@ def approvals_cleanup():
 def approvals_cleanup_apply(p: dict = Body(...)):
     """Take the chosen kinds of draft out of Approvals. Nothing is deleted: each is marked skipped and its lead's timeline says why."""
     kinds, out = set(p.get("kinds") or []), {"removed": 0, "rewrite": 0, "moved": 0}
-    for it in _approval_scan():
+    for it in _approval_scan(p.get("product")):
         if it["kind"] not in kinds:
             continue
         lead = db.one("SELECT * FROM leads WHERE id=?", (it["lead_id"],))
@@ -516,6 +518,8 @@ def linkedin_search(p: dict = Body(...)):
         raise HTTPException(404, "unknown pipeline")
     if not llm.enabled():
         raise HTTPException(400, "Searching LinkedIn posts needs Claude's web search: set ANTHROPIC_API_KEY on the server.")
+    if db.setting("web_search_leads") == "0":
+        raise HTTPException(400, "Finding leads by web search is switched off. Switch it on under Settings > Agent & sending.")
     if llm.over_budget():
         raise HTTPException(400, "Today's Claude budget is used up. Try tomorrow, or raise the budget in Settings.")
     src = prod.get("sources") or {}

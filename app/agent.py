@@ -513,10 +513,12 @@ def tick(at=None, force=False):
     done = 0
     if db.setting("agent_enabled") != "1" or not (force or active()):
         return 0
-    for lead in db.q("SELECT * FROM leads WHERE stage='new' AND (next_action_at IS NULL OR next_action_at<=?) LIMIT 25", (_iso(at),)):
+    off = [k for k, p in db.products().items() if not p.get("active", True)]   # pipelines switched off: their leads wait, untouched
+    skip = f" AND (product IS NULL OR product NOT IN ({','.join('?' * len(off))}))" if off else ""
+    for lead in db.q(f"SELECT * FROM leads WHERE stage='new' AND (next_action_at IS NULL OR next_action_at<=?){skip} LIMIT 25", (_iso(at), *off)):
         research_lead(lead)
         done += 1
-    due = db.q("SELECT * FROM leads WHERE stage='in_sequence' AND next_action_at IS NOT NULL AND next_action_at<=? ORDER BY COALESCE(grade,'C'), next_action_at LIMIT 50", (_iso(at),))  # best leads first
+    due = db.q(f"SELECT * FROM leads WHERE stage='in_sequence' AND next_action_at IS NOT NULL AND next_action_at<=?{skip} ORDER BY COALESCE(grade,'C'), next_action_at LIMIT 50", (_iso(at), *off))  # best leads first
     for lead in due:
         run_step(lead, at)
         done += 1
