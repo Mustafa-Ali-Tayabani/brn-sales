@@ -45,7 +45,8 @@ def spend(kind, credits=1, pipeline=None):
         d = u.setdefault(day, {})
         d[kind] = d.get(kind, 0) + credits
         if pipeline and kind == "reveal":
-            d.setdefault("by", {})[pipeline] = d["by"].get(pipeline, 0) + credits
+            by = d.setdefault("by", {})
+            by[pipeline] = by.get(pipeline, 0) + credits
         for old in sorted(u)[:-70]:   # ten weeks of history is plenty
             u.pop(old)
         db.set_setting("apollo_usage", json.dumps(u))

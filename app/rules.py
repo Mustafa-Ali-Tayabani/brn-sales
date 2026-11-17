@@ -255,8 +255,11 @@ def check(lead, network=True, rules=None, verify=True, early=False):
             extra = json.loads(lead.get("extra") or "{}") or {}
         except ValueError:
             extra = {}
-        if (extra.get("apollo") or {}).get("industry") and "vendor" in extra:   # Apollo says what the company does: that decides it, not a guess from its name or site
+        ap = extra.get("apollo") or {}
+        if ap.get("industry") and "vendor" in extra:   # Apollo says what the company does: that decides it, not a guess from its name or site
             why = extra["vendor"]
+        elif (ap.get("searched") or {}).get("industries") and "vendor" not in extra:
+            why = None   # found by a search of chosen industries, and its own industry arrives with the reveal: no guessing from the name meanwhile
         else:
             why = extra.get("vendor") or sources.looks_like_vendor(lead.get("company"), lead.get("industry"), lead.get("segment") if lead.get("source") != "hiring" else "")
         if why and not (extra.get("intent") or {}).get("level") in ("asked", "inbound"):   # someone who asked us is a buyer, whatever they do

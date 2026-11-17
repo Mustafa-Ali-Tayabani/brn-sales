@@ -345,6 +345,9 @@ APOLLO_SEED = {
 INACTIVE_BY_DEFAULT = ("web_mobile", "new_websites", "website_build", "ai_automation", "crm_erp", "security", "custom_ai", "custom")
 
 
+SERVICE_KEYS = ("website_build", "new_websites", "web_mobile", "ai_automation", "crm_erp", "product_design", "security", "security_testing", "custom", "custom_ai", "custom_software")
+
+
 def products():
     """Saved pipelines, plus any default pipeline added in a newer version (never overwrites edits)."""
     try:
@@ -371,8 +374,8 @@ def products():
         p.setdefault("active", key not in INACTIVE_BY_DEFAULT)
         if p.get("partner") or p.get("type") == "partner":   # a partner pipeline always carries both marks, however it was saved
             p["partner"], p["type"] = True, "partner"
-        elif p.get("type") not in ("product", "service"):
-            p["type"] = "product"
+        elif p.get("type") not in ("product", "service"):   # saved without a kind: services are known by their key
+            p["type"] = "service" if key in SERVICE_KEYS else "product"
     return out
 
 

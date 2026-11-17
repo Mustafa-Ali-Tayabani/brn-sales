@@ -24,7 +24,7 @@ def cfg(p):
     c = {**BLANK, **((p.get("sources") or {}).get("apollo") or {})}
     for k in ("industries", "employee_ranges", "countries", "technologies", "keywords", "job_titles", "hiring_keywords", "exclude_industries"):
         v = c.get(k)
-        c[k] = [x.strip() for x in (re.split(r"[\n;]|,(?!\d)", v) if isinstance(v, str) else v or []) if str(x).strip()]
+        c[k] = [x.strip() for x in (re.split(r"[\n;]", v) if isinstance(v, str) else v or []) if str(x).strip()]
     c["countries"] = [x for x in (countries.code(v) for v in c["countries"]) if x]
     c["employee_ranges"] = [r.replace("-", ",").replace(" ", "") for r in c["employee_ranges"]]
     for k, d in (("daily_limit", 25), ("reveal_limit", 10)):
@@ -84,14 +84,14 @@ def _row(org, person, c, key, hiring):
              "employees": org.get("employees"), "industry": org.get("industry"), "technologies": org.get("technologies") or [], "funding": org.get("funding"),
              "searched": {k: c[k] for k in ("industries", "employee_ranges", "countries", "technologies") if c[k]}}
     extra = {"apollo": facts}
-    if hiring:
+    if hiring is not None:
         extra["intent"] = {"level": "hiring", "quote": hiring.get("title") or ("An open role matching: " + ", ".join(c["hiring_keywords"][:3])), "url": hiring.get("url"),
                            "posted": hiring.get("posted"), "where": "Apollo job postings"}
     if org.get("industry"):   # Apollo knows what the company does: that settles the competitor question, the website guess is not needed
         extra["vendor"] = f"Apollo lists it under {org['industry']}" if agency(org["industry"]) else False
     return {"company": org.get("name"), "website": org.get("website"), "phone": org.get("phone"), "industry": industry, "city": org.get("city"),
             "country": countries.code(org.get("country")) or one(c["countries"]), "contact_name": person and person["first_name"], "title": person and person["title"],
-            "source": "apollo", "product": key, "segment": "Hiring for it" if hiring else None, "consent_basis": "legitimate_interest_b2b",
+            "source": "apollo", "product": key, "segment": "Hiring for it" if hiring is not None else None, "consent_basis": "legitimate_interest_b2b",
             "extra": {**extra, **({"linkedin_company": org["linkedin"]} if org.get("linkedin") else {})}}
 
 
@@ -187,20 +187,20 @@ def fit(lead, p=None):
         return 20, [f"{a['industry']} is an industry this pipeline leaves out"]
     if ind and c["industries"]:
         hit = ind in [i.lower() for i in c["industries"]]
-        score += 20 if hit else -5
+        score += 20 if hit else -15
         why.append(f"{a['industry']}: {'an industry you sell to' if hit else 'not one of your industries'}")
     elif searched.get("industries"):
         score += 14; why.append("found in a search of your industries")
     if a.get("employees") and c["employee_ranges"]:
         hit = _in_range(a["employees"], c["employee_ranges"])
-        score += 15 if hit else -5
+        score += 15 if hit else -10
         why.append(f"{a['employees']} staff: {'the size you sell to' if hit else 'outside your size range'}")
     elif searched.get("employee_ranges"):
         score += 9; why.append("found in a search of your company sizes")
     where = countries.code(lead.get("country"))
     if where and c["countries"]:
         hit = where in c["countries"]
-        score += 10 if hit else -5
+        score += 10 if hit else -10
         why.append(f"{countries.name(where)}: {'a country you sell in' if hit else 'not one of your countries'}")
     tech = [t for t in c["technologies"] if t.lower() in [str(v).lower() for v in a.get("technologies") or []]]
     if tech:
