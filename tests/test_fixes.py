@@ -17,7 +17,7 @@ PAGE = """<html><head><script src="https://cdn.test/bootstrap@5.3.0/dist/js/boot
 
 class JunkEmails(Case):
     def test_what_counts_as_junk(self):
-        for bad in ("bootstrap@5.3.0", "lodash@4.17.21", "cookieconsent@3.1.0", "you@company.com", "name@example.com", "email@yourdomain.com", "logo@2x.png", "react@18", "vue@3.4.21-beta", "user@domain.com"):
+        for bad in ("bootstrap@5.3.0", "lodash@4.17.21", "cookieconsent@3.1.0", "you@company.com", "name@example.com", "email@yourdomain.com", "logo@2x.png", "vue@3.4.21-beta", "user@domain.com"):
             self.assertIsNotNone(sources.junk_email(bad), bad)
         for good in ("faisal@irongym.sa", "info@harbor-gym.co.uk", "omar.s@gmail.com", "sales@company.io", "hello@my-company.com", "j@x.co"):
             self.assertIsNone(sources.junk_email(good), good)

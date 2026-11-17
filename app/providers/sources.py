@@ -224,7 +224,9 @@ def junk_email(address):
         return None   # not shaped like an address at all: other checks say so
     local, domain = a.split("@")
     labels = domain.split(".")
-    if len(labels) < 2 or not _re.fullmatch(r"[a-z]{2,24}", labels[-1]) or all(_re.fullmatch(r"[\dv]+", l) for l in labels) or _re.fullmatch(r"v?\d+(\.\d+)*[a-z-]*", domain):
+    if len(labels) < 2 or not all(labels):
+        return None   # no full domain: an incomplete address, which the ordinary checks report
+    if _re.search(r"\d", labels[-1]) or all(_re.fullmatch(r"v?\d+", l) for l in labels) or _re.fullmatch(r"v?\d+(\.\d+)+[a-z-]*", domain):
         return "it is a package name with a version number, not an address"
     if labels[-1] in ("png", "jpg", "jpeg", "gif", "webp", "svg", "css", "js", "json", "map", "woff", "woff2", "ttf", "ico", "html", "php", "min"):
         return "it is a file name, not an address"
