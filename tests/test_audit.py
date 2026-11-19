@@ -105,7 +105,7 @@ class PlainErrors(Case):
             raise RuntimeError('Places API error 403: {"error": {"status": "PERMISSION_DENIED", "message": "Places API (New) has not been used in project 1 before or it is disabled."}}')
         sources._google_places = refuse
         try:
-            with self.assertRaisesRegex(RuntimeError, "not switched on for this key's project"):
+            with self.assertRaisesRegex(RuntimeError, "is not switched on in the project this key belongs to.*Google said: .Places API \\(New\\) has not been used"):
                 sources.google_places("gyms in Riyadh")
             sources._google_places = lambda *a, **k: self.fail("asked again after a refusal")
             with self.assertRaisesRegex(RuntimeError, "not switched on"):
@@ -247,14 +247,26 @@ class DeveloperList(Case):
         finally:
             llm._client = None
         self.assertEqual(c["ok"], False); self.assertIn("credit has run out", c["detail"])
-        db.set_setting("places_error", "Google refused the map search: no billing account.")
         import os
+        blocked = {"error": {"code": 403, "message": "Requests to this API places.googleapis.com method google.maps.places.v1.Places.SearchText are blocked.", "status": "PERMISSION_DENIED",
+                             "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_SERVICE_BLOCKED", "domain": "googleapis.com"}]}}
+        asked = []
+        answers = [Resp(403, blocked), Resp(200, {"places": [{"id": "x"}]})]
         os.environ["GOOGLE_PLACES_API_KEY"] = "k"
+        rh, sources.httpx = sources.httpx, types.SimpleNamespace(post=lambda url, headers=None, json=None, timeout=None: (asked.append(headers["X-Goog-FieldMask"]), answers.pop(0))[1], get=httpx.get)
         try:
             pl = {x["key"]: x for x in client.get("/api/connections/check").json()["results"]}["places"]
+            self.assertEqual(pl["ok"], False)
+            self.assertIn("is not allowed to use \"Places API (New)\"", pl["detail"]); self.assertIn("API restrictions", pl["detail"])
+            self.assertIn("Google said: \"Requests to this API places.googleapis.com", pl["detail"])                 # their own words, whole
+            self.assertEqual(client.get("/api/settings").json()["providers"]["places_error"], pl["detail"])
+            fixed = {x["key"]: x for x in client.get("/api/connections/check").json()["results"]}["places"]            # after the key is put right in Google Cloud
+            self.assertEqual((fixed["ok"], client.get("/api/settings").json()["providers"]["places_error"]), (True, None))
+            self.assertEqual(asked, ["places.id", "places.id"])                                                        # the test asks for IDs only, which Google does not charge for
         finally:
-            os.environ.pop("GOOGLE_PLACES_API_KEY")
-        self.assertEqual((pl["ok"], pl["detail"]), (False, "Google refused the map search: no billing account."))
+            sources.httpx = rh; os.environ.pop("GOOGLE_PLACES_API_KEY")
+        for text, want in (("billing to be enabled", "no billing account"), ('"reason": "API_KEY_HTTP_REFERRER_BLOCKED"', "only works from a website"), ("API key not valid. Please pass a valid API key.", "not a valid key")):
+            self.assertIn(want, sources._why_google('Google Places error 403: {"error": {"message": "' + text.replace('"', "'") + '"}}' if "reason" not in text else 'x {"error": {"message": "m", "details": [{' + text + '}]}}'))
         self.assertEqual(len(client.get("/api/settings").json()["connections_checked"]["results"]), len(r))   # the last test result is kept for the page
 
     def test_errors_are_kept_whole(self):

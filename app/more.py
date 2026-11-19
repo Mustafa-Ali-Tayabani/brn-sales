@@ -646,14 +646,8 @@ def connections_check():
         v["ok"] = "half"
     out.append(v)
 
-    if not env("GOOGLE_PLACES_API_KEY"):
-        out.append({"key": "places", "ok": None, "detail": "No GOOGLE_PLACES_API_KEY on the server."})
-    elif db.setting("places_error"):
-        out.append({"key": "places", "ok": False, "detail": db.setting("places_error")})
-    elif db.setting("places_ok_at"):
-        out.append({"key": "places", "ok": True, "detail": f"The last map search worked ({db.setting('places_ok_at')[:10]})."})
-    else:
-        out.append({"key": "places", "ok": "half", "detail": "The key is set but no map search has run since. Press \"Find leads now\" on a pipeline that has Google Maps searches; a refusal will show here."})
+    # one search that asks for place IDs only, which Google does not charge for: the way to see whether a fix in Google Cloud has worked
+    out.append(_try("places", M.sources.places_check, None if env("GOOGLE_PLACES_API_KEY") else "No GOOGLE_PLACES_API_KEY on the server."))
     out.append({"key": "meet", "ok": True if M.invites.meet_links() else None, "detail": "" if M.invites.meet_links() else "Paste a Google Meet link under Meetings & booking."})
     db.set_setting("connections_checked", json.dumps({"at": db.now(), "results": out}))
     return {"at": db.now(), "results": out}

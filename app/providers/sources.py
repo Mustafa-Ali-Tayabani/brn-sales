@@ -135,7 +135,40 @@ def review_signal(place, words):
 _DOWN = {}   # source -> (until, why): a source that refused is left alone for a while
 
 
+def _googles_words(text):
+    """Google's own sentence and reason code out of its error answer, e.g. ("Requests to this API ... are blocked.", "API_KEY_SERVICE_BLOCKED")."""
+    import json
+    try:
+        err = (json.loads(text[text.index("{"):]) or {}).get("error") or {}
+    except ValueError:
+        return "", ""
+    reason = next((d.get("reason") for d in err.get("details") or [] if isinstance(d, dict) and d.get("reason")), "") or ""
+    return str(err.get("message") or "").strip(), reason
+
+
 def _why_google(text):
+    said, reason = _googles_words(text)
+    quote = f' Google said: "{said[:300]}"' if said else ""
+    low = (text + " " + reason).lower()
+    if "api_key_service_blocked" in low or ("requests to this api" in low and "blocked" in low):
+        return ("Google refused the map search: this API key is not allowed to use \"Places API (New)\". In Google Cloud > APIs & Services > Credentials, open the key and, under "
+                "\"API restrictions\", either choose \"Don't restrict key\" or add \"Places API (New)\" to the list (the older \"Places API\" is a different one), then save and wait a few minutes." + quote)
+    if "http_referrer" in low or "referer" in low or "referrer" in low:
+        return ("Google refused the map search: this API key only works from a website (it has a \"Websites\" restriction), but the app calls Google from a server. In Google Cloud > "
+                "Credentials, open the key and set \"Application restrictions\" to \"None\"." + quote)
+    if "ip_address_blocked" in low or "ip address" in low:
+        return ("Google refused the map search: this API key is limited to certain IP addresses, and the app's server is not one of them. In Google Cloud > Credentials, open the key and "
+                "set \"Application restrictions\" to \"None\" (Railway's address changes, so an IP list will not hold)." + quote)
+    if "billing" in low:
+        return ("Google refused the map search: the Google Cloud project has no billing account. Add one under Google Cloud > Billing and link it to the project of this key "
+                "(Places needs billing switched on even within its free allowance)." + quote)
+    if "has not been used" in low or "is disabled" in low or "not enabled" in low or "service_disabled" in low:
+        return ("Google refused the map search: \"Places API (New)\" is not switched on in the project this key belongs to. In Google Cloud > APIs & Services > Library, search for "
+                "\"Places API (New)\" and press Enable. Check you are in the same project as the key." + quote)
+    if "api key not valid" in low or "api_key_invalid" in low:
+        return "Google refused the map search: the API key is not a valid key. Copy it again from Google Cloud > Credentials into GOOGLE_PLACES_API_KEY in Railway Variables (no spaces or quotes), then press Deploy." + quote
+    if quote:
+        return "Google refused the map search (error 403)." + quote
     low = text.lower()
     if "has not been used" in low or "is disabled" in low or "not enabled" in low or "service_disabled" in low:
         return "Google refused the map search: the \"Places API (New)\" is not switched on for this key's project. Switch it on in Google Cloud > APIs & Services > Library."
@@ -169,6 +202,24 @@ def google_places(query, country="SA", limit=20, only_without_website=False, rev
     return rows
 
 
+def places_check():
+    """Ask Google one question that costs nothing (place IDs only) to see whether the key works now. Returns a sentence;
+    raises with the reason when Google refuses. Clears or records the refusal for the Connections page."""
+    import os, time
+    from .. import db
+    key = os.environ.get("GOOGLE_PLACES_API_KEY")
+    r = httpx.post("https://places.googleapis.com/v1/places:searchText", headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.id"},
+                   json={"textQuery": "coffee in London", "pageSize": 1}, timeout=20)
+    if r.status_code >= 400:
+        why = _why_google(f"Google Places error {r.status_code}: {r.text[:3000]}") if r.status_code in (400, 403) else f"Google answered with error {r.status_code}: {r.text[:300]}"
+        _DOWN["places"] = (time.time() + 600, why)
+        db.set_setting("places_error", why)
+        raise RuntimeError(why)
+    _DOWN.pop("places", None)
+    db.set_setting("places_error", ""); db.set_setting("places_ok_at", db.now())
+    return "Google answered a test search just now."
+
+
 def _google_places(query, country="SA", limit=20, only_without_website=False, review_words=None):
     """e.g. google_places('gyms in Riyadh'). Business listings only: these are company lines, not personal numbers.
     With only_without_website, keeps businesses that have no website listed (pages through up to 60 results)."""
@@ -189,7 +240,7 @@ def _google_places(query, country="SA", limit=20, only_without_website=False, re
             json=body, timeout=20,
         )
         if r.status_code >= 400:
-            raise RuntimeError(f"Google Places error {r.status_code}: {r.text[:200]}")
+            raise RuntimeError(f"Google Places error {r.status_code}: {r.text[:3000]}")   # all of it: the cause is named near the end
         data = r.json()
         for p in data.get("places", []):
             if only_without_website and p.get("websiteUri"):
